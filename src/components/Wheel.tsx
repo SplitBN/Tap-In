@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 // Native-momentum scroll wheel: CSS scroll-snap gives iOS's own deceleration physics for free,
 // we just read which row sits in the centre band.
@@ -8,19 +8,22 @@ export function Wheel({ values, index, onIndex, format, height = 5 * ROW, ariaLa
   values: number[]; index: number; onIndex: (i: number) => void; format: (v: number) => string; height?: number; ariaLabel: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const settling = useRef<number | undefined>(undefined);
   const lastEmitted = useRef(index);
+  const lastValues = useRef<number[] | null>(null);
   const pad = (height - ROW) / 2;
 
-  // Jump to the external index when it changes from outside (unit/step switch, open).
+  // Only move the scroll position for EXTERNAL changes (open, unit/step switch, typed value).
+  // An index we emitted ourselves must never write back to scrollTop: during a fast flick the
+  // wheel is already past that row, and snapping back kills iOS momentum (the "freeze").
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || index === lastEmitted.current && Math.round(el.scrollTop / ROW) === index) return;
+    if (!el) return;
+    const listChanged = lastValues.current !== values;
+    lastValues.current = values;
+    if (!listChanged && index === lastEmitted.current) return;
     el.scrollTop = index * ROW;
     lastEmitted.current = index;
   }, [index, values]);
-
-  useEffect(() => () => clearTimeout(settling.current), []);
 
   const onScroll = () => {
     const el = ref.current!;
@@ -52,8 +55,10 @@ export function Wheel({ values, index, onIndex, format, height = 5 * ROW, ariaLa
             className="num"
             style={{
               height: ROW, display: 'grid', placeItems: 'center', scrollSnapAlign: 'center',
-              fontSize: i === index ? '2rem' : '1.5rem', fontWeight: i === index ? 750 : 500, letterSpacing: '-0.02em',
-              color: i === index ? 'var(--text)' : 'var(--text-3)', transition: 'font-size 120ms, color 120ms',
+              fontSize: '2rem', fontWeight: 750, letterSpacing: '-0.02em',
+              // scale + colour only (compositor-friendly); font-size changes re-laid-out every row per frame
+              scale: i === index ? '1' : '0.75', color: i === index ? 'var(--text)' : 'var(--text-3)',
+              transition: 'scale 120ms ease-out, color 120ms',
             }}>
             {format(v)}
           </div>
