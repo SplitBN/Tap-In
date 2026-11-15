@@ -8,9 +8,9 @@ import { alive, db } from '../db/db';
 import { setOrder } from '../db/gym';
 import { useSettings } from '../db/settings';
 import type { SetLog } from '../db/types';
-import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
+import { fmtDate, fmtDuration, fmtWeight, relDay, setText } from '../lib/format';
 import { e1rm, totalLoadKg } from '../lib/science';
-import { ExerciseInfo, setText } from './Session';
+import { ExerciseInfo } from './Session';
 
 export function HistoryPage() {
   const sessions = useLiveQuery(() => db.sessions.orderBy('startedAt').reverse().filter((s) => alive(s) && !!s.endedAt).limit(200).toArray(), []) ?? [];

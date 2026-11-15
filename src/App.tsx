@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router';
+import { DialogHost } from './components/Dialog';
 import { Icon } from './components/Icon';
 import { seedIfNeeded } from './db/seed';
 import { useSettings } from './db/settings';
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="*" element={<HomePage />} />
         </Routes>
         <TabBar />
+        <DialogHost />
       </div>
     </HashRouter>
   );

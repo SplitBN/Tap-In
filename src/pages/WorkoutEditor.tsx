@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { confirmDialog } from '../components/Dialog';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ExercisePicker, ExerciseThumb } from '../components/ExercisePicker';
@@ -37,7 +38,6 @@ export function WorkoutEditorPage() {
         <button className="icon-btn" aria-label="Rename" onClick={() => setRenaming(true)}><Icon name="edit" size={20} /></button>
       </header>
 
-      {workout.items.length > 1 && <p className="muted" style={{ margin: '0 4px 12px', fontSize: '0.875rem' }}>Hold and drag to reorder. Tap an exercise to set sets, reps, rest and supersets.</p>}
 
       <SortableList items={workout.items} onReorder={setItems}>
         <div className="stack" style={{ gap: 0 }}>
@@ -63,16 +63,16 @@ export function WorkoutEditorPage() {
       </SortableList>
 
       {!workout.items.length && (
-        <div className="empty"><Icon name="dumbbell" size={40} /><h3>Add your first exercise</h3><p>Pick from about 680 exercises, or make your own.</p></div>
+        <div className="empty"><Icon name="dumbbell" size={40} /><h3>No exercises</h3></div>
       )}
-      <button className="btn primary block lg" style={{ marginTop: 16 }} onClick={() => setPicking({})}><Icon name="plus" size={18} /> Add exercises</button>
+      <button className="btn primary block lg" style={{ marginTop: 16 }} onClick={() => setPicking({})}><Icon name="plus" size={18} /> Exercise</button>
       <button className="btn danger block" style={{ marginTop: 32 }} onClick={async () => {
-        if (!confirm(`Delete workout “${workout.name}”?`)) return;
+        if (!(await confirmDialog({ title: `Delete “${workout.name}”?`, message: "It is removed from this plan. Past sessions stay in your history.", confirm: "Delete workout", danger: true }))) return;
         const plan = await db.plans.get(workout.planId);
         if (plan) await save('plans', { ...plan, workoutIds: plan.workoutIds.filter((x) => x !== workout.id) });
         await remove('workouts', workout.id);
         nav(`/plans/${workout.planId}`);
-      }}>Delete workout</button>
+      }}><Icon name="trash" size={18} /> Delete</button>
 
       <ExercisePicker open={!!picking} multi={!picking?.replaceKey} title={picking?.replaceKey ? 'Replace exercise' : 'Add exercises'}
         onClose={() => setPicking(null)}

@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { confirmDialog, notice } from '../components/Dialog';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Stepper } from '../components/ItemSettings';
@@ -79,8 +80,9 @@ export function SettingsPage() {
           <input type="file" accept="application/json,.json" className="sr-only" onChange={async (e) => {
             const file = e.target.files?.[0]; e.target.value = '';
             if (!file) return;
-            if (!confirm('Import this backup? Records in it replace matching ones here; nothing else is deleted.')) return;
-            const n = await importJson(file); alert(`Imported ${n} records.`);
+            if (!(await confirmDialog({ title: 'Import this backup?', message: 'Records in it replace matching ones here. Nothing else is deleted.', confirm: 'Import' }))) return;
+            try { const n = await importJson(file); await notice('Backup imported', `${n} records restored.`); }
+            catch (err) { await notice('Could not import', (err as Error).message); }
           }} />
         </label>
         <div className="list-item"><span className="grow title">Waiting to sync</span><span className="muted num">{pending ? `${pending} changes` : 'Nothing'}</span></div>

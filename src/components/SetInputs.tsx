@@ -3,7 +3,7 @@ import { save } from '../db/db';
 import { updateSettings } from '../db/settings';
 import type { EffortMode, Exercise, Unit } from '../db/types';
 import { defaultStepKg, fromKg, toKg } from '../lib/science';
-import { fmtWeight } from '../lib/format';
+import { fmtNum, fmtWeight } from '../lib/format';
 import { Sheet } from './Sheet';
 import { Wheel } from './Wheel';
 
@@ -87,4 +87,3 @@ const nearestIndex = (arr: number[], v: number) => {
   for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - v) < Math.abs(arr[best] - v)) best = i;
   return best;
 };
-export const fmtNum = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));

@@ -34,11 +34,11 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
   const hasRange = item.repsMin != null;
   return (
     <div className="stack" style={{ gap: 0 }}>
-      <Line label="Working sets"><Stepper label="Working sets" value={item.sets} min={1} max={20} onChange={(sets) => onChange({ ...item, sets })} /></Line>
+      <Line label="Sets"><Stepper label="Sets" value={item.sets} min={1} max={20} onChange={(sets) => onChange({ ...item, sets })} /></Line>
       {settings.features.warmups && (
-        <Line label="Warm-up sets" sub="Not counted in progress"><Stepper label="Warm-up sets" value={item.warmups ?? 0} max={6} onChange={(warmups) => onChange({ ...item, warmups })} /></Line>
+        <Line label="Warm-up"><Stepper label="Warm-up" value={item.warmups ?? 0} max={6} onChange={(warmups) => onChange({ ...item, warmups })} /></Line>
       )}
-      <Line label="Target reps" sub={hasRange ? undefined : 'Optional'}>
+      <Line label="Reps">
         {hasRange ? (
           <div className="row" style={{ gap: 6 }}>
             <input className="input num" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" aria-label="Min reps"
@@ -48,25 +48,25 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
               value={item.repsMax ?? ''} onChange={(e) => onChange({ ...item, repsMax: num(e.target.value) })} />
             <button className="icon-btn" aria-label="Remove target" onClick={() => onChange({ ...item, repsMin: undefined, repsMax: undefined })}><Icon name="close" size={18} /></button>
           </div>
-        ) : <button className="btn" onClick={() => onChange({ ...item, repsMin: 8, repsMax: 12 })}>Set</button>}
+        ) : <button className="btn" onClick={() => onChange({ ...item, repsMin: 8, repsMax: 12 })} aria-label="Set target reps"><Icon name="plus" size={16} /></button>}
       </Line>
-      <Line label="Drop sets" sub="Drops after each working set, −20% each"><Stepper label="Drop sets" value={item.drops ?? 0} max={4} onChange={(drops) => onChange({ ...item, drops })} /></Line>
+      <Line label="Drops" sub="−20% each"><Stepper label="Drops" value={item.drops ?? 0} max={4} onChange={(drops) => onChange({ ...item, drops })} /></Line>
       {settings.features.restTimer && (
         <>
           <Line label="Rest">
             <div className="seg" style={{ width: 170 }}>
               <button aria-pressed={item.rest.mode === 'timer'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'timer' } })}>Timer</button>
-              <button aria-pressed={item.rest.mode === 'countup'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'countup' } })}>Count up</button>
+              <button aria-pressed={item.rest.mode === 'countup'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'countup' } })}>↑ Up</button>
             </div>
           </Line>
           {item.rest.mode === 'timer' && (
-            <Line label="Rest time" sub={item.rest.sec == null ? `Default for ${exercise?.mechanic ?? 'this'} exercises` : undefined}>
+            <Line label="Time" sub={item.rest.sec == null ? "default" : undefined}>
               <Stepper value={restSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(sec) => onChange({ ...item, rest: { ...item.rest, sec } })} />
             </Line>
           )}
         </>
       )}
-      <label className="field" style={{ marginTop: 8 }}><span>Notes</span>
+      <label className="field" style={{ marginTop: 8 }}><span>Note</span>
         <textarea className="input" rows={2} style={{ padding: 12, minHeight: 64, resize: 'vertical' }} value={item.notes ?? ''}
           placeholder="Seat height, grip, cues…" onChange={(e) => onChange({ ...item, notes: e.target.value || undefined })} />
       </label>

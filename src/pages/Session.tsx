@@ -1,11 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { confirmDialog } from '../components/Dialog';
 import { AnimatePresence, motion } from 'motion/react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/ExercisePicker';
 import { Icon } from '../components/Icon';
 import { ItemSettings, normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
-import { EffortSheet, WeightSheet, fmtNum } from '../components/SetInputs';
+import { EffortSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db, newRecord, remove, save } from '../db/db';
@@ -13,7 +14,7 @@ import { finishSession, lastPerformance, latestBodyweightKg, newItem, sessionDif
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
-import { fmtDuration, fmtWeight, relDay, titleCase } from '../lib/format';
+import { fmtDuration, fmtNum, fmtWeight, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
 import { defaultRestSec, rirToRpe, rpeToRir, suggestDrop, defaultStepKg } from '../lib/science';
 import { groupPos, useExerciseMap } from './WorkoutEditor';
@@ -78,7 +79,7 @@ export function SessionPage() {
             </div>
           </div>
           <button className="icon-btn" aria-label="Workout options" onClick={() => setMenu('session')}><Icon name="more" /></button>
-          {live && <button className="btn good" style={{ minHeight: 36, padding: '0 14px' }} onClick={() => setMenu('finish')}>Finish</button>}
+          {live && <button className="round-btn finish" aria-label="Finish workout" onClick={() => setMenu('finish')}><Icon name="flag" size={18} stroke={2.2} /></button>}
         </div>
         <ExerciseStrip items={items} exMap={exMap} currentKey={current?.key} isDone={isDone}
           onSelect={(k) => update({ currentKey: k })} onReorder={setItems} onAdd={() => setPicking('add')} />
@@ -108,16 +109,16 @@ export function SessionPage() {
               {curIdx < items.length - 1 && (() => {
                 const linked = !!current.supersetId && current.supersetId === items[curIdx + 1]?.supersetId;
                 return <button className="menu-item" onClick={() => setItems(toggleSupersetWithNext(items, curIdx))}>
-                  <Icon name={linked ? 'unlink' : 'link'} />{linked ? 'Unlink from next exercise' : `Superset with ${exMap[items[curIdx + 1].exerciseId]?.name ?? 'next'}`}
+                  <Icon name={linked ? 'unlink' : 'link'} /><span className="grow ellipsis">{linked ? 'Unlink superset' : `Superset + ${exMap[items[curIdx + 1].exerciseId]?.name ?? 'next'}`}</span>
                 </button>;
               })()}
-              <button className="menu-item" onClick={() => { setMenu(null); setPicking('replace'); }}><Icon name="swap" />Replace exercise</button>
-              <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How to do it</button>
-              <button className="menu-item" onClick={() => setMenu('editEx')}><Icon name="edit" />Edit exercise (type, one side…)</button>
+              <button className="menu-item" onClick={() => { setMenu(null); setPicking('replace'); }}><Icon name="swap" />Replace</button>
+              <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How-to</button>
+              <button className="menu-item" onClick={() => setMenu('editEx')}><Icon name="edit" />Edit exercise</button>
               <button className="menu-item danger" onClick={async () => {
                 for (const s of sets.filter((x) => x.itemKey === current.key)) await remove('sets', s.id);
                 setItems(items.filter((i) => i.key !== current.key)); setMenu(null);
-              }}><Icon name="trash" />Remove from workout</button>
+              }}><Icon name="trash" />Remove</button>
             </div>
           </>
         )}
@@ -133,7 +134,8 @@ export function SessionPage() {
         <NotesField value={session.notes} onChange={(notes) => update({ notes })} />
         {!live && <button className="menu-item" onClick={() => update({ endedAt: null })}><Icon name="play" />Resume this workout</button>}
         <button className="menu-item danger" onClick={async () => {
-          if (!confirm(live ? 'Discard this workout? Logged sets will be deleted.' : 'Delete this workout from history?')) return;
+          setMenu(null);
+          if (!(await confirmDialog(live ? { title: 'Discard this workout?', message: 'All sets logged in it are deleted.', confirm: 'Discard workout', danger: true } : { title: 'Delete this workout?', message: 'It is removed from your history.', confirm: 'Delete workout', danger: true }))) return;
           for (const s of sets) await remove('sets', s.id);
           await remove('sessions', session.id); rest.stop(); nav('/');
         }}><Icon name="trash" />{live ? 'Discard workout' : 'Delete workout'}</button>
@@ -185,41 +187,36 @@ function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, 
     ref.current?.querySelector<HTMLElement>('[data-current="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [currentKey]);
   return (
-    <div ref={ref} className="chips" style={{ marginTop: 8, padding: '2px 8px', gap: 0 }}>
+    <div ref={ref} className="strip">
       <SortableList items={items} onReorder={onReorder} horizontal>
         {items.map((it, i) => {
           const g = groupPos(items, i);
           const cur = it.key === currentKey;
-          const done = isDone(it);
-          const name = exMap[it.exerciseId]?.name ?? '…';
-          const tube = g !== 'solo';
+          const ex = exMap[it.exerciseId];
           return (
-            <SortableItem key={it.key} id={it.key} style={{
-              flex: 'none',
-              marginLeft: g === 'mid' || g === 'last' ? 0 : i ? 6 : 0,
-              padding: tube ? '3px' : 0,
-              paddingLeft: tube && g !== 'first' ? 1.5 : undefined, paddingRight: tube && g !== 'last' ? 1.5 : undefined,
-              background: tube ? 'var(--accent-soft)' : undefined,
-              borderRadius: tube ? (g === 'first' ? '999px 0 0 999px' : g === 'last' ? '0 999px 999px 0' : 0) : undefined,
-            }}>
-              <button data-current={cur} onClick={() => onSelect(it.key)} className="chip pressable"
-                aria-current={cur ? 'step' : undefined}
-                style={{
-                  minHeight: 34, maxWidth: 170, color: cur ? 'var(--accent-text)' : done ? 'var(--text-2)' : 'var(--text)',
-                  background: cur ? 'var(--accent)' : 'var(--card-2)', fontWeight: cur ? 650 : 560,
-                }}>
-                {done && <Icon name="check" size={15} stroke={2.6} className={cur ? undefined : 'done-check'} />}
-                <span className="ellipsis">{shortName(name)}</span>
+            <SortableItem key={it.key} id={it.key} className={'strip-slot tube-' + g}>
+              <button data-current={cur} onClick={() => onSelect(it.key)} aria-current={cur ? 'step' : undefined}
+                aria-label={(ex?.name ?? 'Exercise') + (isDone(it) ? ', done' : '')}
+                className={'avatar pressable' + (cur ? ' current' : '') + (isDone(it) ? ' done' : '')}>
+                <Avatar ex={ex} />
+                {isDone(it) && <span className="avatar-badge"><Icon name="check" size={11} stroke={3.2} /></span>}
               </button>
             </SortableItem>
           );
         })}
       </SortableList>
-      <button className="chip pressable" onClick={onAdd} aria-label="Add exercise" style={{ marginLeft: 6, minHeight: 34, color: 'var(--accent)' }}><Icon name="plus" size={16} /></button>
+      <button className="avatar add pressable" onClick={onAdd} aria-label="Add exercise"><Icon name="plus" size={20} /></button>
     </div>
   );
 }
-const shortName = (n: string) => n.replace(/\s*-\s*/g, ' ');
+
+/** Exercise image, or its initials when there is none. */
+export function Avatar({ ex }: { ex?: Exercise }) {
+  const src = exerciseImage(ex);
+  if (src) return <img src={src} alt="" loading="lazy" />;
+  const initials = (ex?.name ?? '?').split(/[\s-]+/).filter((w) => /^[a-z0-9]/i.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  return <span className="avatar-initials">{initials || '?'}</span>;
+}
 
 function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }: {
   session: Session; item: WorkoutItem; ex: Exercise; sets: SetLog[]; settings: Settings; onMenu: () => void; onSetDone: (r: Row) => void;
@@ -291,27 +288,30 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
             <img src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 96, height: 96, borderRadius: 16, objectFit: 'cover', background: 'var(--card-2)' }} />
           </button>
         ) : <ExerciseThumb ex={ex} size={96} />}
-        <div className="grow" style={{ paddingTop: 4 }}>
-          <h2 style={{ margin: 0, fontSize: '1.375rem', lineHeight: 1.15, letterSpacing: '-0.015em' }}>{ex.name}</h2>
-          <div className="muted" style={{ fontSize: '0.875rem', marginTop: 4 }}>
-            {[titleCase(ex.muscles.join(', ')), item.repsMin != null && `target ${item.repsMin}${item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''} reps`, ex.unilateral && 'each side'].filter(Boolean).join(' · ')}
+        <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: '1.3125rem', lineHeight: 1.15, letterSpacing: '-0.015em' }}>{ex.name}</h2>
+          <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{titleCase(ex.muscles.join(', '))}</div>
+          <div className="tags">
+            {item.repsMin != null && <span className="tag"><Icon name="flag" size={12} stroke={2.2} />{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
+            {ex.unilateral && <span className="tag">L | R</span>}
+            {item.supersetId && <span className="tag role"><Icon name="link" size={12} stroke={2.2} />SS</span>}
+            {(item.drops ?? 0) > 0 && <span className="tag drop">↓ {item.drops}</span>}
+            {ex.loadType !== 'weighted' && bw == null && <span className="tag warn"><Icon name="scale" size={12} stroke={2.2} />BW?</span>}
           </div>
-          {item.supersetId && <span className="badge accent" style={{ marginTop: 6 }}>Superset</span>}
-          {ex.loadType !== 'weighted' && bw == null && <div style={{ fontSize: '0.8125rem', color: 'var(--warn)', marginTop: 6 }}>Log your bodyweight to track total load.</div>}
         </div>
         <button className="icon-btn filled" aria-label="Exercise options" onClick={onMenu}><Icon name="more" /></button>
       </div>
-      {item.notes && <p className="muted" style={{ margin: '10px 2px 0', fontSize: '0.875rem' }}>📝 {item.notes}</p>}
+      <NoteLine value={item.notes} onSave={(notes) => save('sessions', { ...session, items: session.items.map((i) => (i.key === item.key ? { ...i, notes } : i)) })} />
 
       {/* set table */}
-      <div className="card" style={{ marginTop: 14, padding: '6px 8px' }}>
+      <div className="card" style={{ marginTop: 12, padding: '6px 8px' }}>
         <div className="set-grid set-head" data-effort={effortOn}>
-          <span>Set</span><span>{loadLabel}</span><span>Reps</span>{effortOn && <span>{settings.effortMode.toUpperCase()}</span>}<span />
+          <span>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <span>{settings.effortMode}</span>}<span />
         </div>
         {groups.map((g) => {
           const head = g[0];
           if (head.kind === 'working') workNo++;
-          const label = head.kind === 'warmup' ? `W${head.setNo}` : head.kind === 'drop' ? '↳' : String(workNo);
+          const label = head.kind === 'warmup' ? 'W' : head.kind === 'drop' ? '↓' : String(workNo);
           return (
             <Fragment key={rowId(head)}>
               {g.map((r) => {
@@ -350,28 +350,26 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         </div>
       </div>
 
-      {/* history */}
-      <div className="section-title">Last time</div>
-      <Link to={`/exercise/${ex.id}`} className="card pressable" style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}>
-        {prev?.sets.length ? (
-          <>
-            <div className="row" style={{ marginBottom: 6 }}>
-              <span className="grow muted" style={{ fontSize: '0.8125rem' }}>{prev.session ? relDay(prev.session.startedAt) : ''}</span>
-              <span style={{ color: 'var(--accent)', fontSize: '0.8125rem', fontWeight: 600 }}>History</span>
-              <Icon name="chevronRight" size={16} className="chev" />
+      {/* history: same grid as the inputs, without the boxes */}
+      <Link to={`/exercise/${ex.id}`} className="card pressable" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginTop: 10, padding: '8px 8px 6px' }}>
+        <div className="row" style={{ padding: '0 6px 4px' }}>
+          <Icon name="history" size={16} className="faint" />
+          <span className="grow muted" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{prev?.session ? relDay(prev.session.startedAt) : 'No history yet'}</span>
+          <Icon name="chart" size={16} className="faint" />
+          <Icon name="chevronRight" size={16} className="chev" />
+        </div>
+        {prev?.sets.sort(setOrder).map((l) => {
+          const e = settings.effortMode === 'rir' ? l.rir : l.rpe;
+          return (
+            <div key={l.id} className={'set-grid set-row ghost ' + l.kind} data-effort={effortOn}>
+              <span className="set-no num">{l.kind === 'warmup' ? 'W' : l.kind === 'drop' ? '↓' : l.setNo}{l.side !== 'both' && <small>{l.side === 'left' ? 'L' : 'R'}</small>}</span>
+              <span className="cell num">{l.loadKg != null ? fmtWeight(l.loadKg, unit, false) : '–'}</span>
+              <span className="cell num">{l.reps ?? '–'}</span>
+              {effortOn && <span className="cell num">{e != null ? fmtNum(e) : '–'}</span>}
+              <span />
             </div>
-            <div className="chips" style={{ flexWrap: 'wrap' }}>
-              {prev.sets.sort(setOrder).map((l) => (
-                <span key={l.id} className="badge num" style={{ minHeight: 26, fontSize: '0.8125rem' }}>
-                  {l.kind === 'warmup' ? 'W ' : l.kind === 'drop' ? '↳ ' : ''}{l.side !== 'both' ? l.side[0].toUpperCase() + ' ' : ''}
-                  {setText(l, unit, settings.effortMode)}
-                </span>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="row"><span className="grow muted">First time doing this one.</span><Icon name="chevronRight" size={16} className="chev" /></div>
-        )}
+          );
+        })}
       </Link>
 
       <WeightSheet open={!!weightFor} onClose={() => setWeightFor(null)} unit={unit} exercise={ex}
@@ -391,19 +389,36 @@ function SetCountButtons({ item, session }: { item: WorkoutItem; session: Sessio
   const change = (d: number) => save('sessions', { ...session, items: session.items.map((i) => (i.key === item.key ? { ...i, sets: Math.max(1, i.sets + d) } : i)) });
   return (
     <>
-      <button className="btn ghost" onClick={() => change(1)}><Icon name="plus" size={16} /> Add set</button>
-      {item.sets > 1 && <button className="btn ghost" style={{ color: 'var(--text-2)' }} onClick={() => change(-1)}><Icon name="minus" size={16} /> Remove</button>}
+      <button className="icon-btn filled" aria-label="Remove a set" onClick={() => change(-1)} disabled={item.sets <= 1}><Icon name="minus" size={18} /></button>
+      <span className="faint num" style={{ fontSize: '0.8125rem', minWidth: 48, textAlign: 'center' }}>{item.sets} sets</span>
+      <button className="icon-btn filled" aria-label="Add a set" onClick={() => change(1)} style={{ color: 'var(--accent)' }}><Icon name="plus" size={18} /></button>
     </>
   );
 }
 
-export function setText(l: SetLog, unit: Settings['unit'], mode: Settings['effortMode']) {
-  const load = l.loadType === 'weighted'
-    ? fmtWeight(l.loadKg, unit)
-    : l.loadType === 'bodyweight' ? (l.loadKg ? `BW+${fmtWeight(l.loadKg, unit)}` : 'BW') : `BW−${fmtWeight(l.loadKg, unit)}`;
-  const eff = mode === 'rir' ? (l.rir != null ? ` @${fmtNum(l.rir)} RIR` : '') : (l.rpe != null ? ` @${fmtNum(l.rpe)}` : '');
-  return `${load} × ${l.reps ?? '–'}${eff}`;
+/** Exercise note, editable in place (pencil). Saved to the session copy; finishing offers to keep it in the plan. */
+function NoteLine({ value, onSave }: { value?: string; onSave: (v?: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const commit = () => { setEditing(false); const v = draft.trim() || undefined; if (v !== value) onSave(v); };
+  if (editing) {
+    return (
+      <div className="note-line editing">
+        <Icon name="pencil" size={16} />
+        <textarea autoFocus rows={2} value={draft} placeholder="Seat 4, grip, cues…" aria-label="Exercise note"
+          onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); } }} />
+      </div>
+    );
+  }
+  return (
+    <button className="note-line pressable" onClick={() => { setDraft(value ?? ''); setEditing(true); }} aria-label={value ? `Edit note: ${value}` : 'Add note'}>
+      <Icon name="pencil" size={16} />
+      <span className={value ? '' : 'faint'}>{value || 'Note'}</span>
+    </button>
+  );
 }
+
 
 function RestBar() {
   const st = useRest();
@@ -421,7 +436,7 @@ function RestBar() {
         <div className="restbar-fill" style={{ transform: `scaleX(${pct})`, background: over ? 'var(--good)' : 'var(--accent)' }} />
         <div className="row" style={{ position: 'relative' }}>
           <div className="grow">
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)' }}>{over ? 'Rest done — go' : 'Rest'}</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)' }}>{over ? 'Go' : 'Rest'}</div>
             <div className="num" style={{ fontSize: '1.5rem', fontWeight: 750, letterSpacing: '-0.02em', color: over ? 'var(--good)' : 'var(--text)' }}>
               {countdown ? (over ? '+' : '') + fmtDuration(Math.abs(left) * 1000) : fmtDuration(elapsed * 1000)}
             </div>
@@ -449,12 +464,12 @@ function FinishSheet({ open, onClose, session, doneCount, onFinished }: { open: 
         </div>
         {differs ? (
           <>
-            <p style={{ margin: '4px 2px' }}>You changed this workout (exercises, order, sets or rest). Save the changes to your plan?</p>
-            <button className="btn primary lg block" onClick={() => go(true)}>Finish and update plan</button>
-            <button className="btn lg block" onClick={() => go(false)}>Finish, keep plan as it was</button>
+            <p className="muted" style={{ margin: '4px 2px' }}>Workout changed. Save to plan?</p>
+            <button className="btn primary lg block" onClick={() => go(true)}><Icon name="check" size={18} /> Save to plan</button>
+            <button className="btn lg block" onClick={() => go(false)}>Just this time</button>
           </>
         ) : <button className="btn good lg block" onClick={() => go(false)}>Finish workout</button>}
-        <p className="faint" style={{ margin: 0, fontSize: '0.8125rem', textAlign: 'center' }}>Unchecked sets are not saved.</p>
+        <p className="faint" style={{ margin: 0, fontSize: '0.8125rem', textAlign: 'center' }}>Unchecked sets are dropped.</p>
       </div>
     </Sheet>
   );

@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { confirmDialog } from '../components/Dialog';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Icon } from '../components/Icon';
@@ -37,8 +38,8 @@ export function PlansPage() {
         <div className="empty">
           <Icon name="dumbbell" size={40} />
           <h3>No plans yet</h3>
-          <p>A plan is a list of workouts you rotate through.</p>
-          <button className="btn primary" onClick={() => setNaming(true)}>Create a plan</button>
+          <p>Workouts you rotate through.</p>
+          <button className="btn primary" onClick={() => setNaming(true)}><Icon name="plus" size={18} /> Plan</button>
         </div>
       )}
       <NameSheet open={naming} title="New plan" placeholder="e.g. Upper / Lower" onClose={() => setNaming(false)}
@@ -80,8 +81,8 @@ export function PlanPage() {
       </header>
 
       {settings.activePlanId !== plan.id ? (
-        <button className="btn block" style={{ marginBottom: 12 }} onClick={() => updateSettings({ activePlanId: plan.id })}>Make active plan</button>
-      ) : <p className="muted" style={{ margin: '0 4px 12px', fontSize: '0.875rem' }}>Active plan · Home suggests the next workout in this order. Hold and drag to reorder.</p>}
+        <button className="btn block" style={{ marginBottom: 12 }} onClick={() => updateSettings({ activePlanId: plan.id })}><Icon name="flag" size={16} /> Set active</button>
+      ) : <div style={{ margin: '0 4px 12px' }}><span className="badge accent"><Icon name="flag" size={12} /> Active</span></div>}
 
       <SortableList items={items} onReorder={reorder}>
         <div className="stack">
@@ -103,13 +104,13 @@ export function PlanPage() {
         </div>
       </SortableList>
 
-      <button className="btn block" style={{ marginTop: 12 }} onClick={() => setNaming('workout')}><Icon name="plus" size={18} /> Add workout</button>
+      <button className="btn block" style={{ marginTop: 12 }} onClick={() => setNaming('workout')}><Icon name="plus" size={18} /> Workout</button>
       <button className="btn danger block" style={{ marginTop: 32 }} onClick={async () => {
-        if (!confirm(`Delete plan “${plan.name}”? Past workouts stay in your history.`)) return;
+        if (!(await confirmDialog({ title: `Delete “${plan.name}”?`, message: "Past workouts stay in your history.", confirm: "Delete plan", danger: true }))) return;
         await remove('plans', plan.id);
         if (settings.activePlanId === plan.id) await updateSettings({ activePlanId: undefined });
         nav('/plans');
-      }}>Delete plan</button>
+      }}><Icon name="trash" size={18} /> Delete</button>
 
       <NameSheet open={naming === 'workout'} title="New workout" placeholder="e.g. Push A" onClose={() => setNaming(null)}
         onSubmit={async (name) => { const w = await createWorkout(plan, name); nav(`/workouts/${w.id}`); }} />

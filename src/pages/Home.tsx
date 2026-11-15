@@ -1,17 +1,63 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router';
 import { Icon } from '../components/Icon';
 import { alive, db } from '../db/db';
 import { activeSession, nextWorkoutId, startSession } from '../db/gym';
 import { useSettings } from '../db/settings';
+import type { BodyweightEntry, Session } from '../db/types';
 import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
+import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
 
+const DAY = 86400000;
 const dayKey = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+const weekStart = (ts = Date.now()) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
 
+/** Home = dashboard of widgets. Each widget is a role-coloured tile; tap opens its page. */
 export function HomePage() {
+  const settings = useSettings();
+  const [weighing, setWeighing] = useState(false);
+  return (
+    <div className="page">
+      <header className="page-head">
+        <div className="grow">
+          <div className="muted" style={{ fontSize: '0.875rem', fontWeight: 560 }}>{fmtDate(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+          <h1>Today</h1>
+        </div>
+      </header>
+      <div className="widgets">
+        {settings.features.gym && <GymWidget />}
+        <WeightWidget onLog={() => setWeighing(true)} />
+        {settings.features.gym && <WeekWidget />}
+        <CalendarWidget />
+      </div>
+      <WeighInSheet open={weighing} onClose={() => setWeighing(false)} />
+    </div>
+  );
+}
+
+export function Widget({ role, icon, title, onOpen, action, wide, children }: {
+  role: 'gym' | 'weight' | 'food' | 'supp' | 'neutral'; icon: string; title: string; onOpen?: () => void; action?: ReactNode; wide?: boolean; children: ReactNode;
+}) {
+  return (
+    <section className={'widget' + (wide ? ' wide' : '')} data-role={role}>
+      <div className="widget-head">
+        <button className="widget-title pressable" onClick={onOpen} disabled={!onOpen}>
+          <span className="role-chip"><Icon name={icon} size={16} stroke={2} /></span>
+          <span>{title}</span>
+          {onOpen && wide && <Icon name="chevronRight" size={14} className="chev" />}
+        </button>
+        {action}
+      </div>
+      <div className="widget-body">{children}</div>
+    </section>
+  );
+}
+
+function GymWidget() {
   const nav = useNavigate();
   const settings = useSettings();
   const active = useLiveQuery(() => activeSession(), []);
@@ -21,121 +67,168 @@ export function HomePage() {
     const id = await nextWorkoutId(plan);
     return id ? db.workouts.get(id) : undefined;
   }, [plan]);
-  const lastWeigh = useLiveQuery(() => db.bodyweight.orderBy('at').reverse().filter(alive).first(), []);
-  const [weighing, setWeighing] = useState(false);
   const now = useTick(!!active, 1000);
-
-  const weighDue = !lastWeigh || now - lastWeigh.at > settings.weighInEveryDays * 86400000;
   const start = async (workoutId?: string) => {
     if (active) return nav(`/session/${active.id}`);
-    const w = workoutId ? await db.workouts.get(workoutId) : undefined;
-    const s = await startSession(w);
+    const s = await startSession(workoutId ? await db.workouts.get(workoutId) : undefined);
     nav(`/session/${s.id}`);
   };
-  const hello = new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening';
 
-  return (
-    <div className="page">
-      <header className="page-head">
-        <div className="grow">
-          <div className="muted" style={{ fontSize: '0.875rem', fontWeight: 560 }}>{fmtDate(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' })}</div>
-          <h1>{hello}</h1>
-        </div>
-      </header>
-
-      {active ? (
-        <Link to={`/session/${active.id}`} className="card pressable row" style={{ background: 'var(--accent)', color: 'var(--accent-text)', textDecoration: 'none', padding: 16 }}>
-          <div className="grow">
-            <div style={{ fontSize: '0.8125rem', fontWeight: 600, opacity: 0.85 }}>Workout in progress</div>
-            <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>{active.name}</div>
-          </div>
-          <div className="num" style={{ fontWeight: 750, fontSize: '1.375rem' }}>{fmtDuration(now - active.startedAt)}</div>
-          <Icon name="chevronRight" />
-        </Link>
-      ) : settings.features.gym && (
-        <div className="card" style={{ padding: 16 }}>
-          {next ? (
-            <>
-              <div className="muted" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Up next · {plan?.name}</div>
-              <div style={{ fontWeight: 750, fontSize: '1.375rem', letterSpacing: '-0.015em', margin: '2px 0 12px' }}>{next.name}</div>
-              <div className="row">
-                <button className="btn primary lg grow" onClick={() => start(next.id)}><Icon name="play" size={18} /> Start workout</button>
-                <button className="btn lg" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')} aria-label="Pick another workout">Other</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>Ready to train?</div>
-              <p className="muted" style={{ margin: '4px 0 12px', fontSize: '0.9375rem' }}>{plan ? 'Your plan has no workouts yet.' : 'Make a plan to get the next workout suggested here.'}</p>
-              <div className="row">
-                <button className="btn primary grow" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')}>{plan ? 'Add workouts' : 'Create a plan'}</button>
-                <button className="btn" onClick={() => start()}>Empty workout</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="row" style={{ marginTop: 8, gap: 8 }}>
-        <button className="card pressable grow row" style={{ border: 0, color: 'inherit', textAlign: 'left' }} onClick={() => setWeighing(true)}>
-          <span style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,181,71,.15)', color: 'var(--warn)' }}><Icon name="scale" size={20} /></span>
-          <span className="grow">
-            <span style={{ display: 'block', fontWeight: 650 }}>{lastWeigh ? fmtWeight(lastWeigh.kg, settings.unit) : 'Log weight'}</span>
-            <span className="muted" style={{ fontSize: '0.8125rem' }}>{weighDue ? (lastWeigh ? 'Weigh-in due' : 'No weigh-ins yet') : relDay(lastWeigh!.at)}</span>
-          </span>
-          {weighDue && <span className="badge" style={{ background: 'rgba(255,181,71,.15)', color: 'var(--warn)' }}>Due</span>}
+  if (active) {
+    return (
+      <Widget role="gym" icon="dumbbell" title="Live" wide onOpen={() => nav(`/session/${active.id}`)}>
+        <button className="row pressable plain" onClick={() => nav(`/session/${active.id}`)}>
+          <span className="grow big-label ellipsis">{active.name}</span>
+          <span className="num big-value">{fmtDuration(now - active.startedAt)}</span>
+          <span className="round-btn"><Icon name="chevronRight" /></span>
         </button>
-      </div>
-
-      <div className="section-title">Calendar</div>
-      <Calendar />
-
-      <WeighInSheet open={weighing} onClose={() => setWeighing(false)} />
-    </div>
+      </Widget>
+    );
+  }
+  return (
+    <Widget role="gym" icon="dumbbell" title={plan && alive(plan) ? plan.name : 'Gym'} wide onOpen={() => nav(plan ? `/plans/${plan.id}` : '/plans')}
+      action={<button className="icon-btn sm" aria-label="Empty workout" onClick={() => start()}><Icon name="plus" size={18} /></button>}>
+      {next ? (
+        <div className="row">
+          <div className="grow">
+            <div className="faint" style={{ fontSize: '0.75rem', fontWeight: 600 }}>NEXT</div>
+            <div className="big-label ellipsis">{next.name}</div>
+            <div className="muted" style={{ fontSize: '0.8125rem' }}>{next.items.length} ex · {next.items.reduce((a, i) => a + i.sets, 0)} sets</div>
+          </div>
+          <button className="round-btn lg" aria-label={`Start ${next.name}`} onClick={() => start(next.id)}><Icon name="play" size={22} /></button>
+        </div>
+      ) : (
+        <button className="row pressable plain" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')}>
+          <span className="grow muted">{plan ? 'Add a workout to this plan' : 'Create a plan'}</span>
+          <span className="round-btn"><Icon name="plus" /></span>
+        </button>
+      )}
+    </Widget>
   );
 }
 
-function Calendar() {
+function WeightWidget({ onLog }: { onLog: () => void }) {
+  const nav = useNavigate();
+  const settings = useSettings();
+  const recent = useLiveQuery(() => db.bodyweight.orderBy('at').reverse().filter(alive).limit(30).toArray(), []) ?? [];
+  const last = recent[0];
+  const due = !last || Date.now() - last.at > settings.weighInEveryDays * DAY;
+  const delta = last && recent[1] ? fromKg(last.kg - recent[1].kg, settings.unit) : null;
+  return (
+    <Widget role="weight" icon="scale" title="Weight" onOpen={() => nav('/weight')}
+      action={<button className="icon-btn sm" aria-label="Log weight" onClick={onLog}><Icon name="plus" size={18} /></button>}>
+      {last ? (
+        <>
+          <div className="row" style={{ alignItems: 'baseline', gap: 4 }}>
+            <span className="num big-value">{fmtWeight(last.kg, settings.unit, false)}</span>
+            <span className="muted" style={{ fontSize: '0.8125rem' }}>{settings.unit}</span>
+            {delta != null && Math.abs(delta) >= 0.05 && <span className="num delta">{delta > 0 ? '▲' : '▼'}{Math.abs(delta).toFixed(1)}</span>}
+          </div>
+          <MiniLine entries={recent} />
+          <div className={due ? 'due' : 'faint'} style={{ fontSize: '0.75rem', fontWeight: 600 }}>{due ? '● Due' : relDay(last.at)}</div>
+        </>
+      ) : (
+        <button className="plain pressable" onClick={onLog} style={{ textAlign: 'left' }}>
+          <div className="big-value faint">–</div>
+          <div className="due" style={{ fontSize: '0.75rem', fontWeight: 600 }}>● Due</div>
+        </button>
+      )}
+    </Widget>
+  );
+}
+
+function MiniLine({ entries }: { entries: BodyweightEntry[] }) {
+  const pts = entries.slice(0, 14).reverse();
+  if (pts.length < 2) return <div style={{ height: 28 }} />;
+  const vals = pts.map((p) => p.kg), min = Math.min(...vals), span = Math.max(...vals) - min || 1;
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(i / (pts.length - 1)) * 100},${26 - ((p.kg - min) / span) * 22}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none" aria-hidden style={{ margin: '4px 0' }}>
+      <path d={d} fill="none" stroke="var(--role)" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function WeekWidget() {
+  const nav = useNavigate();
+  const ws = weekStart().getTime();
+  const data = useLiveQuery(async () => {
+    const sessions = await db.sessions.where('startedAt').aboveOrEqual(ws).filter((s) => alive(s) && !!s.endedAt).toArray();
+    const ids = sessions.map((s) => s.id);
+    const sets = ids.length ? await db.sets.where('sessionId').anyOf(ids).filter((x) => alive(x) && !!x.doneAt && x.kind !== 'warmup').count() : 0;
+    return { sessions, sets };
+  }, [ws]);
+  const days = new Set((data?.sessions ?? []).map((s) => (new Date(s.startedAt).getDay() + 6) % 7));
+  const today = (new Date().getDay() + 6) % 7;
+  return (
+    <Widget role="gym" icon="chart" title="Week" onOpen={() => nav('/history')}>
+      <div className="row" style={{ alignItems: 'baseline', gap: 4 }}>
+        <span className="num big-value">{data?.sessions.length ?? 0}</span>
+        <span className="muted" style={{ fontSize: '0.8125rem' }}>workouts · {data?.sets ?? 0} sets</span>
+      </div>
+      <div className="week-dots" aria-label="Days trained this week">
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((l, i) => (
+          <span key={i} className={(days.has(i) ? 'on' : '') + (i === today ? ' today' : '')}>{l}</span>
+        ))}
+      </div>
+    </Widget>
+  );
+}
+
+function CalendarWidget() {
+  const [expanded, setExpanded] = useState(false);
   const [month, setMonth] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
   const [sel, setSel] = useState<string>();
   const nav = useNavigate();
   const settings = useSettings();
-  const start = new Date(month); start.setDate(1 - ((month.getDay() + 6) % 7)); // weeks start Monday
-  const end = new Date(start); end.setDate(start.getDate() + 42);
+
+  const start = expanded ? weekStart(month.getTime()) : weekStart();
+  const count = expanded ? 42 : 7;
+  const end = start.getTime() + count * DAY;
   const data = useLiveQuery(async () => {
     const [sessions, weights] = await Promise.all([
-      db.sessions.where('startedAt').between(start.getTime(), end.getTime()).filter((s) => alive(s) && !!s.endedAt).toArray(),
-      db.bodyweight.where('at').between(start.getTime(), end.getTime()).filter(alive).toArray(),
+      db.sessions.where('startedAt').between(start.getTime(), end).filter((s) => alive(s) && !!s.endedAt).toArray(),
+      db.bodyweight.where('at').between(start.getTime(), end).filter(alive).toArray(),
     ]);
     return { sessions, weights };
-  }, [month.getTime()]);
+  }, [start.getTime(), end]);
   const byDay = useMemo(() => {
-    const m = new Map<string, { sessions: NonNullable<typeof data>['sessions']; weights: NonNullable<typeof data>['weights'] }>();
+    const m = new Map<string, { sessions: Session[]; weights: BodyweightEntry[] }>();
     const get = (k: string) => m.get(k) ?? (m.set(k, { sessions: [], weights: [] }), m.get(k)!);
     data?.sessions.forEach((s) => get(dayKey(s.startedAt)).sessions.push(s));
     data?.weights.forEach((w) => get(dayKey(w.at)).weights.push(w));
     return m;
   }, [data]);
-  const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const days = Array.from({ length: count }, (_, i) => new Date(start.getTime() + i * DAY + 3600000)); // +1h: DST-safe
   const today = dayKey(Date.now());
   const selData = sel ? byDay.get(sel) : undefined;
   const shift = (n: number) => { const d = new Date(month); d.setMonth(d.getMonth() + n); setMonth(d); setSel(undefined); };
 
   return (
-    <div className="card" style={{ padding: '10px 10px 12px' }}>
-      <div className="row" style={{ marginBottom: 4 }}>
-        <button className="icon-btn" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronLeft" size={20} /></button>
-        <div className="grow" style={{ textAlign: 'center', fontWeight: 650 }}>{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div>
-        <button className="icon-btn" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" size={20} /></button>
-      </div>
+    <Widget role="neutral" icon="calendar" wide title={expanded ? month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'Calendar'}
+      action={
+        <div className="row" style={{ gap: 0 }}>
+          {expanded && <>
+            <button className="icon-btn sm" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronLeft" size={18} /></button>
+            <button className="icon-btn sm" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" size={18} /></button>
+          </>}
+          <button className="icon-btn sm" aria-label={expanded ? 'Collapse calendar' : 'Expand calendar'} aria-expanded={expanded}
+            onClick={() => { setExpanded(!expanded); setSel(undefined); const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setMonth(d); }}>
+            <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ type: 'spring', bounce: 0, duration: 0.3 }} style={{ display: 'grid' }}>
+              <Icon name="chevronDown" size={18} />
+            </motion.span>
+          </button>
+        </div>
+      }>
       <div className="cal">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} className="cal-dow">{d}</div>)}
         {days.map((d) => {
           const k = dayKey(d.getTime());
           const e = byDay.get(k);
           return (
-            <button key={k} className={'cal-day' + (d.getMonth() !== month.getMonth() ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '')}
-              onClick={() => setSel(k === sel ? undefined : k)} aria-label={d.toDateString() + (e?.sessions.length ? ', worked out' : '') + (e?.weights.length ? ', weighed in' : '')}>
+            <button key={k} className={'cal-day' + (expanded && d.getMonth() !== month.getMonth() ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '')}
+              onClick={() => setSel(k === sel ? undefined : k)}
+              aria-label={d.toDateString() + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '')}>
               <span className="num">{d.getDate()}</span>
               <span className="cal-dots">
                 {e?.sessions.length ? <i className="dot-workout" /> : null}
@@ -145,28 +238,30 @@ function Calendar() {
           );
         })}
       </div>
-      <div className="row" style={{ justifyContent: 'center', gap: 14, marginTop: 8, fontSize: '0.75rem', color: 'var(--text-2)' }}>
-        <span className="row" style={{ gap: 5 }}><i className="dot-workout" style={{ width: 7, height: 7, borderRadius: 4, display: 'inline-block' }} />Workout</span>
-        <span className="row" style={{ gap: 5 }}><i className="dot-weight" style={{ width: 7, height: 7, borderRadius: 4, display: 'inline-block' }} />Weigh-in</span>
-        {settings.features.food && <span className="row" style={{ gap: 5 }}><i className="dot-food" style={{ width: 7, height: 7, borderRadius: 4, display: 'inline-block' }} />Goals hit</span>}
-      </div>
-      {sel && (
-        <div className="stack" style={{ marginTop: 10, gap: 6 }}>
-          {selData?.sessions.map((s) => (
-            <button key={s.id} className="list-item pressable" style={{ background: 'var(--card-2)', borderRadius: 12 }} onClick={() => nav(`/session/${s.id}`)}>
-              <Icon name="dumbbell" size={18} /><span className="grow title">{s.name}</span>
-              <span className="muted num" style={{ fontSize: '0.8125rem' }}>{fmtDuration((s.endedAt ?? s.startedAt) - s.startedAt)}</span>
-            </button>
-          ))}
-          {selData?.weights.map((w) => (
-            <div key={w.id} className="list-item" style={{ background: 'var(--card-2)', borderRadius: 12 }}>
-              <Icon name="scale" size={18} /><span className="grow title">{fmtWeight(w.kg, settings.unit)}</span>
-              <span className="muted" style={{ fontSize: '0.8125rem' }}>{new Date(w.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+      <AnimatePresence initial={false}>
+        {sel && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ type: 'spring', bounce: 0, duration: 0.3 }} style={{ overflow: 'hidden' }}>
+            <div className="stack" style={{ gap: 6, paddingTop: 10 }}>
+              {selData?.sessions.map((s) => (
+                <button key={s.id} className="mini-row pressable" data-role="gym" onClick={() => nav(`/session/${s.id}`)}>
+                  <span className="role-chip"><Icon name="dumbbell" size={14} stroke={2} /></span>
+                  <span className="grow ellipsis">{s.name}</span>
+                  <span className="num muted">{fmtDuration((s.endedAt ?? s.startedAt) - s.startedAt)}</span>
+                </button>
+              ))}
+              {selData?.weights.map((w) => (
+                <button key={w.id} className="mini-row pressable" data-role="weight" onClick={() => nav('/weight')}>
+                  <span className="role-chip"><Icon name="scale" size={14} stroke={2} /></span>
+                  <span className="grow num">{fmtWeight(w.kg, settings.unit)}</span>
+                  <span className="muted">{new Date(w.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+                </button>
+              ))}
+              {!selData && <p className="faint" style={{ textAlign: 'center', margin: 4, fontSize: '0.875rem' }}>—</p>}
             </div>
-          ))}
-          {!selData && <p className="muted" style={{ textAlign: 'center', margin: 4, fontSize: '0.875rem' }}>Nothing logged.</p>}
-        </div>
-      )}
-    </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Widget>
   );
 }

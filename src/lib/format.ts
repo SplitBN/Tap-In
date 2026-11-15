@@ -1,5 +1,5 @@
 import { fromKg } from './science';
-import type { Unit } from '../db/types';
+import type { SetLog, Settings, Unit } from '../db/types';
 
 export function fmtWeight(kg: number | null | undefined, unit: Unit, withUnit = true) {
   if (kg == null) return '–';
@@ -33,3 +33,13 @@ export function relDay(ts: number) {
 }
 
 export const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+export const fmtNum = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
+
+export function setText(l: SetLog, unit: Settings['unit'], mode: Settings['effortMode']) {
+  const load = l.loadType === 'weighted'
+    ? fmtWeight(l.loadKg, unit)
+    : l.loadType === 'bodyweight' ? (l.loadKg ? `BW+${fmtWeight(l.loadKg, unit)}` : 'BW') : `BW−${fmtWeight(l.loadKg, unit)}`;
+  const eff = mode === 'rir' ? (l.rir != null ? ` @${fmtNum(l.rir)} RIR` : '') : (l.rpe != null ? ` @${fmtNum(l.rpe)}` : '');
+  return `${load} × ${l.reps ?? '–'}${eff}`;
+}
