@@ -6,7 +6,7 @@ compatibility_date = "2026-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "tap-in"
-database_id = "REPLACE_AFTER_wrangler_d1_create"  # filled in by setup; not a secret
+database_id = "94b1aaa7-d623-4e67-a14d-6a07eac2b2a0"  # filled in by setup; not a secret
 
 [triggers]
 crons = ["* * * * *"] # reminders: check every minute

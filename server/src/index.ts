@@ -66,7 +66,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (req.method === 'POST' && p === '/auth/register') {
     const { invite, name } = await body<{ invite?: string; name?: string }>();
     if (!invite || !name?.trim()) throw new HttpError(400, 'invite and name are required');
-    const bootstrap = env.BOOTSTRAP_INVITE && timingSafeEqual(invite, env.BOOTSTRAP_INVITE) && !(await env.DB.prepare('SELECT 1 FROM users LIMIT 1').first());
+    const bootstrap = env.BOOTSTRAP_INVITE && timingSafeEqual(normKey(invite).toUpperCase(), normKey(env.BOOTSTRAP_INVITE).toUpperCase()) && !(await env.DB.prepare('SELECT 1 FROM users LIMIT 1').first());
     const inv = bootstrap ? null : await env.DB.prepare('SELECT code, used_by FROM invites WHERE code = ?').bind(invite).first<{ code: string; used_by: string | null }>();
     if (!bootstrap && (!inv || inv.used_by)) throw new HttpError(403, 'Invite code is invalid or already used');
     const user: User = { id: crypto.randomUUID(), name: name.trim().slice(0, 40) };

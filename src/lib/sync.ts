@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { db, onLocalChange } from '../db/db';
 
 /** Production API. Set after `wrangler deploy` (also overridable in Settings → Account for dev). */
-export const DEFAULT_API = ''; // set to the Worker URL after the first `wrangler deploy`
+export const DEFAULT_API = 'https://tap-in.tap-in-server.workers.dev';
 const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const;
 
 interface Account { api: string; token: string; user: { id: string; name: string } }
