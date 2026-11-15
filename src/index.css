@@ -454,3 +454,34 @@ button.cell:active { transform: scale(0.96); }
 .thumb, .avatar img, .ex-hero, .stack-imgs > img { outline: 1px solid rgba(255, 255, 255, 0.1); outline-offset: -1px; }
 @media (prefers-color-scheme: light) { .thumb, .avatar img, .ex-hero, .stack-imgs > img { outline-color: rgba(0, 0, 0, 0.1); } }
 .sheet:focus { outline: none; } /* programmatic focus target for the dialog, not a control */
+
+/* ---------- food ---------- */
+.dot-food { background: var(--c-food); border-radius: 2px !important; } /* square: workout = dot, weigh-in = ring, goals hit = square */
+.date-pill {
+  display: flex; align-items: center; justify-content: space-between; padding: 4px; border-radius: 999px; background: var(--card);
+}
+.date-pill-label { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; font-weight: 700; font-size: 1.0625rem; color: var(--text); padding: 6px 14px; border-radius: 999px; }
+.date-pill-label:active { background: var(--card-2); }
+.meal-card { padding: 12px 14px; }
+.round-btn.sm-round { width: 34px; height: 34px; margin-left: 4px; }
+.entry-list { margin-top: 6px; }
+.entry-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 2px; border: 0; background: none;
+  color: var(--text); text-align: left; box-shadow: inset 0 1px 0 var(--line);
+}
+.entry-macros { display: flex; flex-direction: column; align-items: flex-end; flex: none; line-height: 1.25; }
+.entry-macros b { font-size: 1rem; font-weight: 750; }
+.entry-macros small { font-size: 0.75rem; color: var(--text-2); font-weight: 600; }
+.bar { height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 999px; transition: width 500ms var(--ease-out); }
+.macro-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.macro-tiles > div { display: flex; flex-direction: column; align-items: center; padding: 10px 4px; border-radius: 16px; background: var(--card-2); }
+.macro-tiles b { font-size: 1.375rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.macro-tiles span { font-size: 0.6875rem; font-weight: 650; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.grid-4 .input { padding: 0 8px; text-align: center; }
+.scan-box { position: relative; aspect-ratio: 4 / 3; border-radius: var(--r-lg); overflow: hidden; background: #000; }
+.scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame { position: absolute; inset: 30% 12%; border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.35), inset 0 0 0 2.5px rgba(255,255,255,.9); }
+.scan-state { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #fff; font-weight: 650; background: rgba(0,0,0,.45); }

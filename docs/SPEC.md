@@ -201,6 +201,10 @@ Every formula in the code links back here. **Verify each source before implement
 | 10RM / nRM | Invert the same formula from e1RM | As above |
 | Drop-set weight | Drop by 20% per step (the literature typically uses 20–25%), rounded to the nearest weight the equipment allows | Coleman et al. 2023, *Sports Med Open*, "Effects of Drop Sets on Skeletal Muscle Hypertrophy" (PMC10390395); background: Schoenfeld & Grgic 2018, *Strength Cond J* 40(6):95–98 |
 | Rest defaults | Compound 3 min, isolation 1.5 min (the user's choice). Longer rest supports strength and hypertrophy on compound lifts. | Schoenfeld et al. 2016, *JSCR* (1 vs 3 min rest) |
-| BMR | Mifflin-St Jeor × activity factor | Mifflin et al. 1990, *Am J Clin Nutr* |
+| BMR | Mifflin-St Jeor: 10·kg + 6.25·cm − 5·age + 5 (male) / −161 (female). **Verified.** | Mifflin et al. 1990, *Am J Clin Nutr* 51(2):241–247 |
+| Activity multiplier (PAL) | Mostly sitting 1.40, light 1.55, active 1.85, very active 2.20 (the lower bound / midpoints of FAO's categories). Starting estimate only. **Verified.** | FAO/WHO/UNU 2004, *Human energy requirements*, Table 5.3 (sedentary/light 1.40–1.69, active 1.70–1.99, vigorous 2.00–2.40) |
+| Protein default | 1.6 g/kg/day; the user can change it. **Verified.** | Morton et al. 2018, *Br J Sports Med* 52(6):376–384 (no further FFM gains above ~1.62 g/kg/day) |
+| Quick-add calories from macros | 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat (Atwater general factors), used only when kcal is left blank | Atwater general factors, as used in USDA food composition data |
+| Goal hit (calendar dot) | Calories within ±10% of target and protein ≥ 95% of target. Our own tolerance, not a published standard. | — (labelled as a rough guide) |
 | Weight trend | Exponentially smoothed moving average of weigh-ins | Walker, *The Hacker's Diet* (method); note this one is not peer-reviewed |
 | Adaptive maintenance | Intake − trend change × energy density. ~7700 kcal/kg is a simplification, and the true value varies with body composition. | Hall 2008, *Int J Obes*, "What is the required energy deficit per unit weight loss?" |

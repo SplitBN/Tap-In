@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weighInEveryDays: 7,
   features: {
     gym: true,
-    food: false, // not built yet
+    food: true,
     supplements: false, // not built yet
     checkins: false,
     progressPhotos: false,

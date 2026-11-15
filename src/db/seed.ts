@@ -7,6 +7,12 @@ export const EXERCISE_IMG_BASE = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exerc
 /** Loads the bundled exercise library (free-exercise-db) into IndexedDB once.
  *  Seed exercises are local reference data; they only enter the outbox if the user edits them. */
 export async function seedIfNeeded() {
+  // one-time: food logging shipped — switch it on for installs that stored food: false
+  if (!(await db.meta.get('foodOn'))) {
+    const s = await db.settings.get('settings');
+    if (s) await db.settings.put({ ...s, features: { ...s.features, food: true } });
+    await db.meta.put({ key: 'foodOn', value: true });
+  }
   const done = await db.meta.get('seedVersion');
   if (done && (done.value as number) >= SEED_VERSION) return;
   const { default: list } = await import('../data/exercises.json');

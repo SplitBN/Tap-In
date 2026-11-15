@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
-  Base, BodyweightEntry, Exercise, OutboxEntry, Plan, Session, SetLog, Settings, Workout,
+  Base, BodyweightEntry, DayStatus, Exercise, Food, FoodEntry, NutritionGoal, OutboxEntry, Plan, Session, SetLog, Settings, Workout,
 } from './types';
 
 export class TapInDB extends Dexie {
@@ -13,6 +13,10 @@ export class TapInDB extends Dexie {
   settings!: Table<Settings, string>;
   outbox!: Table<OutboxEntry, number>;
   meta!: Table<{ key: string; value: unknown }, string>;
+  foods!: Table<Food, string>;
+  entries!: Table<FoodEntry, string>;
+  days!: Table<DayStatus, string>;
+  goals!: Table<NutritionGoal, string>;
 
   constructor() {
     super('tapin-db'); // namespaced: all apps share the github.io origin
@@ -27,12 +31,18 @@ export class TapInDB extends Dexie {
       outbox: '++seq, table, recordId',
       meta: 'key',
     });
+    this.version(2).stores({
+      foods: 'id, barcode, name, updatedAt',
+      entries: 'id, date, foodId, at, updatedAt',
+      days: 'id, updatedAt',
+      goals: 'id, effectiveFrom, updatedAt',
+    });
   }
 }
 
 export const db = new TapInDB();
 
-export type SyncedTable = 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight';
+export type SyncedTable = 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals';
 
 export const uuid = () => crypto.randomUUID();
 

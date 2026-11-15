@@ -52,7 +52,7 @@ export function SettingsPage() {
         <Toggle label="Rest timer" on={f.restTimer} onChange={feat('restTimer')} />
         <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
         <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
-        <Toggle label="Food" sub="Coming next" on={f.food} onChange={feat('food')} disabled />
+        <Toggle label="Food" on={f.food} onChange={feat('food')} />
         <Toggle label="Supplements" sub="Coming soon" on={f.supplements} onChange={feat('supplements')} disabled />
         <Toggle label="Daily check-in" sub="Coming soon" on={f.checkins} onChange={feat('checkins')} disabled />
         <Toggle label="Progress photos" sub="Coming soon" on={f.progressPhotos} onChange={feat('progressPhotos')} disabled />

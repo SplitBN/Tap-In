@@ -30,6 +30,12 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
+            // barcode decoder wasm (zxing-wasm, loaded by barcode-detector) — keep scanning offline-capable
+            urlPattern: /^https:\/\/(cdn|fastly)\.jsdelivr\.net\/npm\/zxing-wasm/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'tapin-zxing', expiration: { maxEntries: 10 }, cacheableResponse: { statuses: [0, 200] } },
+          },
+          {
             // Exercise images from free-exercise-db (jsDelivr) — cache once seen, works offline after.
             urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/gh\/yuhonas\/free-exercise-db/,
             handler: 'CacheFirst',

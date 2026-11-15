@@ -1,6 +1,6 @@
 import { db } from '../db/db';
 
-const TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings'] as const;
+const TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings', 'foods', 'entries', 'days', 'goals'] as const;
 
 /** Full JSON export (custom/edited exercises only; the bundled library is re-seeded on import). */
 export async function exportJson() {

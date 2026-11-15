@@ -126,3 +126,57 @@ export interface OutboxEntry {
   recordId: string;
   at: number;
 }
+
+// ---------------- Food ----------------
+/** Nutrition per 100 g (foods) or per entry (snapshots). kcal + grams of macros. */
+export interface Macros { kcal: number; p: number; c: number; f: number; fiber?: number }
+export interface Portion { label: string; g: number }
+export type FoodSource = 'usda' | 'off' | 'custom' | 'quick';
+export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
+
+/** A food the user created or scanned (USDA foods live in the bundled JSON, not here). */
+export interface Food extends Base {
+  source: Exclude<FoodSource, 'usda' | 'quick'>;
+  name: string;
+  brand?: string;
+  barcode?: string;
+  per100: Macros;
+  portions: Portion[];
+}
+
+/** One logged item. Stores a nutrition snapshot so later food edits never rewrite history. */
+export interface FoodEntry extends Base {
+  date: string; // local YYYY-MM-DD
+  at: number;
+  meal: Meal;
+  source: FoodSource;
+  foodId?: string; // 'usda:<fdcId>' or a Food id; absent for quick add
+  name: string;
+  brand?: string;
+  grams?: number | null; // absent for quick add
+  qty?: number; // amount in the chosen unit
+  unit?: string; // 'g' or a portion label
+  n: Macros; // totals for this entry
+}
+
+/** Marks a day as fully logged — only complete days feed adaptive maintenance. */
+export interface DayStatus extends Base { complete: boolean } // id = YYYY-MM-DD
+
+export type Sex = 'male' | 'female';
+export type Activity = 'sedentary' | 'light' | 'active' | 'very';
+
+/** Nutrition targets, versioned by date so history keeps the goal that applied then. */
+export interface NutritionGoal extends Base {
+  effectiveFrom: string; // YYYY-MM-DD
+  sex: Sex;
+  birthYear: number;
+  heightCm: number;
+  activity: Activity;
+  rateKgPerWeek: number; // negative = lose
+  maintenanceKcal: number; // estimate or user override
+  maintenanceSource: 'formula' | 'manual' | 'adaptive';
+  kcal: number;
+  proteinG: number;
+  carbsG?: number | null;
+  fatG?: number | null;
+}

@@ -19,7 +19,8 @@ export function PlansPage() {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Plans</h1>
+        <h1>Gym</h1>
+        <button className="icon-btn filled" aria-label="History" onClick={() => nav('/history')}><Icon name="history" /></button>
         <button className="icon-btn filled" aria-label="New plan" onClick={() => setNaming(true)}><Icon name="plus" /></button>
       </header>
       {plans.length ? (

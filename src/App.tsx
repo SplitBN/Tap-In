@@ -12,6 +12,8 @@ import { SessionPage } from './pages/Session';
 import { SettingsPage } from './pages/Settings';
 import { WeightPage } from './pages/Weight';
 import { WorkoutEditorPage } from './pages/WorkoutEditor';
+import { FoodPage } from './pages/Food';
+import { NutritionPage } from './pages/Nutrition';
 
 type Tab = { to: string; icon: string; label: string; home?: boolean };
 
@@ -22,12 +24,13 @@ function TabBar() {
   const s = useSettings();
   if (pathname.startsWith('/session/')) return null;
   const left: Tab[] = [
-    ...(s.features.gym ? [{ to: '/plans', icon: 'dumbbell', label: 'Plans' }, { to: '/history', icon: 'history', label: 'History' }] : []),
+    ...(s.features.gym ? [{ to: '/plans', icon: 'dumbbell', label: 'Gym' }] : []),
+    ...(s.features.food ? [{ to: '/food', icon: 'food', label: 'Food' }] : []),
   ];
   const right: Tab[] = [{ to: '/weight', icon: 'scale', label: 'Weight' }, { to: '/settings', icon: 'settings', label: 'Settings' }];
   const tabs: Tab[] = [...left, { to: '/', icon: 'home', label: 'Home', home: true }, ...right];
   const isActive = (t: Tab) => (t.home ? pathname === '/' : pathname.startsWith(t.to)
-    || (t.to === '/plans' && pathname.startsWith('/workouts')) || (t.to === '/history' && pathname.startsWith('/exercise')));
+    || (t.to === '/plans' && /^\/(workouts|history|exercise)/.test(pathname)) || (t.to === '/food' && pathname.startsWith('/nutrition')));
   return (
     <div className="tabbar">
       <nav aria-label="Main">
@@ -74,6 +77,8 @@ export default function App() {
           <Route path="/exercise/:id" element={<ExerciseHistoryPage />} />
           <Route path="/weight" element={<WeightPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/food" element={<FoodPage />} />
+          <Route path="/nutrition" element={<NutritionPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
         </main>

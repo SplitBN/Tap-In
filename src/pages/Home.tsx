@@ -6,11 +6,13 @@ import { Icon } from '../components/Icon';
 import { alive, db } from '../db/db';
 import { activeSession, nextWorkoutId, startSession } from '../db/gym';
 import { useSettings } from '../db/settings';
-import type { BodyweightEntry, Session } from '../db/types';
+import type { BodyweightEntry, Macros, Session } from '../db/types';
 import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
 import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
+import { Summary, useDay } from './Food';
+import { dateKey, goalHit, sum } from '../lib/nutrition';
 import { exerciseImage } from '../db/seed';
 
 const DAY = 86400000;
@@ -31,6 +33,7 @@ export function HomePage() {
       </header>
       <div className="widgets">
         {settings.features.gym && <GymWidget />}
+        {settings.features.food && <FoodWidget />}
         <WeightWidget onLog={() => setWeighing(true)} />
         {settings.features.gym && <WeekWidget />}
         <CalendarWidget />
@@ -193,11 +196,21 @@ function CalendarWidget() {
   const count = expanded ? 42 : 7;
   const end = start.getTime() + count * DAY;
   const data = useLiveQuery(async () => {
-    const [sessions, weights] = await Promise.all([
+    const [sessions, weights, entries, goals] = await Promise.all([
       db.sessions.where('startedAt').between(start.getTime(), end).filter((s) => alive(s) && !!s.endedAt).toArray(),
       db.bodyweight.where('at').between(start.getTime(), end).filter(alive).toArray(),
+      db.entries.where('date').between(dateKey(start), dateKey(end - DAY), true, true).filter(alive).toArray(),
+      db.goals.orderBy('effectiveFrom').filter(alive).toArray(),
     ]);
-    return { sessions, weights };
+    // days where calories landed within ±10% of target and protein was met (see lib/nutrition goalHit)
+    const byDate = new Map<string, Macros[]>();
+    entries.forEach((e) => byDate.set(e.date, [...(byDate.get(e.date) ?? []), e.n]));
+    const hits = new Set<string>();
+    for (const [d, list] of byDate) {
+      const g = [...goals].reverse().find((x) => x.effectiveFrom <= d) ?? goals[0];
+      if (g && goalHit(sum(list), g.kcal, g.proteinG)) hits.add(d);
+    }
+    return { sessions, weights, hits };
   }, [start.getTime(), end]);
   const byDay = useMemo(() => {
     const m = new Map<string, { sessions: Session[]; weights: BodyweightEntry[] }>();
@@ -235,11 +248,12 @@ function CalendarWidget() {
           return (
             <button key={k} className={'cal-day' + (expanded && d.getMonth() !== month.getMonth() ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '')}
               onClick={() => setSel(k === sel ? undefined : k)}
-              aria-label={d.toDateString() + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '')}>
+              aria-label={d.toDateString() + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '') + (data?.hits.has(dateKey(d)) ? ', food goals hit' : '')}>
               <span className="num">{d.getDate()}</span>
               <span className="cal-dots">
                 {e?.sessions.length ? <i className="dot-workout" /> : null}
                 {e?.weights.length ? <i className="dot-weight" /> : null}
+                {data?.hits.has(dateKey(d)) ? <i className="dot-food" /> : null}
               </span>
             </button>
           );
@@ -285,5 +299,22 @@ function ImageStack({ ids, max = 4 }: { ids: string[]; max?: number }) {
       })}
       {ids.length > max && <span className="more">+{ids.length - max}</span>}
     </span>
+  );
+}
+
+function FoodWidget() {
+  const nav = useNavigate();
+  const today = dateKey();
+  const { goal, total, entries } = useDay(today);
+  return (
+    <Widget role="food" icon="food" title="Food" wide onOpen={() => nav('/food')}
+      action={<button className="icon-btn sm" aria-label="Log food" onClick={() => nav('/food')}><Icon name="plus" size={18} /></button>}>
+      {goal ? <Summary total={total} goal={goal} compact /> : (
+        <button className="row pressable plain" onClick={() => nav('/nutrition')}>
+          <span className="grow muted">{entries.length ? `${Math.round(total.kcal)} kcal logged` : 'Set goals to start'}</span>
+          <span className="round-btn"><Icon name="target" /></span>
+        </button>
+      )}
+    </Widget>
   );
 }
