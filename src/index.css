@@ -98,7 +98,9 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 /* App shell: the document never scrolls (iOS standalone mis-places fixed bars when it does — WebKit bug 237961).
    #root is a fixed full-screen layer and .app is the one scroll container. */
-html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+/* The document itself must be as tall as the screen: iOS standalone gives a viewport shorter by the status bar
+   (inner 797 vs screen 844) and paints nothing below the document, so a 100%-tall html leaves a black band. */
+html, body { height: var(--app-h, 100%); overflow: hidden; overscroll-behavior: none; }
 #root { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); } /* --app-h: real screen height in standalone, see lib/viewport.ts */
 button, input, select, textarea { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer; }

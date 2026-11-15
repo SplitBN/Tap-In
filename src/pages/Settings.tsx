@@ -104,7 +104,7 @@ function ViewportRow() {
   return (
     <div className="list-item">
       <span className="grow"><span className="title">Display</span>
-        <span className="sub num" style={{ display: 'block' }}>{v.standalone ? 'Home Screen' : 'Browser'} · inner {v.innerHeight} · visual {v.visualHeight} · screen {v.screenHeight} · app {v.appHeight}</span></span>
+        <span className="sub num" style={{ display: 'block' }}>{v.standalone ? 'Home Screen' : 'Browser'} · inner {v.innerHeight} · visual {v.visualHeight} · screen {v.screenHeight} · app {v.appHeight} · doc {v.docHeight}</span></span>
     </div>
   );
 }
