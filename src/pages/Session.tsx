@@ -45,7 +45,7 @@ export function SessionPage() {
   useWakeLock(live);
   const now = useTick(live, 1000);
 
-  const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | null>(null);
+  const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | null>(null);
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
 
   if (!session) return null;
@@ -131,6 +131,7 @@ export function SessionPage() {
 
       <Sheet open={menu === 'session'} onClose={() => setMenu(null)} title="Workout">
         <button className="menu-item" onClick={() => { setMenu(null); setPicking('add'); }}><Icon name="plus" />Add exercise</button>
+        <button className="menu-item" onClick={() => setMenu('details')}><Icon name="edit" />Name, date & time</button>
         <NotesField value={session.notes} onChange={(notes) => update({ notes })} />
         {!live && <button className="menu-item" onClick={() => update({ endedAt: null })}><Icon name="play" />Resume this workout</button>}
         <button className="menu-item danger" onClick={async () => {
@@ -141,6 +142,7 @@ export function SessionPage() {
         }}><Icon name="trash" />{live ? 'Discard workout' : 'Delete workout'}</button>
       </Sheet>
 
+      <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => update(p)} />
       <FinishSheet open={menu === 'finish'} onClose={() => setMenu(null)} session={session} doneCount={doneCount}
         onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); }} />
 
@@ -262,15 +264,36 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
     await save('sets', { ...base, ...patch, loadType: ex.loadType, bodyweightKg: ex.loadType === 'weighted' ? null : bw ?? null });
   };
 
-  const toggleDone = async (r: Row) => {
+  // Sets complete strictly in order: the first not-done row is the only live one.
+  const flat = groups.flat();
+  const activeIdx = flat.findIndex((r) => !byId.get(rowId(r))?.doneAt);
+  const lastDoneIdx = activeIdx === -1 ? flat.length - 1 : activeIdx - 1;
+  const [shakeId, setShakeId] = useState<string>();
+
+  /** Values a set would be saved with: what was typed, else the greyed suggestion. */
+  const resolved = (r: Row) => {
     const cur = byId.get(rowId(r));
-    if (cur?.doneAt) return upsert(r, { doneAt: null });
     const sug = suggestion(r);
-    await upsert(r, {
+    return {
       loadKg: cur?.loadKg ?? sug?.loadKg ?? (ex.loadType === 'weighted' ? null : 0),
       reps: cur?.reps ?? sug?.reps ?? item.repsMax ?? item.repsMin ?? null,
-      doneAt: Date.now(), inputUnit: unit,
-    });
+    };
+  };
+
+  const toggleDone = async (r: Row, idx: number) => {
+    const cur = byId.get(rowId(r));
+    if (cur?.doneAt) {
+      if (idx === lastDoneIdx) await upsert(r, { doneAt: null }); // only the latest set can be un-done
+      return;
+    }
+    if (idx !== activeIdx) return;
+    const v = resolved(r);
+    if (v.loadKg == null || v.reps == null) { // no partial sets
+      setShakeId(rowId(r)); setTimeout(() => setShakeId(undefined), 340);
+      if (v.loadKg == null) setWeightFor(r);
+      return;
+    }
+    await upsert(r, { ...v, doneAt: Date.now(), inputUnit: unit });
     onSetDone(r);
   };
 
@@ -285,11 +308,11 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         {img ? (
           <button onClick={() => setImgIdx((imgIdx + 1) % Math.max(1, ex.images.length))} aria-label="Next image"
             style={{ border: 0, padding: 0, background: 'none', flex: 'none' }}>
-            <img src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 96, height: 96, borderRadius: 16, objectFit: 'cover', background: 'var(--card-2)' }} />
+            <img src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 92, height: 92, borderRadius: 'var(--squircle)', objectFit: 'cover', background: 'var(--card-2)' }} />
           </button>
         ) : <ExerciseThumb ex={ex} size={96} />}
         <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: '1.3125rem', lineHeight: 1.15, letterSpacing: '-0.015em' }}>{ex.name}</h2>
+          <h2 style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.12, letterSpacing: '-0.025em', fontWeight: 800, color: 'var(--accent)' }}>{ex.name}</h2>
           <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{titleCase(ex.muscles.join(', '))}</div>
           <div className="tags">
             {item.repsMin != null && <span className="tag"><Icon name="flag" size={12} stroke={2.2} />{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
@@ -304,7 +327,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
       <NoteLine value={item.notes} onSave={(notes) => save('sessions', { ...session, items: session.items.map((i) => (i.key === item.key ? { ...i, notes } : i)) })} />
 
       {/* set table */}
-      <div className="card" style={{ marginTop: 12, padding: '6px 8px' }}>
+      <div style={{ marginTop: 14 }}>
         <div className="set-grid set-head" data-effort={effortOn}>
           <span>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <span>{settings.effortMode}</span>}<span />
         </div>
@@ -315,29 +338,38 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
           return (
             <Fragment key={rowId(head)}>
               {g.map((r) => {
+                const idx = flat.findIndex((x) => rowId(x) === rowId(r));
                 const l = byId.get(rowId(r));
                 const sug = suggestion(r);
                 const done = !!l?.doneAt;
-                const loadKg = l?.loadKg;
+                const state = done ? 'done' : idx === activeIdx ? 'active' : 'future';
+                const v = resolved(r);
+                const ready = state === 'active' && v.loadKg != null && v.reps != null;
+                const repsPh = sug?.reps != null ? String(sug.reps) : item.repsMin != null ? String(item.repsMax ?? item.repsMin) : '–';
                 return (
-                  <motion.div key={rowId(r)} layout="position" className={'set-grid set-row' + (done ? ' done' : '') + (r.kind !== 'working' ? ' ' + r.kind : '')} data-effort={effortOn}>
+                  <motion.div key={rowId(r)} layout="position" data-effort={effortOn}
+                    className={`set-grid set-row ${state} ${r.kind}` + (shakeId === rowId(r) ? ' shake' : '')}>
                     <span className="set-no num">
                       {r.side === 'right' && g.length > 1 ? '' : label}
                       {r.side !== 'both' && <small>{r.side === 'left' ? 'L' : 'R'}</small>}
                     </span>
-                    <button className="cell num" onClick={() => setWeightFor(r)} aria-label={`Weight, set ${label}`}>
-                      {loadKg != null ? fmtWeight(loadKg, unit, false) : <span className="ph">{sug?.loadKg != null ? fmtWeight(sug.loadKg, unit, false) : '–'}</span>}
+                    <button className="cell num" onClick={() => setWeightFor(r)} aria-label={`Weight, set ${label}`} tabIndex={state === 'future' ? -1 : 0}>
+                      {l?.loadKg != null ? fmtWeight(l.loadKg, unit, false) : <span className="ph">{sug?.loadKg != null ? fmtWeight(sug.loadKg, unit, false) : '–'}</span>}
                     </button>
-                    <input className="cell num" inputMode="numeric" enterKeyHint="done" aria-label={`Reps, set ${label}`}
-                      value={l?.reps ?? ''} placeholder={sug?.reps != null ? String(sug.reps) : item.repsMin != null ? String(item.repsMax ?? item.repsMin) : '–'}
-                      onChange={(e) => setReps(r, e.target.value)} onFocus={(e) => e.target.select()} />
+                    {state === 'future'
+                      ? <span className="cell num" style={{ display: 'grid', placeItems: 'center' }}>{repsPh}</span>
+                      : <input className="cell num" inputMode="numeric" enterKeyHint="done" aria-label={`Reps, set ${label}`}
+                          value={l?.reps ?? ''} placeholder={repsPh}
+                          onChange={(e) => setReps(r, e.target.value)} onFocus={(e) => e.target.select()} />}
                     {effortOn && (
-                      <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`Effort, set ${label}`}>
+                      <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`Effort, set ${label}`} tabIndex={state === 'future' ? -1 : 0}>
                         {effortVal(l) != null ? fmtNum(effortVal(l)!) : <span className="ph">{effortVal(sug) != null ? fmtNum(effortVal(sug)!) : '–'}</span>}
                       </button>
                     )}
-                    <button className={'check' + (done ? ' on' : '')} onClick={() => toggleDone(r)} aria-label={done ? `Undo set ${label}` : `Complete set ${label}`} aria-pressed={done}>
-                      <Icon name="check" size={20} stroke={2.6} />
+                    <button className={'check' + (done ? ' on' : ready ? ' ready' : '') + (state === 'future' ? ' locked' : '')}
+                      onClick={() => toggleDone(r, idx)} aria-pressed={done} disabled={state === 'future'}
+                      aria-label={done ? (idx === lastDoneIdx ? `Undo set ${label}` : `Set ${label} done`) : `Complete set ${label}`}>
+                      <Icon name="check" size={20} stroke={2.8} />
                     </button>
                   </motion.div>
                 );
@@ -351,7 +383,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
       </div>
 
       {/* history: same grid as the inputs, without the boxes */}
-      <Link to={`/exercise/${ex.id}`} className="card pressable" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginTop: 10, padding: '8px 8px 6px' }}>
+      <Link to={`/exercise/${ex.id}`} className="history-card pressable">
         <div className="row" style={{ padding: '0 6px 4px' }}>
           <Icon name="history" size={16} className="faint" />
           <span className="grow muted" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{prev?.session ? relDay(prev.session.startedAt) : 'No history yet'}</span>
@@ -500,5 +532,38 @@ export function ExerciseInfo({ ex }: { ex: Exercise }) {
       {ex.instructions?.length ? <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.55 }}>{ex.instructions.map((s, i) => <li key={i} style={{ marginBottom: 6 }}>{s}</li>)}</ol>
         : <p className="muted">No instructions for this exercise.</p>}
     </div>
+  );
+}
+
+const toLocalInput = (ts: number) => { const d = new Date(ts); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+
+/** Everything about a workout stays editable afterwards: name, start, duration. */
+function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClose: () => void; session: Session; onSave: (p: Partial<Session>) => void }) {
+  const [name, setName] = useState(session.name);
+  const [start, setStart] = useState(toLocalInput(session.startedAt));
+  const [mins, setMins] = useState('');
+  const [was, setWas] = useState(false);
+  if (open !== was) {
+    setWas(open);
+    if (open) {
+      setName(session.name); setStart(toLocalInput(session.startedAt));
+      setMins(session.endedAt ? String(Math.round((session.endedAt - session.startedAt) / 60000)) : '');
+    }
+  }
+  const save = () => {
+    const startedAt = new Date(start).getTime() || session.startedAt;
+    const m = parseInt(mins, 10);
+    onSave({ name: name.trim() || session.name, startedAt, ...(session.endedAt && m > 0 ? { endedAt: startedAt + m * 60000 } : {}) });
+    onClose();
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title="Details">
+      <div className="stack" style={{ gap: 14 }}>
+        <label className="field"><span>Name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field"><span>Start</span><input className="input" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+        {session.endedAt && <label className="field"><span>Duration (min)</span><input className="input num" inputMode="numeric" value={mins} onChange={(e) => setMins(e.target.value)} /></label>}
+        <button className="btn primary lg block" onClick={save}><Icon name="check" size={20} stroke={2.6} /> Save</button>
+      </div>
+    </Sheet>
   );
 }

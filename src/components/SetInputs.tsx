@@ -5,6 +5,7 @@ import type { EffortMode, Exercise, Unit } from '../db/types';
 import { defaultStepKg, fromKg, toKg } from '../lib/science';
 import { fmtNum, fmtWeight } from '../lib/format';
 import { Sheet } from './Sheet';
+import { Icon } from './Icon';
 import { Wheel } from './Wheel';
 
 const STEPS: Record<Unit, number[]> = { kg: [0.5, 1, 1.25, 2, 2.5, 5], lb: [1, 2.5, 5, 10] };
@@ -24,8 +25,11 @@ export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, la
   }, [unit, stepU]);
   const [cur, setCur] = useState<number>(0);
   const [was, setWas] = useState(false);
-  if (open !== was) { setWas(open); if (open) setCur(fromKg(valueKg ?? (exercise?.equipment === 'barbell' ? 20 : 0), unit)); }
+  const [typed, setTyped] = useState<string | null>(null);
+  if (open !== was) { setWas(open); if (open) { setCur(fromKg(valueKg ?? (exercise?.equipment === 'barbell' ? 20 : 0), unit)); setTyped(null); } }
   const index = nearestIndex(values, cur);
+  const typedNum = typed != null && typed.trim() !== '' ? parseFloat(typed) : NaN;
+  const final = Number.isFinite(typedNum) ? typedNum : values[index];
 
   const setStep = (s: number) => exercise && save('exercises', { ...exercise, stepKg: toKg(s, unit) });
   const setUnit = (u: Unit) => { if (u === unit) return; setCur(fromKg(toKg(cur, unit), u)); updateSettings({ unit: u }); };
@@ -36,17 +40,21 @@ export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, la
         <div className="seg" role="group" aria-label="Unit">
           {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>{u}</button>)}
         </div>
-        <Wheel values={values} index={index} onIndex={(i) => setCur(values[i])} format={(v) => fmtNum(v)} ariaLabel={`${label} in ${unit}`} />
+        <Wheel values={values} index={index} onIndex={(i) => { setCur(values[i]); setTyped(null); }} format={(v) => fmtNum(v)} ariaLabel={`${label} in ${unit}`} />
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span className="muted" style={{ fontSize: '0.8125rem' }}>Jump</span>
+          <span className="faint" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>±</span>
           <div className="chips">
             {STEPS[unit].map((s) => <button key={s} className="chip" aria-pressed={s === stepU} onClick={() => setStep(s)}>{fmtNum(s)}</button>)}
           </div>
         </div>
         <div className="row">
-          <button className="btn" onClick={() => { onDone(null); onClose(); }}>Clear</button>
-          <button className="btn primary grow lg" onClick={() => { onDone(toKg(values[index], unit)); onClose(); }}>
-            {fmtWeight(toKg(values[index], unit), unit)}
+          <button className="icon-btn filled" aria-label="Clear" onClick={() => { onDone(null); onClose(); }} style={{ color: 'var(--text-2)' }}><Icon name="close" size={18} /></button>
+          {/* exact entry: type any value (e.g. 23.75) — overrides the wheel */}
+          <input className="input num" inputMode="decimal" aria-label={`Type ${label.toLowerCase()}`} placeholder={fmtNum(values[index])}
+            value={typed ?? ''} onChange={(e) => setTyped(e.target.value.replace(',', '.'))}
+            style={{ width: 96, textAlign: 'center', borderRadius: 999, fontWeight: 700, fontSize: '1.125rem' }} />
+          <button className="btn primary grow lg" onClick={() => { onDone(toKg(final, unit)); onClose(); }} disabled={!(final >= 0)}>
+            <Icon name="check" size={20} stroke={2.6} /> {fmtWeight(toKg(final, unit), unit)}
           </button>
         </div>
       </div>

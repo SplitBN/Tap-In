@@ -11,6 +11,7 @@ import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
 import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
+import { exerciseImage } from '../db/seed';
 
 const DAY = 86400000;
 const dayKey = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
@@ -78,7 +79,10 @@ function GymWidget() {
     return (
       <Widget role="gym" icon="dumbbell" title="Live" wide onOpen={() => nav(`/session/${active.id}`)}>
         <button className="row pressable plain" onClick={() => nav(`/session/${active.id}`)}>
-          <span className="grow big-label ellipsis">{active.name}</span>
+          <span className="grow" style={{ minWidth: 0 }}>
+            <span className="big-label ellipsis" style={{ display: 'block', marginBottom: 8 }}>{active.name}</span>
+            <ImageStack ids={active.items.map((i) => i.exerciseId)} />
+          </span>
           <span className="num big-value">{fmtDuration(now - active.startedAt)}</span>
           <span className="round-btn"><Icon name="chevronRight" /></span>
         </button>
@@ -93,7 +97,8 @@ function GymWidget() {
           <div className="grow">
             <div className="faint" style={{ fontSize: '0.75rem', fontWeight: 600 }}>NEXT</div>
             <div className="big-label ellipsis">{next.name}</div>
-            <div className="muted" style={{ fontSize: '0.8125rem' }}>{next.items.length} ex · {next.items.reduce((a, i) => a + i.sets, 0)} sets</div>
+            <div className="muted" style={{ fontSize: '0.8125rem', marginBottom: 10 }}>{next.items.length} ex · {next.items.reduce((a, i) => a + i.sets, 0)} sets</div>
+            <ImageStack ids={next.items.map((i) => i.exerciseId)} />
           </div>
           <button className="round-btn lg" aria-label={`Start ${next.name}`} onClick={() => start(next.id)}><Icon name="play" size={22} /></button>
         </div>
@@ -143,8 +148,10 @@ function MiniLine({ entries }: { entries: BodyweightEntry[] }) {
   const vals = pts.map((p) => p.kg), min = Math.min(...vals), span = Math.max(...vals) - min || 1;
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(i / (pts.length - 1)) * 100},${26 - ((p.kg - min) / span) * 22}`).join(' ');
   return (
-    <svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none" aria-hidden style={{ margin: '4px 0' }}>
-      <path d={d} fill="none" stroke="var(--role)" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 100 28" width="100%" height="34" preserveAspectRatio="none" aria-hidden style={{ margin: '6px 0 4px' }}>
+      <defs><linearGradient id="wfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--role)" stopOpacity="0.35" /><stop offset="1" stopColor="var(--role)" stopOpacity="0" /></linearGradient></defs>
+      <path d={d + ' L100,28 L0,28 Z'} fill="url(#wfill)" stroke="none" />
+      <path d={d} fill="none" stroke="var(--role)" strokeWidth={2.2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -263,5 +270,20 @@ function CalendarWidget() {
         )}
       </AnimatePresence>
     </Widget>
+  );
+}
+
+/** Overlapping exercise images with a "+N" count, like a contact stack. */
+function ImageStack({ ids, max = 4 }: { ids: string[]; max?: number }) {
+  const exs = useLiveQuery(() => db.exercises.bulkGet(ids.slice(0, max)), [ids.join()]) ?? [];
+  if (!ids.length) return null;
+  return (
+    <span className="stack-imgs" aria-hidden>
+      {exs.map((e, i) => {
+        const src = exerciseImage(e);
+        return src ? <img key={i} src={src} alt="" /> : <span key={i} className="ini">{e?.name?.[0] ?? '?'}</span>;
+      })}
+      {ids.length > max && <span className="more">+{ids.length - max}</span>}
+    </span>
   );
 }
