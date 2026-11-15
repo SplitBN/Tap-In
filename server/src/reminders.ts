@@ -60,7 +60,14 @@ export async function runReminders(env: Env) {
   subs.results.forEach((s) => byUser.set(s.user_id, [...(byUser.get(s.user_id) ?? []), s]));
 
   let sent = 0; const dbg: string[] = [];
-  for (const [userId, devices] of byUser) {
+  // One pass per (user, timezone): each device is reminded at its own local time (a phone abroad, a stale sub).
+  const groups: [string, typeof subs.results][] = [];
+  for (const [userId, all] of byUser) {
+    const byTz = new Map<string, typeof subs.results>();
+    all.forEach((d) => byTz.set(d.tz || 'UTC', [...(byTz.get(d.tz || 'UTC') ?? []), d]));
+    byTz.forEach((devs) => groups.push([userId, devs]));
+  }
+  for (const [userId, devices] of groups) {
     const tz = devices[0].tz || 'UTC';
     const now = localNow(tz);
     const due: { key: string; title: string; body: string }[] = [];
@@ -87,7 +94,7 @@ export async function runReminders(env: Env) {
 
     dbg.push(`${tz} ${now.date} ${now.time}: ${sups.length} supps, ${due.length} due`);
     for (const d of due) {
-      if (!(await once(env, userId, d.key))) continue;
+      if (!(await once(env, userId, `${d.key}@${tz}`))) continue; // per timezone group; the notification tag stays shared
       const group = d.key.startsWith('supp:') ? 'supps' : 'weight';
       for (const dev of devices) {
         try { await sendPush(env, dev, { title: d.title, body: d.body, url: `./#/${group}`, tag: d.key }); sent++; }
