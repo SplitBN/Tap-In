@@ -7,6 +7,7 @@ import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db, remove, save } from '../db/db';
 import { createPlan, createWorkout, startSession, activeSession } from '../db/gym';
+import { moveItem } from './Session';
 import { updateSettings, useSettings } from '../db/settings';
 import type { Plan } from '../db/types';
 
@@ -60,6 +61,7 @@ export function PlanPage() {
     return Object.fromEntries(ex.filter(Boolean).map((e) => [e!.id, e!.name]));
   }, [workouts]) ?? {};
   const [naming, setNaming] = useState<'workout' | 'rename' | null>(null);
+  const [ordering, setOrdering] = useState(false);
 
   if (!plan) return null;
   const items = workouts.map((w) => ({ key: w.id, w }));
@@ -77,6 +79,7 @@ export function PlanPage() {
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav('/plans')}><Icon name="chevronLeft" /></button>
         <h1 className="small ellipsis">{plan.name}</h1>
+        {items.length > 1 && <button className="icon-btn" aria-label={ordering ? 'Done reordering' : 'Reorder workouts'} aria-pressed={ordering} onClick={() => setOrdering(!ordering)} style={ordering ? { color: 'var(--accent)' } : undefined}><Icon name={ordering ? 'check' : 'swap'} size={20} style={{ rotate: ordering ? '0deg' : '90deg' }} /></button>}
         <button className="icon-btn" aria-label="Rename" onClick={() => setNaming('rename')}><Icon name="edit" size={20} /></button>
       </header>
 
@@ -86,7 +89,7 @@ export function PlanPage() {
 
       <SortableList items={items} onReorder={reorder}>
         <div className="stack">
-          {items.map(({ key, w }) => (
+          {items.map(({ key, w }, i) => (
             <SortableItem key={key} id={key} className="card">
               <div className="row">
                 <Link to={`/workouts/${w.id}`} className="grow" style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -95,9 +98,16 @@ export function PlanPage() {
                     {w.items.length ? w.items.map((i) => exNames[i.exerciseId] ?? '…').join(' · ') : 'No exercises yet'}
                   </div>
                 </Link>
-                <button className="icon-btn filled" aria-label={`Start ${w.name}`} onClick={() => start(w.id)} style={{ color: 'var(--accent)' }}>
-                  <Icon name="play" size={18} />
-                </button>
+                {ordering ? (
+                  <>
+                    <button className="icon-btn filled" aria-label={`Move ${w.name} up`} disabled={i === 0} onClick={() => reorder(moveItem(items, i, -1))}><Icon name="chevronUp" size={18} /></button>
+                    <button className="icon-btn filled" aria-label={`Move ${w.name} down`} disabled={i === items.length - 1} onClick={() => reorder(moveItem(items, i, 1))}><Icon name="chevronDown" size={18} /></button>
+                  </>
+                ) : (
+                  <button className="icon-btn filled" aria-label={`Start ${w.name}`} onClick={() => start(w.id)}>
+                    <Icon name="play" size={18} />
+                  </button>
+                )}
               </div>
             </SortableItem>
           ))}
@@ -130,7 +140,7 @@ export function NameSheet({ open, onClose, onSubmit, title, placeholder, initial
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       <form className="stack" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); go(); }}>
-        <input className="input" value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} autoFocus enterKeyHint="done" />
+        <input className="input" value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={title} autoFocus enterKeyHint="done" />
         <button className="btn primary lg block" disabled={!v.trim()}>Save</button>
       </form>
     </Sheet>

@@ -14,6 +14,7 @@ import type { Exercise, Workout, WorkoutItem } from '../db/types';
 import { fmtDuration } from '../lib/format';
 import { defaultRestSec } from '../lib/science';
 import { NameSheet } from './Plans';
+import { moveItem } from './Session';
 
 export function WorkoutEditorPage() {
   const { id } = useParams();
@@ -90,11 +91,13 @@ export function WorkoutEditorPage() {
               {editIdx < workout.items.length - 1 && (
                 <button className="menu-item" onClick={() => setItems(toggleSupersetWithNext(workout.items, editIdx))}>
                   <Icon name={editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'unlink' : 'link'} />
-                  {editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'Unlink from next exercise' : `Superset with ${exMap[workout.items[editIdx + 1].exerciseId]?.name ?? 'next'}`}
+                  <span className="grow ellipsis">{editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'Unlink superset' : `Superset + ${exMap[workout.items[editIdx + 1].exerciseId]?.name ?? 'next'}`}</span>
                 </button>
               )}
-              <button className="menu-item" onClick={() => { setPicking({ replaceKey: editing.key }); setEditKey(undefined); }}><Icon name="swap" />Replace exercise</button>
-              <button className="menu-item danger" onClick={() => { setItems(workout.items.filter((i) => i.key !== editing.key)); setEditKey(undefined); }}><Icon name="trash" />Remove from workout</button>
+              {editIdx > 0 && <button className="menu-item" onClick={() => setItems(moveItem(workout.items, editIdx, -1))}><Icon name="chevronUp" />Move up</button>}
+              {editIdx < workout.items.length - 1 && <button className="menu-item" onClick={() => setItems(moveItem(workout.items, editIdx, 1))}><Icon name="chevronDown" />Move down</button>}
+              <button className="menu-item" onClick={() => { setPicking({ replaceKey: editing.key }); setEditKey(undefined); }}><Icon name="swap" />Replace</button>
+              <button className="menu-item danger" onClick={() => { setItems(workout.items.filter((i) => i.key !== editing.key)); setEditKey(undefined); }}><Icon name="trash" />Remove</button>
             </div>
           </>
         )}

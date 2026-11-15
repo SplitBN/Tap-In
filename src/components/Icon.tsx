@@ -10,6 +10,7 @@ const P: Record<string, string> = {
   chevronRight: 'M9 6l6 6-6 6',
   chevronLeft: 'M15 6l-6 6 6 6',
   chevronDown: 'M6 9l6 6 6-6',
+  chevronUp: 'M6 15l6-6 6 6',
   close: 'M6 6l12 12M18 6 6 18',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
@@ -34,10 +35,10 @@ const P: Record<string, string> = {
   chart: 'M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6',
 };
 
-export function Icon({ name, size = 22, stroke = 1.8, className }: { name: keyof typeof P | string; size?: number; stroke?: number; className?: string }) {
+export function Icon({ name, size = 22, stroke = 1.8, className, style }: { name: keyof typeof P | string; size?: number; stroke?: number; className?: string; style?: React.CSSProperties }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className} style={style}>
       <path d={P[name] ?? ''} />
     </svg>
   );

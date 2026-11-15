@@ -34,7 +34,7 @@ export function HistoryPage() {
             </Link>
           ))}
         </div>
-      ) : <div className="empty"><Icon name="history" size={40} /><h3>No workouts yet</h3><p>Finished workouts show up here.</p></div>}
+      ) : <div className="empty"><Icon name="history" size={40} /><h3>No workouts yet</h3><p>Finished workouts land here.</p><Link to="/" className="btn primary"><Icon name="play" size={18} /> Start one</Link></div>}
     </div>
   );
 }

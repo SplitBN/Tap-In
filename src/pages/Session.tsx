@@ -115,8 +115,16 @@ export function SessionPage() {
               <button className="menu-item" onClick={() => { setMenu(null); setPicking('replace'); }}><Icon name="swap" />Replace</button>
               <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How-to</button>
               <button className="menu-item" onClick={() => setMenu('editEx')}><Icon name="edit" />Edit exercise</button>
+              {curIdx > 0 && <button className="menu-item" onClick={() => setItems(moveItem(items, curIdx, -1))}><Icon name="chevronLeft" />Move left</button>}
+              {curIdx < items.length - 1 && <button className="menu-item" onClick={() => setItems(moveItem(items, curIdx, 1))}><Icon name="chevronRight" />Move right</button>}
               <button className="menu-item danger" onClick={async () => {
-                for (const s of sets.filter((x) => x.itemKey === current.key)) await remove('sets', s.id);
+                const mine = sets.filter((x) => x.itemKey === current.key);
+                const doneN = mine.filter((x) => x.doneAt).length;
+                if (doneN) {
+                  setMenu(null);
+                  if (!(await confirmDialog({ title: `Remove ${ex?.name ?? 'exercise'}?`, message: `Its ${doneN} logged set${doneN === 1 ? '' : 's'} will be deleted.`, confirm: 'Remove exercise', danger: true }))) return;
+                }
+                for (const s of mine) await remove('sets', s.id);
                 setItems(items.filter((i) => i.key !== current.key)); setMenu(null);
               }}><Icon name="trash" />Remove</button>
             </div>
@@ -308,7 +316,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         {img ? (
           <button onClick={() => setImgIdx((imgIdx + 1) % Math.max(1, ex.images.length))} aria-label="Next image"
             style={{ border: 0, padding: 0, background: 'none', flex: 'none' }}>
-            <img src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 92, height: 92, borderRadius: 'var(--squircle)', objectFit: 'cover', background: 'var(--card-2)' }} />
+            <img className="ex-hero" src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 92, height: 92, borderRadius: 'var(--squircle)', objectFit: 'cover', background: 'var(--card-2)' }} />
           </button>
         ) : <ExerciseThumb ex={ex} size={96} />}
         <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
@@ -566,4 +574,13 @@ function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClo
       </div>
     </Sheet>
   );
+}
+
+/** Single-pointer alternative to drag reordering (WCAG 2.5.7). */
+export function moveItem<T>(list: T[], i: number, d: number): T[] {
+  const j = i + d;
+  if (j < 0 || j >= list.length) return list;
+  const next = [...list];
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
 }

@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { MotionConfig, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router';
 import { DialogHost } from './components/Dialog';
@@ -60,8 +60,10 @@ export default function App() {
   }, []);
   if (!ready) return <div className="app" />;
   return (
+    <MotionConfig reducedMotion="user">
     <HashRouter>
       <div className="app">
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/plans" element={<PlansPage />} />
@@ -74,10 +76,12 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
+        </main>
         <TabBar />
         <ScrollReset />
         <DialogHost />
       </div>
     </HashRouter>
+    </MotionConfig>
   );
 }
