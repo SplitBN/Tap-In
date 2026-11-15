@@ -65,6 +65,9 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
     <HashRouter>
+      {/* .shell is the full-screen frame; bars live in it (absolute), not in the page and not position:fixed,
+          because iOS standalone mis-places fixed bars (WebKit bug 237961). .app is the only scroller. */}
+      <div className="shell">
       <div className="app">
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Routes>
@@ -82,9 +85,10 @@ export default function App() {
           <Route path="*" element={<HomePage />} />
         </Routes>
         </main>
-        <TabBar />
         <ScrollReset />
-        <DialogHost />
+      </div>
+      <TabBar />
+      <DialogHost />
       </div>
     </HashRouter>
     </MotionConfig>

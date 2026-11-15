@@ -55,6 +55,9 @@ export function keyToDate(key: string) {
   return new Date(y, m - 1, d);
 }
 
-/** Calorie goal counts as hit within ±10% of target (our own tolerance, not a published standard). */
-export const goalHit = (eaten: Macros, kcal: number, proteinG: number) =>
-  eaten.kcal > 0 && Math.abs(eaten.kcal - kcal) <= kcal * 0.1 && eaten.p >= proteinG * 0.95;
+/** Goals hit: calories within ±10% of target and protein ≥ 95% of target — each only if that target is set
+ *  (our own tolerance, not a published standard). No targets set → never "hit". */
+export const goalHit = (eaten: Macros, kcal: number | null, proteinG: number | null) =>
+  eaten.kcal > 0 && (kcal != null || proteinG != null)
+  && (kcal == null || Math.abs(eaten.kcal - kcal) <= kcal * 0.1)
+  && (proteinG == null || eaten.p >= proteinG * 0.95);

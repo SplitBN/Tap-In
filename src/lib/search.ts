@@ -76,12 +76,15 @@ function wordCost(w: string, tokens: string[]) {
 /** Match score for a query against an item's searchable text (lower = better; null = no match). */
 export function matchScore(queryWords: string[], tokens: string[], nameLength: number): number | null {
   if (!queryWords.length) return null;
-  let total = 0;
+  // forgiving: with 2–3 words one may be missing, with 4+ two may — each miss costs more than any typo
+  const allowedMisses = queryWords.length >= 4 ? 2 : queryWords.length >= 2 ? 1 : 0;
+  let total = 0; let misses = 0;
   for (const w of queryWords) {
     const c = wordCost(w, tokens);
-    if (c === Infinity) return null;
+    if (c === Infinity) { if (++misses > allowedMisses) return null; total += 4; continue; }
     total += c;
   }
+  if (misses === queryWords.length) return null;
   return total + nameLength / 60; // prefer shorter, more specific names on ties
 }
 
@@ -94,14 +97,22 @@ export function usageBoost(u: { n: number; last: number } | undefined) {
 
 /** Generic ranker. `tokensOf` should be cached by the caller for big lists. */
 export function rank<T>(items: T[], query: string, opts: {
-  tokensOf: (it: T) => string[]; nameLength: (it: T) => number; keyOf: (it: T) => string;
+  /** one token list, or several fields (e.g. Hebrew name, English name) scored separately — best field wins */
+  tokensOf: (it: T) => string[] | string[][]; nameLength: (it: T) => number; keyOf: (it: T) => string;
   usage?: Map<string, { n: number; last: number }>; bias?: (it: T) => number; limit?: number;
 }): T[] {
   const words = tokenize(query);
   if (!words.length) return [];
   const out: [number, T][] = [];
   for (const it of items) {
-    const m = matchScore(words, opts.tokensOf(it), opts.nameLength(it));
+    const t = opts.tokensOf(it);
+    let m: number | null = null;
+    if (Array.isArray(t[0])) {
+      for (const field of t as string[][]) {
+        const s = matchScore(words, field, field.join(' ').length);
+        if (s != null && (m == null || s < m)) m = s;
+      }
+    } else m = matchScore(words, t as string[], opts.nameLength(it));
     if (m == null) continue;
     out.push([m + (opts.bias?.(it) ?? 0) - usageBoost(opts.usage?.get(opts.keyOf(it))), it]);
   }

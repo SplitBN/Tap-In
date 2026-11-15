@@ -131,12 +131,20 @@ export interface OutboxEntry {
 /** Nutrition per 100 g (foods) or per entry (snapshots). kcal + grams of macros. */
 export interface Macros { kcal: number; p: number; c: number; f: number; fiber?: number }
 export interface Portion { label: string; g: number }
-export type FoodSource = 'usda' | 'moh' | 'off' | 'custom' | 'quick';
+export type FoodSource = 'usda' | 'moh' | 'off' | 'custom' | 'recipe' | 'quick';
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
 
-/** A food the user created or scanned (USDA foods live in the bundled JSON, not here). */
+export interface Ingredient { foodKey: string; name: string; grams: number; per100: Macros }
+
+/** A food the user created, scanned, or a recipe (bundled databases live in JSON, not here). */
 export interface Food extends Base {
-  source: Exclude<FoodSource, 'usda' | 'quick'>;
+  source: Exclude<FoodSource, 'usda' | 'moh' | 'quick'>;
+  /** per100 is per 100 g, or per 100 ml for liquids */
+  unitBase?: 'g' | 'ml';
+  /** recipes: the ingredients and how many servings the whole batch makes (per100 is derived) */
+  ingredients?: Ingredient[];
+  servings?: number;
+  cookedG?: number | null; // weight after cooking, if weighed (water loss/gain)
   name: string;
   brand?: string;
   barcode?: string;
@@ -175,8 +183,8 @@ export interface NutritionGoal extends Base {
   rateKgPerWeek: number; // negative = lose
   maintenanceKcal: number; // estimate or user override
   maintenanceSource: 'formula' | 'manual' | 'adaptive';
-  kcal: number;
-  proteinG: number;
+  kcal: number | null; // optional: track without a calorie target
+  proteinG: number | null; // optional
   carbsG?: number | null;
   fatG?: number | null;
 }

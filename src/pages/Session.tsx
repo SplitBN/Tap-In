@@ -3,6 +3,7 @@ import { confirmDialog } from '../components/Dialog';
 import { AnimatePresence, motion } from 'motion/react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
+import { createPortal } from 'react-dom';
 import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/ExercisePicker';
 import { Icon } from '../components/Icon';
 import { ItemSettings, normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
@@ -464,12 +465,13 @@ function RestBar() {
   const st = useRest();
   const now = useTick(!!st, 250);
   if (!st) return null;
+  const shell = document.querySelector(".shell");
   const elapsed = (now - st.startedAt) / 1000;
   const countdown = st.targetSec != null;
   const left = countdown ? st.targetSec! - elapsed : 0;
   const over = countdown && left <= 0;
   const pct = countdown ? Math.min(1, elapsed / Math.max(1, st.targetSec!)) : 0;
-  return (
+  const bar = (
     <AnimatePresence>
       <motion.div className="restbar" initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
         transition={{ type: 'spring', bounce: 0, duration: 0.35 }} role="timer" aria-live="off">
@@ -490,6 +492,7 @@ function RestBar() {
       </motion.div>
     </AnimatePresence>
   );
+  return shell ? createPortal(bar, shell) : bar;
 }
 
 function FinishSheet({ open, onClose, session, doneCount, onFinished }: { open: boolean; onClose: () => void; session: Session; doneCount: number; onFinished: () => void }) {

@@ -6,7 +6,8 @@ import { rank, tokenize } from '../lib/search';
 /** Unified view of anything you can log: bundled databases and your own/scanned foods. */
 export interface FoodItem {
   key: string; // 'usda:<fdcId>', 'moh:<code>', 'il:<barcode>' or a Food id
-  source: 'usda' | 'moh' | 'off' | 'custom';
+  source: 'usda' | 'moh' | 'off' | 'custom' | 'recipe';
+  unitBase?: 'g' | 'ml';
   name: string;
   alt?: string; // second-language name (English for Hebrew items), searchable
   brand?: string;
@@ -56,7 +57,7 @@ export function loadFoods(): Promise<Bundled> {
   return loading;
 }
 
-export const foodToItem = (f: Food): FoodItem => ({ key: f.id, source: f.source, name: f.name, brand: f.brand, barcode: f.barcode, per100: f.per100, portions: f.portions });
+export const foodToItem = (f: Food): FoodItem => ({ key: f.id, source: f.source, name: f.name, brand: f.brand, barcode: f.barcode, per100: f.per100, portions: f.portions, unitBase: f.unitBase });
 
 export async function getItem(key: string): Promise<FoodItem | undefined> {
   if (/^(usda|moh|il):/.test(key)) return (await loadFoods()).byKey.get(key);
@@ -66,10 +67,17 @@ export async function getItem(key: string): Promise<FoodItem | undefined> {
 
 const PROCESSED = /Sausages and Luncheon|Fast Foods|Restaurant Foods|Baby Foods|Meals, Entrees|Snacks|American Indian/;
 const HEBREW = /\p{Script=Hebrew}/u;
-const tokenCache = new WeakMap<FoodItem, string[]>();
+/** Each language's name is its own field (brand appended to both), so word positions aren't skewed
+ *  by the other language: "banana" matches "Banana, raw" at position 0, not after five Hebrew words. */
+const tokenCache = new WeakMap<FoodItem, string[][]>();
 const tokensOf = (it: FoodItem) => {
   let t = tokenCache.get(it);
-  if (!t) { t = tokenize(`${it.name} ${it.alt ?? ''} ${it.brand ?? ''}`); tokenCache.set(it, t); }
+  if (!t) {
+    const brand = it.brand ? tokenize(it.brand) : [];
+    t = [[...tokenize(it.name), ...brand]];
+    if (it.alt) t.push([...tokenize(it.alt), ...brand]);
+    tokenCache.set(it, t);
+  }
   return t;
 };
 
@@ -162,4 +170,37 @@ export async function lookupBarcode(code: string): Promise<{ food?: Food; status
   if (!name || per100.kcal == null || per100.p == null || per100.c == null || per100.f == null) return { status: 'incomplete', draft };
   const food = await save('foods', newRecord({ source: 'off' as const, name, brand, barcode: code, per100: per100 as Macros, portions }));
   return { food, status: 'found' };
+}
+
+/** Foods you log most at this meal, with the amount you used last time (for one-tap / multi-select logging). */
+export async function frequentFor(meal: Meal, limit = 20): Promise<{ item: FoodItem; qty: number; unit: string; grams: number; n: number }[]> {
+  const since = Date.now() - 180 * 86400000;
+  const agg = new Map<string, { n: number; last: FoodEntry }>();
+  await db.entries.where('at').above(since).each((e) => {
+    if (!e.foodId || e.deletedAt || e.source === 'quick') return;
+    const a = agg.get(e.foodId) ?? { n: 0, last: e };
+    a.n += e.meal === meal ? 2 : 1; // this meal counts double, so "breakfast foods" lead at breakfast
+    if (e.at >= a.last.at) a.last = e;
+    agg.set(e.foodId, a);
+  });
+  const top = [...agg.entries()].sort((x, y) => y[1].n - x[1].n || y[1].last.at - x[1].last.at).slice(0, limit);
+  const out = [];
+  for (const [key, a] of top) {
+    const item = await getItem(key);
+    if (item) out.push({ item, qty: a.last.qty ?? a.last.grams ?? 100, unit: a.last.unit ?? 'g', grams: a.last.grams ?? 100, n: a.n });
+  }
+  return out;
+}
+
+/** Recipe totals → per-100 g nutrition and a per-serving portion. */
+export function recipeNutrition(ingredients: { grams: number; per100: Macros }[], servings: number, cookedG?: number | null) {
+  const total = ingredients.reduce((a, i) => {
+    const m = scale(i.per100, i.grams);
+    return { kcal: a.kcal + m.kcal, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f, fiber: (a.fiber ?? 0) + (m.fiber ?? 0) };
+  }, { kcal: 0, p: 0, c: 0, f: 0, fiber: 0 } as Macros);
+  const rawG = ingredients.reduce((a, i) => a + i.grams, 0);
+  const weight = cookedG && cookedG > 0 ? cookedG : rawG;
+  const per100 = weight > 0 ? scale(total, 10000 / weight) : { kcal: 0, p: 0, c: 0, f: 0, fiber: 0 };
+  // scale() multiplies by g/100, so passing 10000/weight gives total × 100/weight = per 100 g
+  return { total, weight, per100, servingG: servings > 0 ? weight / servings : weight };
 }
