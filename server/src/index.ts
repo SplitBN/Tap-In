@@ -67,12 +67,14 @@ async function route(req: Request, env: Env): Promise<Response> {
     const { invite, name } = await body<{ invite?: string; name?: string }>();
     if (!invite || !name?.trim()) throw new HttpError(400, 'invite and name are required');
     const bootstrap = env.BOOTSTRAP_INVITE && timingSafeEqual(normKey(invite).toUpperCase(), normKey(env.BOOTSTRAP_INVITE).toUpperCase()) && !(await env.DB.prepare('SELECT 1 FROM users LIMIT 1').first());
-    const inv = bootstrap ? null : await env.DB.prepare('SELECT code, used_by FROM invites WHERE code = ?').bind(invite).first<{ code: string; used_by: string | null }>();
-    if (!bootstrap && (!inv || inv.used_by)) throw new HttpError(403, 'Invite code is invalid or already used');
     const user: User = { id: crypto.randomUUID(), name: name.trim().slice(0, 40) };
+    if (!bootstrap) {
+      // Codes are shown grouped (ABCDE-FGHIJ-KLM): ignore dashes, spaces and case. Claim atomically so a code works once.
+      const claim = await env.DB.prepare('UPDATE invites SET used_by = ? WHERE code = ? AND used_by IS NULL').bind(user.id, normKey(invite).toUpperCase()).run();
+      if (!claim.meta.changes) throw new HttpError(403, 'Invite code is invalid or already used');
+    }
     const recoveryKey = randomKey(24);
     await env.DB.prepare('INSERT INTO users (id, name, recovery_hash, created_at) VALUES (?, ?, ?, ?)').bind(user.id, user.name, await sha256(recoveryKey), Date.now()).run();
-    if (inv) await env.DB.prepare('UPDATE invites SET used_by = ? WHERE code = ?').bind(user.id, inv.code).run();
     return json({ token: await newSession(env, user.id, req), recoveryKey, user });
   }
 
