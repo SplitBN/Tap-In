@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
-  Base, BodyweightEntry, DayStatus, Exercise, Food, FoodEntry, NutritionGoal, OutboxEntry, Plan, Session, SetLog, Settings, Workout,
+  Base, BodyweightEntry, DayStatus, Exercise, Food, FoodEntry, Note, NutritionGoal, OutboxEntry, Plan, Session, SetLog, Settings, Stack, SuppLog, Supplement, Workout,
 } from './types';
 
 export class TapInDB extends Dexie {
@@ -17,6 +17,10 @@ export class TapInDB extends Dexie {
   entries!: Table<FoodEntry, string>;
   days!: Table<DayStatus, string>;
   goals!: Table<NutritionGoal, string>;
+  supplements!: Table<Supplement, string>;
+  stacks!: Table<Stack, string>;
+  supplogs!: Table<SuppLog, string>;
+  notes!: Table<Note, string>;
 
   constructor() {
     super('tapin-db'); // namespaced: all apps share the github.io origin
@@ -37,12 +41,18 @@ export class TapInDB extends Dexie {
       days: 'id, updatedAt',
       goals: 'id, effectiveFrom, updatedAt',
     });
+    this.version(3).stores({
+      supplements: 'id, name, updatedAt',
+      stacks: 'id, updatedAt',
+      supplogs: 'id, date, supplementId, [supplementId+date], takenAt, updatedAt',
+      notes: 'id, at, updatedAt',
+    });
   }
 }
 
 export const db = new TapInDB();
 
-export type SyncedTable = 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals';
+export type SyncedTable = 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals' | 'supplements' | 'stacks' | 'supplogs' | 'notes';
 
 export const uuid = () => crypto.randomUUID();
 

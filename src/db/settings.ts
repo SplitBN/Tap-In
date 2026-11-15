@@ -12,7 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   features: {
     gym: true,
     food: true,
-    supplements: false, // not built yet
+    supplements: true,
     checkins: false,
     progressPhotos: false,
     restTimer: true,

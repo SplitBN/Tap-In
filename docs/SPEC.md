@@ -219,3 +219,12 @@ Every formula in the code links back here. **Verify each source before implement
 
 Barcode lookup order: your saved foods → bundled Israeli products → Open Food Facts online → name-only prefill → manual entry.
 Search: `src/lib/search.ts` (typo-tolerant, word-order free, aliases, usage-ranked), shared by foods and exercises.
+
+## Supplements (built 2026-11-15)
+
+- `Supplement`: form, route (injection → subcutaneous), unit, **dose history** (`doses: {from, amount}[]`, titration never overwrites), schedule (daily / specific weekdays / every N days / weekly / as needed, times, start date, optional on/off cycle), optional stock (decremented on take).
+- `Stack`: members due at the same time are grouped and checked off in one tap (schedules stay on each supplement).
+- `SuppLog`: one row per scheduled dose (date + slot) or as-needed take: taken/skipped, actual amount, time taken, injection site.
+- Injection sites rotate: the least recently used site is pre-selected (common practice for repeated injections; a suggestion, not a calculation).
+- `Note`: timestamped journal, taggable with supplements and "side effect" — for later correlation.
+- Reminders need the backend (Web Push); until then the checklist and the Home widget show what's due.

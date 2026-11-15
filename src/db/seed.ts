@@ -13,6 +13,12 @@ export async function seedIfNeeded() {
     if (s) await db.settings.put({ ...s, features: { ...s.features, food: true } });
     await db.meta.put({ key: 'foodOn', value: true });
   }
+  // one-time: supplements shipped — switch them on for installs that stored supplements: false
+  if (!(await db.meta.get('suppOn'))) {
+    const s = await db.settings.get('settings');
+    if (s) await db.settings.put({ ...s, features: { ...s.features, supplements: true } });
+    await db.meta.put({ key: 'suppOn', value: true });
+  }
   const done = await db.meta.get('seedVersion');
   if (done && (done.value as number) >= SEED_VERSION) return;
   const { default: list } = await import('../data/exercises.json');

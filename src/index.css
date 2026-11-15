@@ -575,3 +575,24 @@ button.cell:active { transform: scale(0.96); }
 .choice-glyph { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--card-2); font-size: 1.25rem; }
 .food-row-alt { display: block; font-size: 0.8125rem; color: var(--text-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .food-row-alt + .food-row-sub { margin-top: 1px; }
+
+/* ---------- supplements ---------- */
+.slot-card { margin-top: 12px; padding: 10px 12px 6px; }
+.slot-head { font-size: 0.8125rem; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 4px 6px; }
+.slot-head .num { color: var(--role); margin-right: 4px; }
+.stack-box { border-radius: 16px; background: color-mix(in srgb, var(--c-supp) 9%, transparent); padding: 2px 8px 2px; margin: 4px 0 6px; }
+.stack-head { gap: 8px; min-height: 44px; color: var(--c-supp); font-weight: 700; font-size: 0.9375rem; }
+.supp-row { display: flex; align-items: center; gap: 10px; min-height: 56px; box-shadow: inset 0 -1px 0 var(--line); }
+.stack-box .supp-row:last-child, .slot-card > .supp-row:last-child, .slot-card > div:last-child > .supp-row:last-child { box-shadow: none; }
+.supp-main { display: flex; flex-direction: column; align-items: flex-start; border: 0; background: none; padding: 8px 2px; color: var(--text); text-align: left; min-width: 0; }
+.supp-name { font-weight: 650; font-size: 1rem; }
+.supp-sub { font-size: 0.8125rem; color: var(--text-2); }
+.check.skipped { background: var(--card-3); color: var(--text-2); }
+.site-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.site-grid .preset { min-height: 44px; font-size: 0.8125rem; }
+.week-pick { display: flex; gap: 6px; }
+.week-pick button { flex: 1; height: 42px; border: 0; border-radius: 999px; background: var(--card-2); color: var(--text-2); font-weight: 800; }
+.week-pick button.on { background: var(--role, var(--accent)); color: #000; }
+.time-chip { display: inline-flex; align-items: center; gap: 2px; height: 40px; padding: 0 4px 0 12px; border-radius: 999px; background: var(--card-2); }
+.time-chip input { border: 0; background: none; color: var(--text); font-weight: 700; font-size: 1rem; outline: none; }
+.time-chip button { border: 0; background: none; color: var(--text-2); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; }

@@ -14,6 +14,7 @@ import { WeightPage } from './pages/Weight';
 import { WorkoutEditorPage } from './pages/WorkoutEditor';
 import { FoodPage } from './pages/Food';
 import { NutritionPage } from './pages/Nutrition';
+import { SupplementsPage } from './pages/Supplements';
 
 type Tab = { to: string; icon: string; label: string; home?: boolean };
 
@@ -27,7 +28,10 @@ function TabBar() {
     ...(s.features.gym ? [{ to: '/plans', icon: 'dumbbell', label: 'Gym' }] : []),
     ...(s.features.food ? [{ to: '/food', icon: 'food', label: 'Food' }] : []),
   ];
-  const right: Tab[] = [{ to: '/weight', icon: 'scale', label: 'Weight' }, { to: '/settings', icon: 'settings', label: 'Settings' }];
+  const right: Tab[] = [
+    s.features.supplements ? { to: '/supps', icon: 'pill', label: 'Supplements' } : { to: '/weight', icon: 'scale', label: 'Weight' },
+    { to: '/settings', icon: 'settings', label: 'Settings' },
+  ];
   const tabs: Tab[] = [...left, { to: '/', icon: 'home', label: 'Home', home: true }, ...right];
   const isActive = (t: Tab) => (t.home ? pathname === '/' : pathname.startsWith(t.to)
     || (t.to === '/plans' && /^\/(workouts|history|exercise)/.test(pathname)) || (t.to === '/food' && pathname.startsWith('/nutrition')));
@@ -82,6 +86,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/food" element={<FoodPage />} />
           <Route path="/nutrition" element={<NutritionPage />} />
+          <Route path="/supps" element={<SupplementsPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
         </main>

@@ -188,3 +188,57 @@ export interface NutritionGoal extends Base {
   carbsG?: number | null;
   fatG?: number | null;
 }
+
+// ---------------- Supplements & medications ----------------
+export type SuppForm = 'capsule' | 'tablet' | 'powder' | 'liquid' | 'injection' | 'other';
+export type SuppRoute = 'oral' | 'subq' | 'im' | 'other';
+export type SchedKind = 'daily' | 'weekdays' | 'interval' | 'weekly' | 'asNeeded';
+
+/** How often something is taken. Times are local "HH:MM". */
+export interface Schedule {
+  kind: SchedKind;
+  days?: number[]; // weekdays 0=Sun..6=Sat (kind 'weekdays')
+  every?: number; // every N days (kind 'interval')
+  times: string[]; // empty for asNeeded
+  startDate: string; // YYYY-MM-DD; 'weekly' repeats on this weekday, 'interval' counts from it
+  cycle?: { onDays: number; offDays: number } | null; // e.g. 5 on / 2 off, counted from startDate
+}
+
+/** A dose that applies from a date on — kept as history so titration (2 mg → 4 mg …) is never overwritten. */
+export interface DoseStep { from: string; amount: number }
+
+export interface Supplement extends Base {
+  name: string;
+  form: SuppForm;
+  route: SuppRoute;
+  unit: string; // mg, mcg, g, IU, ml, units, caps, …
+  doses: DoseStep[];
+  schedule: Schedule;
+  stock?: number | null; // remaining amount in `unit` or count, optional
+  notes?: string;
+  archived?: boolean;
+}
+
+/** Items taken together (e.g. "Morning stack"): due members at the same time are checked off in one tap. */
+export interface Stack extends Base {
+  name: string;
+  supplementIds: string[];
+}
+
+export interface SuppLog extends Base {
+  supplementId: string;
+  date: string; // the day it was scheduled for (or taken, for as-needed)
+  slot: string | null; // scheduled "HH:MM", null for as-needed
+  takenAt: number | null;
+  status: 'taken' | 'skipped';
+  amount: number;
+  unit: string;
+  site?: string | null; // injection site
+}
+
+/** Timestamped journal entry: side effects, how you feel, anything worth correlating later. */
+export interface Note extends Base {
+  at: number;
+  text: string;
+  tags: string[]; // e.g. supplement ids, 'side-effect'
+}

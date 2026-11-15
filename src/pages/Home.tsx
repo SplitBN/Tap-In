@@ -11,7 +11,10 @@ import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
 import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
-import { Summary, useDay } from './Food';
+import { Ring, Summary, useDay } from './Food';
+import { useSuppDay } from './Supplements';
+import { logTake, nextSite } from '../db/supps';
+import { fmtNum } from '../lib/format';
 import { dateKey, goalHit, sum } from '../lib/nutrition';
 import { exerciseImage } from '../db/seed';
 
@@ -34,6 +37,7 @@ export function HomePage() {
       <div className="widgets">
         {settings.features.gym && <GymWidget />}
         {settings.features.food && <FoodWidget />}
+        {settings.features.supplements && <SuppWidget />}
         <WeightWidget onLog={() => setWeighing(true)} />
         {settings.features.gym && <WeekWidget />}
         <CalendarWidget />
@@ -315,6 +319,42 @@ function FoodWidget() {
           <span className="round-btn"><Icon name="target" /></span>
         </button>
       )}
+    </Widget>
+  );
+}
+
+function SuppWidget() {
+  const nav = useNavigate();
+  const today = dateKey();
+  const { day, done, total, sups } = useSuppDay(today);
+  const pending = day.flatMap((g) => g.stacks.flatMap((st) => st.items)).filter((i) => !i.log).slice(0, 3);
+  if (!sups.length) {
+    return (
+      <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}>
+        <button className="row pressable plain" onClick={() => nav('/supps')}>
+          <span className="grow muted">Track supplements, meds and peptides</span>
+          <span className="round-btn"><Icon name="plus" /></span>
+        </button>
+      </Widget>
+    );
+  }
+  return (
+    <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}>
+      <div className="row" style={{ gap: 14, alignItems: 'center' }}>
+        <Ring value={done} max={Math.max(1, total)} size={64} track={!total}><span className="num" style={{ fontWeight: 800 }}>{total ? `${done}/${total}` : '–'}</span></Ring>
+        <div className="grow stack" style={{ gap: 6, minWidth: 0 }}>
+          {pending.length ? pending.map((d) => (
+            <div key={d.sup.id + d.slot} className="row" style={{ gap: 8 }}>
+              <span className="grow ellipsis" dir="auto" style={{ fontWeight: 600 }}>{d.sup.name}</span>
+              <span className="muted num" style={{ fontSize: '0.8125rem' }}>{d.slot === '--:--' ? '' : d.slot} · {fmtNum(d.amount)} {d.sup.unit}</span>
+              <button className="check" style={{ width: 40, height: 34 }} aria-label={`Take ${d.sup.name}`}
+                onClick={async () => logTake(d.sup, today, d.slot === '--:--' ? null : d.slot, d.amount, { site: d.sup.route === 'subq' || d.sup.route === 'im' ? await nextSite(d.sup.id) : null })}>
+                <Icon name="check" size={16} stroke={2.8} />
+              </button>
+            </div>
+          )) : <span className="muted">{total ? 'All taken today ✓' : 'Nothing scheduled today'}</span>}
+        </div>
+      </div>
     </Widget>
   );
 }
