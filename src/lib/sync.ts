@@ -33,19 +33,21 @@ async function api<T>(path: string, init: RequestInit & { token?: string; keepal
 async function link(acc: Account) {
   await setMeta('account', acc);
   await setMeta('syncCursor', 0);
+  set({ account: acc, status: 'idle' }); // signed in from here on, even if queueing the first upload fails
   // first link: upload everything that exists locally (the outbox only holds changes since install)
   for (const t of TABLES) {
     const ids = (await db.table(t).toCollection().primaryKeys()) as string[];
     const rows = t === 'exercises' ? (await db.exercises.toArray()).filter((e) => e.custom || e.updatedAt > 0).map((e) => e.id) : ids;
     await db.outbox.bulkAdd(rows.map((id) => ({ table: t, recordId: id, at: Date.now() })));
   }
-  set({ account: acc, status: 'idle' });
   void syncNow();
 }
 
 export async function signUp(apiBase: string, invite: string, name: string) {
   const r = await api<{ token: string; recoveryKey: string; user: Account['user'] }>('/auth/register', { method: 'POST', body: JSON.stringify({ invite: invite.trim(), name }) }, apiBase);
-  await link({ api: apiBase, token: r.token, user: r.user });
+  // The account now exists and its invite is spent: never let a failed first upload swallow the recovery key.
+  try { await link({ api: apiBase, token: r.token, user: r.user }); }
+  catch (e) { console.warn('first upload failed; sync will retry', e); }
   return r.recoveryKey; // shown once — the user must save it
 }
 export async function signInWithRecovery(apiBase: string, recoveryKey: string) {
