@@ -26,6 +26,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['push-sw.js'], // push + notification click handlers
         globPatterns: ['**/*.{js,css,html,svg,png,json,woff2}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
@@ -45,5 +46,5 @@ export default defineConfig({
       },
     }),
   ],
-  server: { host: true },
+  server: { host: true, watch: { ignored: ['**/server/**', '**/docs/**'] } }, // backend lives in server/; its edits must not reload the app
 })

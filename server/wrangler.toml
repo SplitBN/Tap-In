@@ -1,0 +1,18 @@
+# Tap In backend: auth + local-first sync (+ push reminders next). Free tier: Workers + D1.
+name = "tap-in"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tap-in"
+database_id = "REPLACE_AFTER_wrangler_d1_create"  # filled in by setup; not a secret
+
+[triggers]
+crons = ["* * * * *"] # reminders: check every minute
+
+[vars]
+# Origins allowed to call the API (GitHub Pages + local dev). Comma separated.
+ALLOWED_ORIGINS = "https://splitbn.github.io,http://localhost:5173"
+VAPID_SUBJECT = "https://splitbn.github.io/Tap-In/"
+# VAPID_PUBLIC_KEY: set with `wrangler secret put VAPID_PUBLIC_KEY` (public by design, stored as a secret for one place to manage)

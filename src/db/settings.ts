@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from './db';
+import { changed, db } from './db';
 import type { Settings } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -33,5 +33,11 @@ export async function getSettings(): Promise<Settings> {
 
 export async function updateSettings(patch: Partial<Settings>) {
   const cur = await getSettings();
-  await db.settings.put({ ...cur, ...patch, features: { ...cur.features, ...patch.features } });
+  // settings sync too: stamp updatedAt and queue it like any other record
+  const now = Date.now();
+  await db.transaction('rw', db.settings, db.outbox, async () => {
+    await db.settings.put({ ...cur, ...patch, features: { ...cur.features, ...patch.features }, updatedAt: now } as Settings);
+    await db.outbox.add({ table: 'settings', recordId: 'settings', at: now });
+  });
+  changed();
 }

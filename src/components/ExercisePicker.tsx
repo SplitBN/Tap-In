@@ -4,23 +4,12 @@ import { alive, db, newRecord, save } from '../db/db';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
-import { rank, tokenize, usageBoost } from '../lib/search';
+import { usageBoost } from '../lib/search';
+import { searchExercises } from '../db/exerciseSearch';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 
-const exTokenCache = new WeakMap<Exercise, string[]>();
-const exTokens = (e: Exercise) => {
-  let t = exTokenCache.get(e);
-  if (!t) { t = tokenize(`${e.name} ${e.equipment} ${e.muscles.join(' ')}`); exTokenCache.set(e, t); }
-  return t;
-};
 
-/** The standard version of each big lift, nudged above niche variants (chains, bands, …) until your own usage takes over. */
-const STAPLES = new Set(['Barbell Bench Press - Medium Grip', 'Barbell Squat', 'Barbell Deadlift', 'Pullups', 'Chin-Up', 'Dips - Triceps Version',
-  'Standing Military Press', 'Bent Over Barbell Row', 'Romanian Deadlift', 'Barbell Hip Thrust', 'Leg Press', 'Wide-Grip Lat Pulldown',
-  'Seated Cable Rows', 'Dumbbell Bench Press', 'Incline Dumbbell Press', 'Dumbbell Shoulder Press', 'Side Lateral Raise', 'Barbell Curl',
-  'Dumbbell Bicep Curl', 'Hammer Curls', 'Triceps Pushdown', 'Leg Extensions', 'Lying Leg Curls', 'Standing Calf Raises', 'Pushups',
-  'Barbell Incline Bench Press - Medium Grip', 'Front Barbell Squat', 'Dumbbell Lunges', 'Plank', 'Cable Crossover', 'Face Pull']);
 
 const MUSCLES = ['chest', 'lats', 'middle back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings', 'glutes', 'calves', 'abdominals', 'forearms', 'traps', 'lower back'];
 
@@ -53,10 +42,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
       return pool.sort((a, b) => usageBoost(usage.get(b.id)) - usageBoost(usage.get(a.id))
         || Number(!!b.custom) - Number(!!a.custom) || a.name.localeCompare(b.name)).slice(0, 150);
     }
-    return rank(pool, dq, {
-      tokensOf: exTokens, keyOf: (e) => e.id, nameLength: (e) => e.name.length, usage, limit: 150,
-      bias: (e) => (e.custom ? -0.5 : 0) + (STAPLES.has(e.name) ? -0.8 : 0),
-    });
+    return searchExercises(pool, dq, usage);
   }, [all, dq, muscle, usage]);
 
   const close = () => { setSel([]); setQ(''); onClose(); };

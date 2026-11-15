@@ -4,6 +4,7 @@ import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router';
 import { DialogHost } from './components/Dialog';
 import { Icon } from './components/Icon';
 import { seedIfNeeded } from './db/seed';
+import { startSync } from './lib/sync';
 import { useSettings } from './db/settings';
 import { ExerciseHistoryPage, HistoryPage } from './pages/History';
 import { HomePage } from './pages/Home';
@@ -62,7 +63,7 @@ function ScrollReset() {
 export default function App() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    seedIfNeeded().finally(() => setReady(true));
+    seedIfNeeded().finally(() => { setReady(true); void startSync(); });
     navigator.storage?.persist?.().catch(() => {}); // ask the browser not to evict our data
   }, []);
   if (!ready) return <div className="app" />;

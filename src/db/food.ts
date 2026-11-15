@@ -66,6 +66,8 @@ export async function getItem(key: string): Promise<FoodItem | undefined> {
 }
 
 const PROCESSED = /Sausages and Luncheon|Fast Foods|Restaurant Foods|Baby Foods|Meals, Entrees|Snacks|American Indian/;
+/** Unusual variants that should not win a plain query ("milk" ≠ human milk). */
+const ODD = /\b(human|infant|baby|toddler|formula|camel|goat|sheep)\b|חלב אם|תינוק|פורמולה/i;
 const HEBREW = /\p{Script=Hebrew}/u;
 /** Each language's name is its own field (brand appended to both), so word positions aren't skewed
  *  by the other language: "banana" matches "Banana, raw" at position 0, not after five Hebrew words. */
@@ -103,7 +105,7 @@ export async function searchFoods(q: string, limit = 60): Promise<FoodItem[]> {
   return rank(pool, q, {
     tokensOf, keyOf: (it) => it.key, nameLength: (it) => it.name.length, usage, limit,
     bias: (it) => (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
-      : it.israeli ? 0.4 : -1),
+      : it.israeli ? 0.4 : -1) + (ODD.test(`${it.name} ${it.alt ?? ''}`) ? 3 : 0),
   });
 }
 

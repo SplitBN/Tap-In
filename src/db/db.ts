@@ -52,7 +52,7 @@ export class TapInDB extends Dexie {
 
 export const db = new TapInDB();
 
-export type SyncedTable = 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals' | 'supplements' | 'stacks' | 'supplogs' | 'notes';
+export type SyncedTable = 'settings' | 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals' | 'supplements' | 'stacks' | 'supplogs' | 'notes';
 
 export const uuid = () => crypto.randomUUID();
 
@@ -64,8 +64,16 @@ export async function save<T extends Base>(table: SyncedTable, rec: T): Promise<
     await db.table(table).put(next);
     await db.outbox.add({ table, recordId: next.id, at: now });
   });
+  changed();
   return next;
 }
+
+/** Listeners notified after every local write (the sync scheduler subscribes). */
+// kept on globalThis so a hot-reloaded module (dev) shares the same set the sync scheduler subscribed to
+const g = globalThis as unknown as { __tapinListeners?: Set<() => void> };
+const listeners = (g.__tapinListeners ??= new Set<() => void>());
+export const onLocalChange = (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); };
+export const changed = () => listeners.forEach((f) => f());
 
 export function newRecord<T extends object>(fields: T): T & Base {
   const now = Date.now();

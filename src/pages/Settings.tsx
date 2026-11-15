@@ -9,6 +9,8 @@ import { updateSettings, useSettings } from '../db/settings';
 import type { Settings } from '../db/types';
 import { fmtDuration } from '../lib/format';
 import { exportJson, importJson } from '../lib/backup';
+import { viewportInfo } from '../lib/viewport';
+import { AccountSection } from '../components/Account';
 
 function Toggle({ label, sub, on, onChange, disabled }: { label: string; sub?: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -30,6 +32,9 @@ export function SettingsPage() {
   return (
     <div className="page">
       <header className="page-head"><h1>Settings</h1></header>
+
+      <div className="section-title">Account</div>
+      <AccountSection />
 
       <div className="section-title">Units</div>
       <div className="list">
@@ -85,9 +90,21 @@ export function SettingsPage() {
             catch (err) { await notice('Could not import', (err as Error).message); }
           }} />
         </label>
+        <ViewportRow />
         <div className="list-item"><span className="grow title">Waiting to sync</span><span className="muted num">{pending ? `${pending} changes` : 'Nothing'}</span></div>
       </div>
-      <p className="faint" style={{ fontSize: '0.8125rem', margin: '8px 4px' }}>Everything is saved on this device right away. Cloud sync comes with the backend; until then, export a backup now and then.</p>
+      <p className="faint" style={{ fontSize: '0.8125rem', margin: '8px 4px' }}>Everything is saved on this device right away and synced in the background when you're signed in. Export a backup now and then anyway.</p>
+    </div>
+  );
+}
+
+/** Diagnostics for the iOS Home Screen layout (bottom bar position). */
+function ViewportRow() {
+  const v = viewportInfo();
+  return (
+    <div className="list-item">
+      <span className="grow"><span className="title">Display</span>
+        <span className="sub num" style={{ display: 'block' }}>{v.standalone ? 'Home Screen' : 'Browser'} · inner {v.innerHeight} · visual {v.visualHeight} · screen {v.screenHeight} · app {v.appHeight}</span></span>
     </div>
   );
 }

@@ -99,7 +99,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); }
 /* App shell: the document never scrolls (iOS standalone mis-places fixed bars when it does — WebKit bug 237961).
    #root is a fixed full-screen layer and .app is the one scroll container. */
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-#root { position: fixed; inset: 0; }
+#root { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); } /* --app-h: real screen height in standalone, see lib/viewport.ts */
 button, input, select, textarea { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer; }
 a { color: var(--accent); -webkit-tap-highlight-color: transparent; text-decoration: none; }
@@ -596,3 +596,4 @@ button.cell:active { transform: scale(0.96); }
 .time-chip { display: inline-flex; align-items: center; gap: 2px; height: 40px; padding: 0 4px 0 12px; border-radius: 999px; background: var(--card-2); }
 .time-chip input { border: 0; background: none; color: var(--text); font-weight: 700; font-size: 1rem; outline: none; }
 .time-chip button { border: 0; background: none; color: var(--text-2); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; }
+.code-box { padding: 18px; border-radius: 18px; background: var(--card-2); text-align: center; font-size: 1.375rem; font-weight: 800; letter-spacing: 0.08em; word-break: break-all; user-select: all; -webkit-user-select: all; }

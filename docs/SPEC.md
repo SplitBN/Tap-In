@@ -205,6 +205,7 @@ Every formula in the code links back here. **Verify each source before implement
 | Activity multiplier (PAL) | Mostly sitting 1.40, light 1.55, active 1.85, very active 2.20 (the lower bound / midpoints of FAO's categories). Starting estimate only. **Verified.** | FAO/WHO/UNU 2004, *Human energy requirements*, Table 5.3 (sedentary/light 1.40–1.69, active 1.70–1.99, vigorous 2.00–2.40) |
 | Protein default | 1.6 g/kg/day; the user can change it. **Verified.** | Morton et al. 2018, *Br J Sports Med* 52(6):376–384 (no further FFM gains above ~1.62 g/kg/day) |
 | Quick-add calories from macros | 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat (Atwater general factors), used only when kcal is left blank | Atwater general factors, as used in USDA food composition data |
+| Before/after comparison (agent analysis) | Welch's unequal-variances t-test, two-sided; df by Welch–Satterthwaite; p via regularized incomplete beta (Numerical Recipes §6.4). e1RM pooled across lifts as ratio to each lift's mean; estimates >10 reps to failure excluded | Welch 1947, *Biometrika* 34(1–2):28–35; Reynolds et al. 2006 (exclusion) |
 | Goal hit (calendar dot) | Calories within ±10% of target and protein ≥ 95% of target. Our own tolerance, not a published standard. | — (labelled as a rough guide) |
 | Weight trend | Exponentially smoothed moving average of weigh-ins | Walker, *The Hacker's Diet* (method); note this one is not peer-reviewed |
 | Adaptive maintenance | Intake − trend change × energy density. ~7700 kcal/kg is a simplification, and the true value varies with body composition. | Hall 2008, *Int J Obes*, "What is the required energy deficit per unit weight loss?" |
@@ -228,3 +229,7 @@ Search: `src/lib/search.ts` (typo-tolerant, word-order free, aliases, usage-rank
 - Injection sites rotate: the least recently used site is pre-selected (common practice for repeated injections; a suggestion, not a calculation).
 - `Note`: timestamped journal, taggable with supplements and "side effect" — for later correlation.
 - Reminders need the backend (Web Push); until then the checklist and the Home widget show what's due.
+
+## Programmatic interface (agent-ready)
+
+Every action and query is a command in `src/api` (registry + gym, food, body, analysis): zod input schema, LLM-readable description, kind query|action. `window.tapin.call(name, input)`, `listCommands()`, `toolDefinitions()` (JSON Schema, ready for tool-use). New features add commands first; UI should call commands rather than write to the database directly (migration of older UI code is ongoing).
