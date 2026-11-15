@@ -94,8 +94,10 @@
 /* ---------- base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
-body { min-height: 100dvh; overscroll-behavior-y: none; }
-#root { min-height: 100dvh; }
+/* App shell: the document never scrolls (iOS standalone mis-places fixed bars when it does — WebKit bug 237961).
+   #root is a fixed full-screen layer and .app is the one scroll container. */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+#root { position: fixed; inset: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer; }
 a { color: var(--accent); -webkit-tap-highlight-color: transparent; text-decoration: none; }
@@ -115,7 +117,7 @@ input, select, textarea { font-size: max(16px, 1rem); } /* ≥16px: no iOS zoom 
 .pressable:active { transform: scale(0.97); }
 
 /* ---------- layout ---------- */
-.app { min-height: 100dvh; display: flex; flex-direction: column; }
+.app { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; display: flex; flex-direction: column; }
 .page {
   flex: 1; width: 100%; max-width: 720px; margin: 0 auto;
   padding: calc(var(--safe-t) + 14px) 16px calc(var(--tab-h) + var(--safe-b) + 40px);
@@ -270,7 +272,8 @@ textarea.input { padding: 12px 16px; }
 
 /* ---------- floating glass tab bar (Home in the middle) ---------- */
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: calc(var(--safe-b) + 10px); z-index: 20;
+  /* sits inside the home-indicator zone like native iOS tab bars, never flush with the edge */
+  position: fixed; left: 0; right: 0; bottom: max(12px, calc(var(--safe-b) - 8px)); z-index: 20;
   display: flex; justify-content: center; pointer-events: none; padding: 0 16px;
 }
 .tabbar nav {
@@ -430,7 +433,7 @@ button.cell:active { transform: scale(0.95); }
 
 /* ---------- rest bar ---------- */
 .restbar {
-  position: fixed; z-index: 30; left: 16px; right: 16px; bottom: calc(var(--safe-b) + 14px);
+  position: fixed; z-index: 30; left: 16px; right: 16px; bottom: max(12px, calc(var(--safe-b) - 8px));
   max-width: 480px; margin: 0 auto; padding: 8px 8px 8px 20px; border-radius: 999px; overflow: hidden;
   background: var(--glass); box-shadow: var(--shadow-float), inset 0 1px 0 var(--glass-edge);
   -webkit-backdrop-filter: blur(24px) saturate(190%); backdrop-filter: blur(24px) saturate(190%);

@@ -45,6 +45,13 @@ function TabBar() {
   );
 }
 
+/** .app is the scroll container (see index.css), so reset it to the top on every route change. */
+function ScrollReset() {
+  const { pathname } = useLocation();
+  useEffect(() => { document.querySelector('.app')?.scrollTo(0, 0); }, [pathname]);
+  return null;
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -68,6 +75,7 @@ export default function App() {
           <Route path="*" element={<HomePage />} />
         </Routes>
         <TabBar />
+        <ScrollReset />
         <DialogHost />
       </div>
     </HashRouter>
