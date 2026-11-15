@@ -4,8 +4,23 @@ import { alive, db, newRecord, save } from '../db/db';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
+import { rank, tokenize, usageBoost } from '../lib/search';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
+
+const exTokenCache = new WeakMap<Exercise, string[]>();
+const exTokens = (e: Exercise) => {
+  let t = exTokenCache.get(e);
+  if (!t) { t = tokenize(`${e.name} ${e.equipment} ${e.muscles.join(' ')}`); exTokenCache.set(e, t); }
+  return t;
+};
+
+/** The standard version of each big lift, nudged above niche variants (chains, bands, …) until your own usage takes over. */
+const STAPLES = new Set(['Barbell Bench Press - Medium Grip', 'Barbell Squat', 'Barbell Deadlift', 'Pullups', 'Chin-Up', 'Dips - Triceps Version',
+  'Standing Military Press', 'Bent Over Barbell Row', 'Romanian Deadlift', 'Barbell Hip Thrust', 'Leg Press', 'Wide-Grip Lat Pulldown',
+  'Seated Cable Rows', 'Dumbbell Bench Press', 'Incline Dumbbell Press', 'Dumbbell Shoulder Press', 'Side Lateral Raise', 'Barbell Curl',
+  'Dumbbell Bicep Curl', 'Hammer Curls', 'Triceps Pushdown', 'Leg Extensions', 'Lying Leg Curls', 'Standing Calf Raises', 'Pushups',
+  'Barbell Incline Bench Press - Medium Grip', 'Front Barbell Squat', 'Dumbbell Lunges', 'Plank', 'Cable Crossover', 'Face Pull']);
 
 const MUSCLES = ['chest', 'lats', 'middle back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings', 'glutes', 'calves', 'abdominals', 'forearms', 'traps', 'lower back'];
 
@@ -19,13 +34,30 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
   const [sel, setSel] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
 
+  // How often each exercise has been done (completed sets per session) — your staples float up.
+  const usage = useLiveQuery(async () => {
+    const m = new Map<string, { n: number; last: number; sessions: Set<string> }>();
+    await db.sets.each((s) => {
+      if (!s.doneAt || s.deletedAt) return;
+      const u = m.get(s.exerciseId) ?? { n: 0, last: 0, sessions: new Set<string>() };
+      if (!u.sessions.has(s.sessionId)) { u.sessions.add(s.sessionId); u.n++; }
+      u.last = Math.max(u.last, s.doneAt); m.set(s.exerciseId, u);
+    });
+    return m;
+  }, [open]) ?? new Map();
+
   const list = useMemo(() => {
-    const words = dq.toLowerCase().split(/\s+/).filter(Boolean);
-    return all
-      .filter((e) => alive(e) && (!muscle || e.muscles.includes(muscle)) && words.every((w) => squash(e.name).includes(squash(w))))
-      .sort((a, b) => Number(!!b.custom) - Number(!!a.custom) || a.name.localeCompare(b.name))
-      .slice(0, 150);
-  }, [all, dq, muscle]);
+    const pool = all.filter((e) => alive(e) && (!muscle || e.muscles.includes(muscle)));
+    if (!dq.trim()) {
+      // no query: most-used first, then your custom ones, then A–Z
+      return pool.sort((a, b) => usageBoost(usage.get(b.id)) - usageBoost(usage.get(a.id))
+        || Number(!!b.custom) - Number(!!a.custom) || a.name.localeCompare(b.name)).slice(0, 150);
+    }
+    return rank(pool, dq, {
+      tokensOf: exTokens, keyOf: (e) => e.id, nameLength: (e) => e.name.length, usage, limit: 150,
+      bias: (e) => (e.custom ? -0.5 : 0) + (STAPLES.has(e.name) ? -0.8 : 0),
+    });
+  }, [all, dq, muscle, usage]);
 
   const close = () => { setSel([]); setQ(''); onClose(); };
   const done = (ids: string[]) => {
@@ -154,5 +186,3 @@ export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exerc
   );
 }
 
-/** "Pull-Ups" / "pull ups" / "pullups" all match: lower-case, drop spaces and punctuation. */
-const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');

@@ -131,7 +131,7 @@ export interface OutboxEntry {
 /** Nutrition per 100 g (foods) or per entry (snapshots). kcal + grams of macros. */
 export interface Macros { kcal: number; p: number; c: number; f: number; fiber?: number }
 export interface Portion { label: string; g: number }
-export type FoodSource = 'usda' | 'off' | 'custom' | 'quick';
+export type FoodSource = 'usda' | 'moh' | 'off' | 'custom' | 'quick';
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
 
 /** A food the user created or scanned (USDA foods live in the bundled JSON, not here). */

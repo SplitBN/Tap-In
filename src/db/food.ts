@@ -1,68 +1,102 @@
 import { alive, db, newRecord, save } from './db';
 import type { Food, FoodEntry, Macros, Meal, NutritionGoal, Portion } from './types';
 import { scale } from '../lib/nutrition';
+import { rank, tokenize } from '../lib/search';
 
-/** Unified view of anything you can log: bundled USDA foods and your own/scanned foods. */
+/** Unified view of anything you can log: bundled databases and your own/scanned foods. */
 export interface FoodItem {
-  key: string; // 'usda:<fdcId>' or a Food id
-  source: 'usda' | 'off' | 'custom';
+  key: string; // 'usda:<fdcId>', 'moh:<code>', 'il:<barcode>' or a Food id
+  source: 'usda' | 'moh' | 'off' | 'custom';
   name: string;
+  alt?: string; // second-language name (English for Hebrew items), searchable
   brand?: string;
+  barcode?: string;
   category?: string;
+  israeli?: boolean;
   per100: Macros;
   portions: Portion[];
 }
 
-type UsdaRow = [number, string, number, number, number, number, number, number, [string, number][]];
-interface UsdaDb { items: FoodItem[]; byKey: Map<string, FoodItem> }
-let usda: UsdaDb | null = null;
-let loading: Promise<UsdaDb> | null = null;
+interface Bundled { items: FoodItem[]; byKey: Map<string, FoodItem>; byBarcode: Map<string, FoodItem>; names: Map<string, [string, string]> }
+let bundled: Bundled | null = null;
+let loading: Promise<Bundled> | null = null;
 
-/** Lazily loads the bundled USDA SR Legacy database (~1 MB, cached by the service worker). */
-export function loadUsda(): Promise<UsdaDb> {
-  if (usda) return Promise.resolve(usda);
-  loading ??= import('../data/foods.json').then(({ default: d }) => {
-    const cats = d.categories as string[];
-    const items = (d.rows as unknown as UsdaRow[]).map(([id, name, cat, kcal, p, c, f, fiber, portions]) => ({
-      key: `usda:${id}`, source: 'usda' as const, name, category: cats[cat],
-      per100: { kcal, p, c, f, fiber }, portions: portions.map(([label, g]) => ({ label, g })),
-    }));
-    const built: UsdaDb = { items, byKey: new Map(items.map((i) => [i.key, i])) };
-    usda = built;
+type UsdaRow = [number, string, number, number, number, number, number, number, [string, number][]];
+type MohRow = [number, string, string, number, number, number, number, number, [string, number][]];
+type IlRow = [string, string, string, string, number, number, number, number, number, number];
+
+/** Lazily loads the bundled food databases (cached by the service worker, so search works offline):
+ *  Israeli MoH Tzameret + Israeli Open Food Facts products (il.json) and USDA SR Legacy (foods.json). */
+export function loadFoods(): Promise<Bundled> {
+  if (bundled) return Promise.resolve(bundled);
+  loading ??= Promise.all([import('../data/il.json'), import('../data/foods.json')]).then(([{ default: il }, { default: us }]) => {
+    const items: FoodItem[] = [];
+    for (const [code, he, en, kcal, p, c, f, fiber, portions] of il.moh as unknown as MohRow[]) {
+      items.push({ key: `moh:${code}`, source: 'moh', israeli: true, name: he, alt: en || undefined, category: 'Tzameret',
+        per100: { kcal, p, c, f, fiber }, portions: portions.map(([label, g]) => ({ label, g })) });
+    }
+    for (const [code, name, alt, brand, kcal, p, c, f, fiber, servingG] of il.off as unknown as IlRow[]) {
+      items.push({ key: `il:${code}`, source: 'off', israeli: true, name, alt: alt || undefined, brand: brand || undefined, barcode: code,
+        per100: { kcal, p, c, f, fiber }, portions: servingG ? [{ label: '1 serving', g: servingG }] : [] });
+    }
+    const cats = us.categories as string[];
+    for (const [id, name, cat, kcal, p, c, f, fiber, portions] of us.rows as unknown as UsdaRow[]) {
+      items.push({ key: `usda:${id}`, source: 'usda', name, category: cats[cat],
+        per100: { kcal, p, c, f, fiber }, portions: portions.map(([label, g]) => ({ label, g })) });
+    }
+    const built: Bundled = {
+      items, byKey: new Map(items.map((i) => [i.key, i])),
+      byBarcode: new Map(items.filter((i) => i.barcode).map((i) => [i.barcode!, i])),
+      // Israeli products known by name only (no nutrition on Open Food Facts) — used to prefill the editor
+      names: new Map(((il as unknown as { names?: [string, string, string][] }).names ?? []).map(([code, n, br]) => [code, [n, br]] as [string, [string, string]])),
+    };
+    bundled = built;
     return built;
   });
   return loading;
 }
 
-export const foodToItem = (f: Food): FoodItem => ({ key: f.id, source: f.source, name: f.name, brand: f.brand, per100: f.per100, portions: f.portions });
+export const foodToItem = (f: Food): FoodItem => ({ key: f.id, source: f.source, name: f.name, brand: f.brand, barcode: f.barcode, per100: f.per100, portions: f.portions });
 
 export async function getItem(key: string): Promise<FoodItem | undefined> {
-  if (key.startsWith('usda:')) return (await loadUsda()).byKey.get(key);
+  if (/^(usda|moh|il):/.test(key)) return (await loadFoods()).byKey.get(key);
   const f = await db.foods.get(key);
   return f && alive(f) ? foodToItem(f) : undefined;
 }
 
 const PROCESSED = /Sausages and Luncheon|Fast Foods|Restaurant Foods|Baby Foods|Meals, Entrees|Snacks|American Indian/;
-const squash = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9 ]/g, ' ');
+const HEBREW = /\p{Script=Hebrew}/u;
+const tokenCache = new WeakMap<FoodItem, string[]>();
+const tokensOf = (it: FoodItem) => {
+  let t = tokenCache.get(it);
+  if (!t) { t = tokenize(`${it.name} ${it.alt ?? ''} ${it.brand ?? ''}`); tokenCache.set(it, t); }
+  return t;
+};
 
-/** Word-prefix search; your own foods first, then shorter / earlier matches (USDA names are long). */
+/** How often/recently each food was logged (last year) — feeds the ranking. */
+export async function foodUsage() {
+  const since = Date.now() - 365 * 86400000;
+  const m = new Map<string, { n: number; last: number }>();
+  await db.entries.where('at').above(since).each((e) => {
+    if (!e.foodId || e.deletedAt) return;
+    const u = m.get(e.foodId) ?? { n: 0, last: 0 };
+    u.n++; u.last = Math.max(u.last, e.at); m.set(e.foodId, u);
+  });
+  return m;
+}
+
+/** Forgiving search (typos, partial words, any order, Hebrew/English) ranked by match quality,
+ *  then by how often you log it. Tiers nudge: your foods > Israeli (MoH + local products) > USDA. */
 export async function searchFoods(q: string, limit = 60): Promise<FoodItem[]> {
-  const words = squash(q).split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
   const mine = (await db.foods.filter(alive).toArray()).map(foodToItem);
-  const { items } = await loadUsda();
-  const scored: [number, FoodItem][] = [];
-  for (const it of [...mine, ...items]) {
-    const hay = squash(`${it.name} ${it.brand ?? ''}`);
-    const tokens = hay.split(/\s+/);
-    if (!words.every((w) => tokens.some((t) => t.startsWith(w)))) continue;
-    let score = it.source === 'usda' ? 100 : 0;
-    score += hay.indexOf(words[0]) + it.name.length / 8;
-    if (/\braw\b/.test(hay)) score -= 3; // plain whole foods are what people usually mean
-    if (it.category && PROCESSED.test(it.category)) score += 8; // deli/fast-food/baby versions rank below the plain food
-    scored.push([score, it]);
-  }
-  return scored.sort((a, b) => a[0] - b[0]).slice(0, limit).map((s) => s[1]);
+  const [{ items }, usage] = await Promise.all([loadFoods(), foodUsage()]);
+  const hebrewQuery = HEBREW.test(q);
+  const pool = hebrewQuery ? [...mine, ...items.filter((i) => i.source !== 'usda')] : [...mine, ...items];
+  return rank(pool, q, {
+    tokensOf, keyOf: (it) => it.key, nameLength: (it) => it.name.length, usage, limit,
+    bias: (it) => (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
+      : it.israeli ? 0.4 : -1),
+  });
 }
 
 /** Most recently logged distinct foods. */
@@ -93,17 +127,27 @@ export async function quickAdd(n: Macros, name: string, meal: Meal, date: string
 // ---------- barcodes: Open Food Facts (open data, ODbL) ----------
 const r1 = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10) / 10 : typeof v === 'string' && v !== '' && Number.isFinite(+v) ? Math.round(+v * 10) / 10 : null);
 
+function knownName(code: string): Partial<Food> | undefined {
+  const n = bundled?.names.get(code);
+  return n ? { barcode: code, name: n[0], brand: n[1] || undefined } : undefined;
+}
+
 /** Local first (scanned or fixed before), then Open Food Facts. Only the barcode is sent. */
 export async function lookupBarcode(code: string): Promise<{ food?: Food; status: 'local' | 'found' | 'incomplete' | 'missing' | 'offline'; draft?: Partial<Food> }> {
   const local = await db.foods.where('barcode').equals(code).filter(alive).first();
   if (local) return { food: local, status: 'local' };
+  const il = (await loadFoods()).byBarcode.get(code); // bundled Israeli products: instant and offline
+  if (il) {
+    const food = await save('foods', newRecord({ source: 'off' as const, name: il.name, brand: il.brand, barcode: code, per100: il.per100, portions: il.portions }));
+    return { food, status: 'found' };
+  }
   let json: { status?: number; product?: Record<string, unknown> };
   try {
     const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,nutriments,serving_size,serving_quantity`);
     json = await res.json();
-  } catch { return { status: 'offline' }; }
+  } catch { return { status: 'offline', draft: knownName(code) }; }
   const p = json.product;
-  if (json.status !== 1 || !p) return { status: 'missing', draft: { barcode: code } };
+  if (json.status !== 1 || !p) return { status: 'missing', draft: knownName(code) ?? { barcode: code } };
   const nm = (p.nutriments ?? {}) as Record<string, unknown>;
   const kj = r1(nm['energy_100g']);
   const per100 = {

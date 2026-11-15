@@ -31,6 +31,8 @@ export function AddFoodSheet({ open, onClose, meal, date }: { open: boolean; onC
 
   const close = () => { setQ(''); setResults(null); onClose(); };
   const list = results ?? recents;
+  // an English search shows English names first (Hebrew underneath), and logs them that way
+  const english = !!dq.trim() && !/\p{Script=Hebrew}/u.test(dq);
 
   return (
     <Sheet open={open} onClose={close} title={mealLabel} full>
@@ -38,7 +40,7 @@ export function AddFoodSheet({ open, onClose, meal, date }: { open: boolean; onC
         <div className="row">
           <label className="search grow">
             <Icon name="search" size={18} />
-            <input className="input" placeholder="Search foods" value={q} onChange={(e) => setQ(e.target.value)} enterKeyHint="search" autoCorrect="off" aria-label="Search foods" />
+            <input className="input" placeholder="Search foods · חיפוש" dir="auto" value={q} onChange={(e) => setQ(e.target.value)} enterKeyHint="search" autoCorrect="off" aria-label="Search foods" />
           </label>
           <button className="icon-btn filled" aria-label="Scan barcode" onClick={() => setMode('scan')}><Icon name="barcode" /></button>
         </div>
@@ -50,10 +52,13 @@ export function AddFoodSheet({ open, onClose, meal, date }: { open: boolean; onC
       {!results && recents.length > 0 && <div className="section-title" style={{ marginTop: 6 }}>Recent</div>}
       <div>
         {list.map((it) => (
-          <button key={it.key} className="list-item pressable" style={{ paddingLeft: 4, paddingRight: 4 }} onClick={() => setPicked(it)}>
+          <button key={it.key} className="list-item pressable" style={{ paddingLeft: 4, paddingRight: 4 }} onClick={() => setPicked(english && it.alt ? { ...it, name: it.alt, alt: it.name } : it)}>
             <span className="grow" style={{ minWidth: 0 }}>
-              <span className="title" style={{ display: 'block' }}>{it.name}</span>
-              <span className="sub">{[it.brand, it.source === 'usda' ? null : it.source === 'off' ? 'scanned' : 'mine'].filter(Boolean).join(' · ') || it.category}</span>
+              <span className="title" dir="auto" style={{ display: 'block' }}>{english && it.alt ? it.alt : it.name}</span>
+              <span className="sub" dir="auto">
+                {it.israeli && <span className="il-tag" aria-label="Israeli">IL</span>}
+                {[it.brand, english && it.alt ? it.name : it.alt, it.source === 'usda' ? it.category : it.source === 'moh' ? 'Tzameret' : it.israeli ? null : it.source === 'off' ? 'scanned' : 'mine'].filter(Boolean).join(' · ')}
+              </span>
             </span>
             <span className="num muted" style={{ fontSize: '0.8125rem', textAlign: 'right', flex: 'none' }}><b style={{ color: 'var(--text)', fontSize: '0.9375rem' }}>{k(it.per100.kcal)}</b><br />/100 g</span>
           </button>
@@ -64,7 +69,7 @@ export function AddFoodSheet({ open, onClose, meal, date }: { open: boolean; onC
             <button className="btn" style={{ marginTop: 12 }} onClick={() => { setDraft({ name: q }); setMode('new'); }}><Icon name="plus" size={16} /> Create it</button>
           </div>
         )}
-        {!results && !recents.length && <p className="empty" style={{ padding: 28 }}>Search about 7,800 foods, scan a barcode, or quick-add calories.</p>}
+        {!results && !recents.length && <p className="empty" style={{ padding: 28 }}>Search in Hebrew or English — Israeli foods and products first — or scan a barcode.</p>}
       </div>
 
       <AmountSheet item={picked} meal={meal} date={date} onClose={() => setPicked(null)} onDone={close} />
@@ -106,7 +111,8 @@ function AmountSheet({ item, meal: meal0, date, onClose, onDone, entry }: {
     <Sheet open={!!item} onClose={onClose} title={entry ? 'Edit' : 'Add'}>
       <div className="stack" style={{ gap: 14 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: '1.125rem', lineHeight: 1.25 }}>{item.name}</div>
+          <div dir="auto" style={{ fontWeight: 700, fontSize: '1.125rem', lineHeight: 1.25 }}>{item.name}</div>
+          {item.alt && <div className="muted" style={{ fontSize: '0.875rem' }}>{item.alt}</div>}
           {item.brand && <div className="muted" style={{ fontSize: '0.875rem' }}>{item.brand}</div>}
         </div>
         <MacroTiles m={m} />
@@ -288,7 +294,7 @@ function ScanSheet({ open, onClose, onFood, onDraft }: { open: boolean; onClose:
     const r = await lookupBarcode(code);
     busy.current = false;
     if (r.food) onFood(r.food);
-    else if (r.status === 'offline') setState('offline');
+    else if (r.status === 'offline' && !r.draft?.name) setState('offline'); // offline but a known Israeli product → prefill
     else onDraft(r.draft ?? { barcode: code });
   }, [onFood, onDraft]);
 

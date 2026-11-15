@@ -77,7 +77,7 @@ export function FoodPage() {
                   {list.map((e) => (
                     <button key={e.id} className="entry-row pressable" onClick={() => setEditing(e)}>
                       <span className="grow" style={{ minWidth: 0 }}>
-                        <span className="ellipsis" style={{ display: 'block', fontWeight: 560 }}>{e.name}</span>
+                        <span className="ellipsis" dir="auto" style={{ display: 'block', fontWeight: 560 }}>{e.name}</span>
                         <span className="muted ellipsis" style={{ display: 'block', fontSize: '0.8125rem' }}>
                           {e.source === 'quick' ? <><Icon name="bolt" size={11} /> quick</> : `${fmtQty(e)}${e.brand ? ` · ${e.brand}` : ''}`}
                         </span>

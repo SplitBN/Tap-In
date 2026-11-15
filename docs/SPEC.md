@@ -208,3 +208,14 @@ Every formula in the code links back here. **Verify each source before implement
 | Goal hit (calendar dot) | Calories within ±10% of target and protein ≥ 95% of target. Our own tolerance, not a published standard. | — (labelled as a rough guide) |
 | Weight trend | Exponentially smoothed moving average of weigh-ins | Walker, *The Hacker's Diet* (method); note this one is not peer-reviewed |
 | Adaptive maintenance | Intake − trend change × energy density. ~7700 kcal/kg is a simplification, and the true value varies with body composition. | Hall 2008, *Int J Obes*, "What is the required energy deficit per unit weight loss?" |
+
+## Food data sources (bundled, offline)
+
+| Data | Source & licence | Refresh |
+|---|---|---|
+| Generic foods (English) | USDA FoodData Central, SR Legacy 2018 — public domain | `node scripts/build-foods.mjs <unzipped dir>` |
+| Israeli generic foods & dishes (Hebrew + English) | Israel Ministry of Health, Tzameret (data.gov.il "nutrition-database", open licence). The direct CSV links return 403 from abroad; use the datastore API (`datastore_search?resource_id=…&limit=32000`) | `node scripts/build-israel.mjs <tz dir> <off dir>` |
+| Israeli packaged products (barcodes) | Open Food Facts, products sold in Israel — ODbL. API search is capped at 100/page and throttles bulk pulls after ~30 pages; the bundle holds what was fetched (708 complete + name-only rows) and live lookup covers the rest | same script; re-run the paged download slowly |
+
+Barcode lookup order: your saved foods → bundled Israeli products → Open Food Facts online → name-only prefill → manual entry.
+Search: `src/lib/search.ts` (typo-tolerant, word-order free, aliases, usage-ranked), shared by foods and exercises.
