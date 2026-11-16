@@ -11,5 +11,6 @@ artwork. Any subagent working on UI should look at these first.
 | `alpha-workout-preview.png` | Workout preview sheet: big title + ⋯, plan · week, "6 exercises · 12 sets", one big Start button, muscle map, exercise list with image, name, equipment · sets×reps. |
 | `alpha-live-exercise.png` | Live exercise: thumbnail strip, big exercise name + ⋯, equipment / rep target / note lines, warm-up chip, set table with large pill cells, a green ✓, last session card below, floating rest-timer button. |
 | `alpha-exercise-menu.png` | Exercise action sheet: header with info, large paired tiles (sets / reps), grouped rows with icons (Dropsets, Supersets / Add note / Replace, Remove), text links at the bottom. |
+| `alpha-workout-summary.png` | End-of-workout summary: one big celebratory badge with a number (e.g. improvements/PRs), a stat strip (Nth workout · duration · week streak) with coloured icons, exercise rows (thumbnail, name · equipment, "2 sets", medal-count for PRs, green ↑-count for improved sets), sort control ("Workout order"), then muscle rows (muscle icon, share % · sets). Close / Share in the header. |
 
 More screenshots may be added; keep this table updated.
