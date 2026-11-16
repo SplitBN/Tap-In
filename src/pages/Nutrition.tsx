@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { FoodEditor, useMyFoods } from '../components/FoodSheets';
 import { Icon } from '../components/Icon';
-import { Stepper } from '../components/ItemSettings';
-import { PickerRow, WheelPicker, range, type Option } from '../components/Picker';
+import { NumberPicker, NumberRow, NumberSheet, type NumberSpec } from '../components/NumberPicker';
+import { OptionList, PickerRow, range, type Option } from '../components/Picker';
 import { weightLog } from '../api/body';
 import { goalsSet } from '../api/food';
 import { run } from '../api/registry';
@@ -17,11 +17,12 @@ import { ACTIVITY_LABEL, KCAL_PER_KG, PROTEIN_G_PER_KG, dateKey, estimateMainten
 const ACTIVITY_SUB: Record<Activity, string> = {
   sedentary: 'Desk job, little walking', light: 'Some walking, training 2–4×/wk', active: 'On your feet, training most days', very: 'Physical job or hard daily training',
 };
-const YEARS: Option<number>[] = range(1940, 2012).reverse().map((y) => ({ value: y, label: String(y) }));
-const HEIGHTS: Option<number>[] = range(130, 220).map((h) => ({ value: h, label: `${h} cm` }));
-const WEIGHTS: Option<number>[] = range(35, 250, 0.5).map((w) => ({ value: w, label: `${w.toFixed(1)} kg` }));
+const YEAR: NumberSpec = { min: 1930, max: 2012, step: 1, decimals: 0, format: String, keyMin: 1900, keyMax: 2020 };
+const HEIGHT: NumberSpec = { min: 130, max: 220, step: 1, decimals: 1, unit: 'cm', keyMin: 100, keyMax: 250 };
+const WEIGHT: NumberSpec = { min: 35, max: 250, step: 0.5, decimals: 1, unit: 'kg', format: (w) => `${w.toFixed(1)} kg`, keyMin: 30, keyMax: 350 };
+const MAINT: NumberSpec = { min: 1000, max: 6000, step: 50, decimals: 0, format: (v) => `${v.toLocaleString()} kcal` };
 const RATES: Option<number>[] = range(-1.5, 1.5, 0.25).map((r) => ({ value: r, label: r === 0 ? 'Maintain' : `${r > 0 ? '+' : '−'}${Math.abs(r)} kg / week` }));
-const ACTIVITIES: Option<Activity>[] = (Object.keys(ACTIVITY_LABEL) as Activity[]).map((a) => ({ value: a, label: ACTIVITY_LABEL[a] }));
+const ACTIVITIES: Option<Activity>[] = (Object.keys(ACTIVITY_LABEL) as Activity[]).map((a) => ({ value: a, label: ACTIVITY_LABEL[a], sub: ACTIVITY_SUB[a] }));
 
 interface Draft {
   sex: Sex; birthYear: number; heightCm: number; weightKg: number; activity: Activity; rate: number;
@@ -96,12 +97,12 @@ function Setup({ d, setD, onDone, onBack }: { d: Draft; setD: (d: Draft) => void
           </button>
         ))}
       </div>) },
-    { q: 'Year born', body: <WheelPicker options={YEARS} value={d.birthYear} onChange={(birthYear) => set({ birthYear })} ariaLabel="Year born" /> },
-    { q: 'Height', body: <WheelPicker options={HEIGHTS} value={d.heightCm} onChange={(heightCm) => set({ heightCm })} ariaLabel="Height" /> },
-    { q: 'Weight', sub: 'Saved as today’s weigh-in', body: <WheelPicker options={WEIGHTS} value={d.weightKg} onChange={(weightKg) => set({ weightKg })} ariaLabel="Weight" /> },
-    { q: 'How active are you?', sub: ACTIVITY_SUB[d.activity], body: <WheelPicker options={ACTIVITIES} value={d.activity} onChange={(activity) => set({ activity })} ariaLabel="Activity" /> },
+    { q: 'Year born', body: <NumberPicker inline spec={YEAR} value={d.birthYear} onPick={(birthYear) => set({ birthYear })} ariaLabel="Year born" /> },
+    { q: 'Height', body: <NumberPicker inline spec={HEIGHT} value={d.heightCm} onPick={(heightCm) => set({ heightCm })} ariaLabel="Height" /> },
+    { q: 'Weight', sub: 'Saved as today’s weigh-in', body: <NumberPicker inline spec={WEIGHT} value={d.weightKg} onPick={(weightKg) => set({ weightKg })} ariaLabel="Weight" /> },
+    { q: 'How active are you?', body: <OptionList options={ACTIVITIES} value={d.activity} onPick={(activity) => set({ activity })} ariaLabel="Activity" /> },
     { q: 'Your goal', sub: d.rate === 0 ? 'Keep your weight steady' : `${Math.round(Math.abs(d.rate * KCAL_PER_KG / 7))} kcal/day ${d.rate < 0 ? 'deficit' : 'surplus'}`,
-      body: <WheelPicker options={RATES} value={d.rate} onChange={(rate) => set({ rate })} ariaLabel="Weekly change" /> },
+      body: <OptionList options={RATES} value={d.rate} onPick={(rate) => set({ rate })} ariaLabel="Weekly change" /> },
     { q: 'Daily targets', sub: 'Both optional — you can log without targets', body: (
       <div className="stack" style={{ gap: 10 }}>
         <TargetToggle label="Calories" value={c.kcal} unit="kcal" on={d.useKcal} onToggle={(useKcal) => set({ useKcal })} note={`maintenance ≈ ${c.maintenance.toLocaleString()}`} />
@@ -170,9 +171,9 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
         <div className="list-item"><span className="grow title">Sex</span>
           <div className="seg" style={{ width: 190 }}>{(['male', 'female'] as const).map((s) => <button key={s} aria-pressed={d.sex === s} onClick={() => set({ sex: s })}>{s === 'male' ? 'Male' : 'Female'}</button>)}</div>
         </div>
-        <PickerRow label="Born" options={YEARS} value={d.birthYear} onChange={(birthYear) => set({ birthYear })} title="Year born" />
-        <PickerRow label="Height" options={HEIGHTS} value={d.heightCm} onChange={(heightCm) => set({ heightCm })} />
-        <PickerRow label="Weight" sub={kg == null ? 'Saved as a weigh-in' : undefined} options={WEIGHTS} value={d.weightKg} onChange={(weightKg) => set({ weightKg })} />
+        <NumberRow label="Born" spec={YEAR} value={d.birthYear} onChange={(birthYear) => set({ birthYear })} title="Year born" />
+        <NumberRow label="Height" spec={HEIGHT} value={d.heightCm} onChange={(heightCm) => set({ heightCm })} />
+        <NumberRow label="Weight" sub={kg == null ? 'Saved as a weigh-in' : undefined} spec={WEIGHT} value={d.weightKg} onChange={(weightKg) => set({ weightKg })} />
         <PickerRow label="Activity" sub={ACTIVITY_SUB[d.activity]} options={ACTIVITIES} value={d.activity} onChange={(activity) => set({ activity })} />
         <PickerRow label="Goal" options={RATES} value={d.rate} onChange={(rate) => set({ rate, kcalOverride: null })} title="Weekly change" />
       </div>
@@ -183,7 +184,7 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
           <div className="big-value num">{c.maintenance.toLocaleString()}<span className="muted" style={{ fontSize: '0.875rem', fontWeight: 600 }}> kcal</span></div>
           <div className="muted" style={{ fontSize: '0.8125rem' }}>{d.maintOverride ? 'Set by you' : 'Estimate'} · refines from your logs later</div>
         </div>
-        <Stepper label="Maintenance" value={c.maintenance} min={1000} max={6000} step={50} format={() => ''} onChange={(x) => set({ maintOverride: x, kcalOverride: null })} />
+        <ValueButton icon label="Maintenance" value={c.maintenance} spec={MAINT} onChange={(x) => set({ maintOverride: x, kcalOverride: null })} />
       </div>
       {d.maintOverride && <button className="link" onClick={() => set({ maintOverride: null })}>Use estimate ({c.formula.toLocaleString()})</button>}
 
@@ -228,8 +229,21 @@ function OptRow({ label, unit, on, value, step, min, max, sub, onToggle, onChang
   return (
     <div className="list-item" style={{ flexWrap: 'wrap' }}>
       <span className="grow"><span className="title">{label}</span>{sub && on && <span className="sub" style={{ display: 'block' }}>{sub}</span>}</span>
-      {on && value != null && <Stepper label={label} value={value} min={min} max={max} step={step} format={(x) => `${x.toLocaleString()} ${unit}`} onChange={onChange} />}
+      {on && value != null && <ValueButton label={label} value={value} spec={{ min, max, step, decimals: 0, format: (x) => `${x.toLocaleString()} ${unit}`, keyMin: min, keyMax: max }} onChange={onChange} />}
       <span className="switch" style={{ marginLeft: 6 }}><input type="checkbox" aria-label={`${label} target`} checked={on} onChange={(e) => onToggle(e.target.checked)} /><span /></span>
     </div>
+  );
+}
+
+/** Tappable value pill that opens the list + keypad sheet. */
+function ValueButton({ label, value, spec, onChange, icon }: { label: string; value: number; spec: NumberSpec; onChange: (v: number) => void; icon?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {icon ? <button type="button" className="icon-btn filled" aria-haspopup="dialog" aria-label={`Set ${label.toLowerCase()}`} onClick={() => setOpen(true)}><Icon name="pencil" size={18} /></button> : <button type="button" className="btn num" style={{ minWidth: 96, fontWeight: 700 }} aria-haspopup="dialog" aria-label={`${label}: ${spec.format?.(value) ?? value}`} onClick={() => setOpen(true)}>
+        {spec.format?.(value) ?? value}
+      </button>}
+      <NumberSheet open={open} onClose={() => setOpen(false)} title={label} value={value} onPick={onChange} spec={spec} />
+    </>
   );
 }

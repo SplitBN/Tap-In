@@ -1,8 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
-import { Sheet } from '../components/Sheet';
-import { Wheel } from '../components/Wheel';
+import { NumberSheet, type NumberSpec } from '../components/NumberPicker';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
 import { weightDelete, weightLog, weightUpdate } from '../api/body';
@@ -75,41 +74,40 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
   const settings = useSettings();
   const unit = settings.unit;
   const last = useLiveQuery(() => db.bodyweight.orderBy('at').reverse().filter(alive).first(), []);
-  const values = useMemo(() => {
-    const out: number[] = [];
-    const [lo, hi] = unit === 'kg' ? [30, 250] : [66, 550];
-    for (let v = lo * 10; v <= hi * 10; v += 1) out.push(v / 10);
-    return out;
-  }, [unit]);
-  const [cur, setCur] = useState(0);
+  const spec = useMemo<NumberSpec>(() => (unit === 'kg'
+    ? { min: 30, max: 250, step: 0.1, decimals: 1, unit, format: (v) => `${v.toFixed(1)} kg` }
+    : { min: 66, max: 550, step: 0.2, decimals: 1, unit, format: (v) => `${v.toFixed(1)} lb` }), [unit]);
   const [when, setWhen] = useState('');
   const [was, setWas] = useState(false);
   if (open !== was) {
     setWas(open);
-    if (open) {
-      setCur(Math.round(fromKg(entry?.kg ?? last?.kg ?? 80, unit) * 10) / 10);
-      setWhen(toLocalInput(entry?.at ?? Date.now()));
-    }
+    if (open) setWhen(toLocalInput(entry?.at ?? Date.now()));
   }
-  const idx = Math.max(0, values.findIndex((v) => Math.abs(v - cur) < 0.05));
-  const submit = async () => {
+  const cur = Math.round(fromKg(entry?.kg ?? last?.kg ?? 80, unit) * 10) / 10;
+  // tap a value = save it (with the time above) and close
+  const save = async (v: number) => {
     const at = new Date(new Date(when).getTime() || Date.now()).toISOString();
-    const kg = toKg(values[idx], unit);
+    const kg = toKg(v, unit);
     if (entry) await run(weightUpdate, { id: entry.id, kg, at });
     else await run(weightLog, { kg, at });
-    onClose();
   };
   return (
-    <Sheet open={open} onClose={onClose} title={entry ? 'Edit weigh-in' : 'Log weight'}>
-      <div className="stack" style={{ gap: 14 }}>
-        <Wheel values={values} index={idx} onIndex={(i) => setCur(values[i])} format={(v) => v.toFixed(1)} ariaLabel={`Bodyweight in ${unit}`} />
+    <NumberSheet open={open} onClose={onClose} title={entry ? 'Edit weigh-in' : 'Log weight'} value={cur} onPick={save} spec={spec}
+      extra={
         <label className="field"><span>When</span>
           <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
-        <button className="btn primary lg block" onClick={submit}>Save {values[idx].toFixed(1)} {unit}</button>
-        {entry && <button className="btn danger block" onClick={async () => { await run(weightDelete, { id: entry.id }); onClose(); }}>Delete</button>}
-      </div>
-    </Sheet>
+      }
+      footer={entry && (
+        <div className="row">
+          {/* a time-only change: keep the weight, save the new "When" */}
+          <button className="btn grow" onClick={async () => { await run(weightUpdate, { id: entry.id, kg: entry.kg, at: new Date(new Date(when).getTime() || entry.at).toISOString() }); onClose(); }}>
+            <Icon name="check" size={18} stroke={2.4} /> Save time
+          </button>
+          <button className="btn danger grow" onClick={async () => { await run(weightDelete, { id: entry.id }); onClose(); }}><Icon name="trash" size={16} /> Delete</button>
+        </div>
+      )}
+    />
   );
 }
 

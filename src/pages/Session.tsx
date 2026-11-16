@@ -8,8 +8,9 @@ import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/Exe
 import { equipmentLabel, equipmentTag, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ItemSettings } from '../components/ItemSettings';
-import { EffortSheet, WeightSheet } from '../components/SetInputs';
+import { EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
+import { WorkoutSummary } from '../components/WorkoutSummary';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { lastPerformance, latestBodyweightKg, sessionDiffersFromPlan, setOrder } from '../db/gym';
@@ -51,6 +52,8 @@ export function SessionPage() {
 
   const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | null>(null);
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
+  // summary sheet: 'finish' right after finishing (Done goes Home), 'view' for a past session (Done just closes)
+  const [summary, setSummary] = useState<null | 'finish' | 'view'>(null);
 
   if (!session) return null;
   if (!alive(session)) return <div className="page"><p className="empty">This workout was deleted. <Link to="/">Home</Link></p></div>;
@@ -83,6 +86,7 @@ export function SessionPage() {
               {live ? fmtDuration(now - session.startedAt) : `${relDay(session.startedAt)} · ${fmtDuration((session.endedAt ?? now) - session.startedAt)}`}
             </div>
           </div>
+          {!live && <button className="icon-btn" aria-label="Workout summary" onClick={() => setSummary('view')}><Icon name="chart" /></button>}
           <button className="icon-btn" aria-label="Workout options" onClick={() => setMenu('session')}><Icon name="more" /></button>
           {live && <button className="round-btn finish" aria-label="Finish workout" onClick={() => setMenu('finish')}><Icon name="flag" size={18} stroke={2.2} /></button>}
         </div>
@@ -143,6 +147,7 @@ export function SessionPage() {
 
       <Sheet open={menu === 'session'} onClose={() => setMenu(null)} title="Workout">
         <button className="menu-item" onClick={() => { setMenu(null); setPicking('add'); }}><Icon name="plus" />Add exercise</button>
+        {!live && <button className="menu-item" onClick={() => { setMenu(null); setSummary('view'); }}><Icon name="chart" />Summary</button>}
         <button className="menu-item" onClick={() => setMenu('details')}><Icon name="edit" />Name, date & time</button>
         <NotesField value={session.notes} onChange={(notes) => run(sessionsUpdate, { id: session.id, notes: notes ?? null })} />
         {!live && <button className="menu-item" onClick={() => run(sessionsUpdate, { id: session.id, resume: true })}><Icon name="play" />Resume this workout</button>}
@@ -155,7 +160,9 @@ export function SessionPage() {
 
       <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => run(sessionsUpdate, { id: session.id, ...p })} />
       <FinishSheet open={menu === 'finish'} onClose={() => setMenu(null)} session={session} doneCount={doneCount}
-        onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); }} />
+        onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); setSummary('finish'); }} />
+      <WorkoutSummary open={!!summary} sessionId={session.id} onClose={() => setSummary(null)}
+        onDone={() => { const fromFinish = summary === 'finish'; setSummary(null); if (fromFinish) nav('/'); }} />
 
       <ExercisePicker open={!!picking} title={picking === 'replace' ? 'Replace exercise' : 'Add exercise'} onClose={() => setPicking(null)}
         onPick={async ([e]) => {
@@ -304,7 +311,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
     onSetDone(r);
   };
 
-  const setReps = (r: Row, v: string) => upsert(r, { reps: v === '' ? null : Math.max(0, parseInt(v, 10) || 0) });
+  const [repsFor, setRepsFor] = useState<Row | null>(null);
   const effortVal = (l?: Partial<SetLog>) => (l == null ? null : settings.effortMode === 'rir' ? l.rir : l.rpe);
 
   let workNo = 0;
@@ -365,9 +372,9 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
                     </button>
                     {state === 'future'
                       ? <span className="cell num" style={{ display: 'grid', placeItems: 'center' }}>{repsPh}</span>
-                      : <input className="cell num" inputMode="numeric" enterKeyHint="done" aria-label={`Reps, set ${label}`}
-                          value={l?.reps ?? ''} placeholder={repsPh}
-                          onChange={(e) => setReps(r, e.target.value)} onFocus={(e) => e.target.select()} />}
+                      : <button className="cell num" onClick={() => setRepsFor(r)} aria-label={`Reps, set ${label}`}>
+                          {l?.reps != null ? l.reps : <span className="ph">{repsPh}</span>}
+                        </button>}
                     {effortOn && (
                       <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`Effort, set ${label}`} tabIndex={state === 'future' ? -1 : 0}>
                         {effortVal(l) != null ? fmtNum(effortVal(l)!) : <span className="ph">{effortVal(sug) != null ? fmtNum(effortVal(sug)!) : '–'}</span>}
@@ -415,6 +422,10 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         label={ex.loadType === 'bodyweight' ? 'Added weight' : ex.loadType === 'assisted' ? 'Assistance' : 'Weight'}
         valueKg={weightFor ? byId.get(rowId(weightFor))?.loadKg ?? suggestion(weightFor)?.loadKg : null}
         onDone={(kg) => weightFor && upsert(weightFor, { loadKg: kg })} />
+      {/* opens on the logged reps, else the suggestion (last time / plan target) */}
+      <RepsSheet open={!!repsFor} onClose={() => setRepsFor(null)}
+        value={repsFor ? byId.get(rowId(repsFor))?.reps ?? suggestion(repsFor)?.reps ?? item.repsMax ?? item.repsMin ?? 8 : null}
+        onDone={(v) => repsFor && upsert(repsFor, { reps: v })} />
       <EffortSheet open={!!effortFor} onClose={() => setEffortFor(null)} mode={settings.effortMode}
         value={effortFor ? effortVal(byId.get(rowId(effortFor))) : null}
         onDone={(v, mode) => effortFor && upsert(effortFor, v == null ? { rir: null, rpe: null } : mode === 'rir' ? { rir: v } : { rpe: v })} />

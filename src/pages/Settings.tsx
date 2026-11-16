@@ -61,10 +61,9 @@ export function SettingsPage() {
         <Toggle label="Rest timer" on={f.restTimer} onChange={feat('restTimer')} />
         <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
         <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
+        <Toggle label="Post-workout survey" sub="Effort, sleep, body: 3 taps after a workout" on={f.survey} onChange={feat('survey')} />
         <Toggle label="Food" on={f.food} onChange={feat('food')} />
         <Toggle label="Supplements" on={f.supplements} onChange={feat('supplements')} />
-        <Toggle label="Daily check-in" sub="Coming soon" on={f.checkins} onChange={feat('checkins')} disabled />
-        <Toggle label="Progress photos" sub="Coming soon" on={f.progressPhotos} onChange={feat('progressPhotos')} disabled />
       </div>
 
       {f.restTimer && <>

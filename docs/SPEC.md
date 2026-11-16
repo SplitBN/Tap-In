@@ -10,7 +10,7 @@ Written down from the user's own description on 2026-11-15. Platform notes are i
 - **Simple UI** in the style of Alpha Progression. No clutter: calories, protein, carbs and fat only.
 - **Store raw, compute later.** Save exactly what happened (weight, reps, RIR, timestamps, the bodyweight at that time). Estimates like e1RM and maintenance are always derived from that data, never stored as the only copy.
 - **Every record is timestamped**, so later analysis can line anything up against anything else (supplement → weight trend, sleep → strength, and so on).
-- **Every feature can be turned off** in Settings: whole modules (gym, food, supplements, daily check-ins, AI) and smaller features (rest timer, RPE/RIR column, carb/fat targets, warm-up sets, reminders). Turned-off features vanish from the UI completely. The app is only as busy as the user makes it.
+- **Every feature can be turned off** in Settings: whole modules (gym, food, supplements, AI) and smaller features (rest timer, RPE/RIR column, warm-up sets, post-workout survey, carb/fat targets, reminders). Turned-off features vanish from the UI completely. The app is only as busy as the user makes it.
 - **Every calculation is based on published science.** e1RM, 10RM, drop-set weights, rest defaults, maintenance, BMR, and anything added later. Each formula is cited in the code and in "Science sources" below. Before implementing a formula, check the citation is real and says what we claim. If no solid literature exists, label the number in the UI as a rough guide.
 - **Works on desktop too.** The same app is responsive. The phone is for logging, and a PC browser is nice for looking at history and analytics. Wider screens get multi-column layouts.
 - **Units:** kg by default, with a setting for kg/lb. Weights are always stored in kg along with the unit they were entered in, so switching units never changes the data.
@@ -19,15 +19,7 @@ Written down from the user's own description on 2026-11-15. Platform notes are i
 
 - **Profile:** sex, birth year, height, units (kg/lb, cm/in), and activity level (used only for the first maintenance estimate).
 - **Bodyweight log:** date, time, weight. The reminder interval is configurable (default weekly) and sent as a server push. The latest weight is available to the whole app.
-- **Progress photos** (optional, can be turned off):
-  - Attach photos to a weigh-in, or add them on their own. Poses are labelled front / side / back / custom.
-  - A faint overlay of the last photo of the same pose helps line up the shot.
-  - Later: a side-by-side and slider comparison, plus a timeline next to the weight trend.
-  - **Storage:**
-    - Photos are resized and compressed on the phone, then kept locally in IndexedDB.
-    - They upload to a **private** bucket (Cloudflare R2, free 10 GB) and are only served to their owner, through an authenticated backend route.
-    - No public URLs, never sent to the AI.
-    - Location (EXIF) data is stripped before upload.
+- **Progress photos:** dropped for now (2026-11-16). May come back later; nothing in the app or data model depends on them.
 - **Settings:** units, reminders, export/import JSON, sync status, and AI provider connection.
 
 ## Gym
@@ -82,7 +74,7 @@ Written down from the user's own description on 2026-11-15. Platform notes are i
 
 **Analytics page (later):** per exercise or overall. History, e1RM/10RM trends, volume, bodyweight, and so on. On desktop it gets more room.
 
-**Later (not v1):** e1RM and 10RM progression charts, PRs and achievements.
+**Later (not v1):** e1RM and 10RM progression charts and achievements. (PRs and beat-last-time are shown on the workout summary, see below.)
 - e1RM will come from reps + RIR (reps-to-failure = reps + RIR), using Epley/Brzycki or an RPE table (Tuchscherer). 10RM is derived from e1RM.
 - The raw data above is enough for all of this.
 
@@ -152,19 +144,18 @@ Written down from the user's own description on 2026-11-15. Platform notes are i
 ```
 profile, settings
 bodyweight_entries(date, time, kg)
-progress_photos(taken_at, bodyweight_entry_id?, pose: front|side|back|custom, blob_key, width, height)
 exercises(name, load_type, bw_fraction?, muscles[], equipment, custom)
 plans(name, workout_ids[] ordered)
 exercises += (mechanic: compound|isolation, unilateral: bool, image)
 workouts(plan_id, name, items[{exercise_id, order, superset_group?, target_sets, target_reps?,
          rest: {mode: timer|countup, seconds?}, drop_steps?, notes}])
-sessions(workout_id?, started_at, ended_at, notes, structure_snapshot)   // its own editable copy of items
+sessions(workout_id?, started_at, ended_at, notes, structure_snapshot,   // its own editable copy of items
+         session_rpe?, sleep?: bad|ok|good, soreness?: fresh|normal|beat, rated_at?)   // post-workout survey, optional
 sets(session_id, exercise_id, set_no, side: both|left|right, kind: warmup|working|drop,
      parent_set_id?,  // drop steps point at their main set
      load_kg?, load_type,  // weighted: the weight; bodyweight: added weight; assisted: assistance
      input_unit: kg|lb,
      bodyweight_kg_snapshot, reps, rpe?, rir?, effort_input: rpe|rir, done_at)
-checkins(date, sleep_h?, sleep_quality?, energy?, hunger?, mood?, note?)   // daily, opt-in
 foods(source: usda|off|custom|ai, barcode?, name, brand?, per100g{kcal,p,c,f}, servings[])
 recipes(name, ingredients[{food_id, g}], servings, cooked_weight_g?)
 food_entries(date, meal, food_id|recipe_id|quick, amount, unit, grams, nutrition_snapshot{kcal,p,c,f}, photo_id?)
@@ -177,15 +168,32 @@ supplement_logs(supplement_id, scheduled_for?, taken_at, dose, unit, site?, stat
 notes(at, tags[], text)
 ```
 
-## Daily check-in (optional, can be turned off)
+## Workout summary and post-workout survey (built 2026-11-16)
 
-About 5 seconds a day: sleep hours and quality, energy, hunger, mood (1–5), and an optional note. It exists to support the "what worked" analysis.
+Replaces the planned daily check-in: the survey is asked once, right after a workout, where the user already is.
+
+- **Summary** (`sessions.summary`, shown as a full-screen sheet after Finish and from any past session's header): duration, working sets, volume load; PR and beat-last-time highlights first; each exercise with best set, e1RM and ↑ / = / ↓ / New against the previous session of that exercise; working sets per muscle (today and this week since Monday) as bars; comparison with the last session of the same plan workout (volume %, minutes, sets).
+- Comparisons only use sessions that started before this one, so a past summary never changes because of later workouts.
+- **Definitions** (all computed on read from raw sets, `src/lib/workoutStats.ts`):
+  - *Working set* = one per exercise slot and set number: a left + right pair is one set, drop steps fold into their parent set, warm-ups never count.
+  - *Volume load* = Σ load × reps over working sets **and drop steps** (drops are real work), warm-ups excluded, both sides of one-side sets counted. Load is the total load moved: bodyweight snapshot + added weight for bodyweight lifts, bodyweight − assistance for assisted ones (a weigh-in near the session is used if a set has no snapshot). Dumbbell loads are as logged (per dumbbell).
+  - *Best set* = the working set with the highest e1RM (drops excluded).
+  - *Beat last time* = higher best e1RM than the previous session of that exercise, or more reps at ≥ last time's top weight (the reps rule also works when e1RM can't be estimated). The ↑ arrow shows beat-last-time or any all-time PR. For bodyweight/assisted lifts the e1RM must move by more than 1%, so bodyweight drift alone doesn't count (our own tolerance).
+  - *PRs* (against every earlier session; never on the first time an exercise is done): e1RM PR (reliable estimates only, ≤ 10 reps to failure), weight PR (heaviest logged load; for bodyweight lifts the added weight, for assisted the least assistance), rep PR (more reps than ever at that load or heavier).
+  - *Sets per muscle*: 1 per working set for each primary muscle; secondary muscles count 0.5 in the "fractional" total (a convention, labelled as such in the UI).
+- **Survey** (`sessions.rate`, feature switch "Post-workout survey", on by default): one tap each, all skippable, saved as you tap:
+  1. Effort: session RPE on the CR-10 scale, 0–10 (Foster et al. 2001). Different from the per-set RIR-based RPE.
+  2. Sleep last night: bad / ok / good.
+  3. Body: fresh / normal / beat up.
+  4. Optional note (stored as the session notes).
+  Stored as raw optional fields on the session, with `ratedAt`. The summary also returns session load = session RPE × minutes (Foster's training load), so an agent can line effort, sleep and soreness up against performance later.
 
 ## Decisions (2026-11-15)
 
 - **Hosting:** probably Cloudflare Pages, since the repo is private. To be decided when deploying.
 - **Rest timer:** yes, with defaults by mechanic, set per exercise, or count-up.
-- **Daily check-ins:** yes, opt-in. Every feature can be turned off.
+- **Daily check-ins:** replaced by the post-workout survey (2026-11-16). Every feature can be turned off.
+- **Progress photos** and **device management:** dropped for now (2026-11-16).
 - **Units:** kg by default, lb available in settings and from the weight wheel.
 - **History import:** none in the app. The user will export from Alpha Progression and MyNetDiary later, and we import it once by script.
 - **UI reference:** Alpha Progression's active workout screen, as described above.
@@ -206,6 +214,10 @@ Every formula in the code links back here. **Verify each source before implement
 | Protein default | 1.6 g/kg/day; the user can change it. **Verified.** | Morton et al. 2018, *Br J Sports Med* 52(6):376–384 (no further FFM gains above ~1.62 g/kg/day) |
 | Quick-add calories from macros | 4 kcal/g protein, 4 kcal/g carbohydrate, 9 kcal/g fat (Atwater general factors), used only when kcal is left blank | Atwater general factors, as used in USDA food composition data |
 | Before/after comparison (agent analysis) | Welch's unequal-variances t-test, two-sided; df by Welch–Satterthwaite; p via regularized incomplete beta (Numerical Recipes §6.4). e1RM pooled across lifts as ratio to each lift's mean; estimates >10 reps to failure excluded | Welch 1947, *Biometrika* 34(1–2):28–35; Reynolds et al. 2006 (exclusion) |
+| Session RPE / session load | Whole-session effort on the modified CR-10 scale (0–10), asked after the workout; session load = sRPE × duration in minutes (arbitrary units). **Verified.** | Foster et al. 2001, *J Strength Cond Res* 15(1):109–115, "A new approach to monitoring exercise training" |
+| Volume load | Σ load × reps of working sets and drop steps, warm-ups excluded; total load as in e1RM (bodyweight + added, bodyweight − assistance) | Standard definition of volume load (sets × reps × load); no single formula paper |
+| Sets per muscle | Working sets per muscle (direct = primary muscles), per session and per week. Secondary muscles at 0.5 is a **convention** (fractional counting, as proposed in Pelland et al., SportRxiv preprint), labelled as such in the UI. **Verified** (Schoenfeld). | Schoenfeld, Ogborn & Krieger 2017, *J Sports Sci* 35(11):1073–1082 (weekly sets per muscle, dose-response) |
+| Beat last time / PRs | Higher e1RM or more reps at ≥ the previous top weight; e1RM PRs only from ≤ 10 reps to failure; 1% margin for bodyweight/assisted e1RM. Our own definitions. | Reynolds et al. 2006 (reliability cut-off); otherwise — (labelled as our own rule) |
 | Goal hit (calendar dot) | Calories within ±10% of target and protein ≥ 95% of target. Our own tolerance, not a published standard. | — (labelled as a rough guide) |
 | Weight trend | Exponentially smoothed moving average of weigh-ins | Walker, *The Hacker's Diet* (method); note this one is not peer-reviewed |
 | Adaptive maintenance | Intake − trend change × energy density. ~7700 kcal/kg is a simplification, and the true value varies with body composition. | Hall 2008, *Int J Obes*, "What is the required energy deficit per unit weight loss?" |

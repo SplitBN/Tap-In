@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { confirmDialog, notice } from '../components/Dialog';
 import { Icon } from '../components/Icon';
-import { PickerRow, range } from '../components/Picker';
+import { NumberField, NumberRow, doseSpec, type NumberSpec } from '../components/NumberPicker';
+import { PickerRow } from '../components/Picker';
 import { Sheet } from '../components/Sheet';
 import { alive, db } from '../db/db';
 import { FORMS, SITES, UNITS, WEEKDAYS, buildDay, doseOn, nextSite, scheduleText, type DueItem } from '../db/supps';
@@ -230,7 +231,7 @@ function TakeSheet({ t, date, onClose }: { t: { sup: Supplement; slot: string | 
     <Sheet open onClose={onClose} title={t.sup.name}>
       <div className="stack" style={{ gap: 14 }}>
         <div className="grid-2">
-          <label className="field"><span>Dose ({t.sup.unit})</span><input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+          <NumberField label="Dose" title={`Dose (${t.sup.unit})`} spec={doseSpec(t.sup.unit)} value={amt > 0 ? amt : null} onChange={(v) => setAmount(String(v))} />
           <label className="field"><span>Taken at</span><input className="input num" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
         </div>
         {inj && (
@@ -253,8 +254,8 @@ const KINDS: { value: SchedKind; label: string }[] = [
   { value: 'daily', label: 'Every day' }, { value: 'weekdays', label: 'Specific days' }, { value: 'interval', label: 'Every few days' },
   { value: 'weekly', label: 'Once a week' }, { value: 'asNeeded', label: 'As needed' },
 ];
-const EVERY = range(2, 30).map((n) => ({ value: n, label: `Every ${n} days` }));
-const CYCLE = range(1, 60).map((n) => ({ value: n, label: `${n} day${n > 1 ? 's' : ''}` }));
+const EVERY: NumberSpec = { min: 2, max: 30, step: 1, decimals: 0, format: (n) => `Every ${n} days`, keyMax: 365 };
+const CYCLE: NumberSpec = { min: 1, max: 120, step: 1, decimals: 0, format: (n) => `${n} day${n > 1 ? 's' : ''}`, keyMax: 730 };
 const UNIT_OPTS = UNITS.map((u) => ({ value: u, label: u }));
 const FORM_OPTS = FORMS.map((f) => ({ value: f.value as SuppForm, label: f.label }));
 
@@ -317,7 +318,8 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
               ))}
               {newDose ? (
                 <div className="list-item">
-                  <input className="input num" style={{ width: 90 }} inputMode="decimal" placeholder={unit} value={newDose.amount} aria-label="New dose" onChange={(e) => setNewDose({ ...newDose, amount: e.target.value })} />
+                  <NumberField compact label="New dose" spec={doseSpec(unit)} placeholder={unit} style={{ width: 110, flex: 'none' }}
+                    value={parseFloat(newDose.amount) > 0 ? parseFloat(newDose.amount) : null} onChange={(v) => setNewDose({ ...newDose, amount: String(v) })} />
                   <input className="input num grow" type="date" value={newDose.from} aria-label="From date" onChange={(e) => setNewDose({ ...newDose, from: e.target.value })} />
                   <button className="icon-btn filled" aria-label="Add dose step" disabled={!(parseFloat(newDose.amount) > 0)}
                     onClick={() => { setDoses([...doses.filter((d) => d.from !== newDose.from), { from: newDose.from, amount: parseFloat(newDose.amount) }]); setNewDose(null); }}><Icon name="check" size={18} /></button>
@@ -328,12 +330,12 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
             </div>
           </div>
         ) : (
-          <label className="field"><span>Dose ({unit})</span><input className="input num" inputMode="decimal" value={amount} placeholder="5" onChange={(e) => setAmount(e.target.value)} /></label>
+          <NumberField label={`Dose (${unit})`} spec={doseSpec(unit)} placeholder="Set dose" value={parseFloat(amount) > 0 ? parseFloat(amount) : null} onChange={(v) => setAmount(String(v))} />
         )}
 
         <div className="list" style={{ background: 'var(--card-2)' }}>
           <PickerRow label="How often" options={KINDS} value={s.kind} onChange={(kind) => setS({ kind, days: kind === 'weekdays' ? s.days ?? [1, 3, 5] : s.days, every: kind === 'interval' ? s.every ?? 2 : s.every })} />
-          {s.kind === 'interval' && <PickerRow label="Interval" options={EVERY} value={s.every ?? 2} onChange={(every) => setS({ every })} />}
+          {s.kind === 'interval' && <NumberRow label="Interval" spec={EVERY} value={s.every ?? 2} onChange={(every) => setS({ every })} />}
         </div>
         {s.kind === 'weekdays' && (
           <div className="week-pick" role="group" aria-label="Days">
@@ -367,8 +369,8 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
           </label>
           {s.cycle && (
             <div className="list" style={{ background: 'var(--card-2)' }}>
-              <PickerRow label="On for" options={CYCLE} value={Math.min(60, s.cycle.onDays)} onChange={(onDays) => setS({ cycle: { ...s.cycle!, onDays } })} />
-              <PickerRow label="Off for" options={CYCLE} value={Math.min(60, s.cycle.offDays)} onChange={(offDays) => setS({ cycle: { ...s.cycle!, offDays } })} />
+              <NumberRow label="On for" spec={CYCLE} value={s.cycle.onDays} onChange={(onDays) => setS({ cycle: { ...s.cycle!, onDays } })} />
+              <NumberRow label="Off for" spec={CYCLE} value={s.cycle.offDays} onChange={(offDays) => setS({ cycle: { ...s.cycle!, offDays } })} />
             </div>
           )}
         </>}

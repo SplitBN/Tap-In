@@ -3,6 +3,7 @@ import type { Exercise, Settings, WorkoutItem } from '../db/types';
 import { defaultRestSec } from '../lib/science';
 import { fmtDuration } from '../lib/format';
 import { Icon } from './Icon';
+import { NumberField, type NumberSpec } from './NumberPicker';
 
 export function Stepper({ value, onChange, min = 0, max = 99, step = 1, format, label = "" }: {
   value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; format?: (v: number) => ReactNode; label?: string;
@@ -41,11 +42,11 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
       <Line label="Reps">
         {hasRange ? (
           <div className="row" style={{ gap: 6 }}>
-            <input className="input num" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" aria-label="Min reps"
-              value={item.repsMin ?? ''} onChange={(e) => onChange({ ...item, repsMin: num(e.target.value) })} />
+            <NumberField compact label="Min reps" spec={REPS} value={item.repsMin} style={{ width: 64 }}
+              onChange={(v) => onChange({ ...item, repsMin: v, repsMax: item.repsMax != null && item.repsMax < v ? v : item.repsMax })} />
             <span className="faint">–</span>
-            <input className="input num" style={{ width: 64, textAlign: 'center' }} inputMode="numeric" aria-label="Max reps"
-              value={item.repsMax ?? ''} onChange={(e) => onChange({ ...item, repsMax: num(e.target.value) })} />
+            <NumberField compact label="Max reps" spec={REPS} value={item.repsMax} style={{ width: 64 }}
+              onChange={(v) => onChange({ ...item, repsMax: v, repsMin: item.repsMin != null && item.repsMin > v ? v : item.repsMin })} />
             <button className="icon-btn" aria-label="Remove target" onClick={() => onChange({ ...item, repsMin: undefined, repsMax: undefined })}><Icon name="close" size={18} /></button>
           </div>
         ) : <button className="btn" onClick={() => onChange({ ...item, repsMin: 8, repsMax: 12 })} aria-label="Set target reps"><Icon name="plus" size={16} /></button>}
@@ -74,7 +75,7 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
   );
 }
 
-const num = (s: string) => (s.trim() === '' ? undefined : Math.max(0, parseInt(s, 10) || 0));
+const REPS: NumberSpec = { min: 1, max: 50, step: 1, decimals: 0, keyMax: 999 };
 
 /** Toggle a superset between item i and the next item. */
 export function toggleSupersetWithNext(items: WorkoutItem[], i: number): WorkoutItem[] {

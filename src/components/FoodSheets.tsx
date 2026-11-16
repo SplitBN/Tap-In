@@ -9,7 +9,8 @@ import { scale } from '../lib/nutrition';
 import { MEALS, k } from '../lib/meals';
 import { confirmDialog } from './Dialog';
 import { Icon } from './Icon';
-import { PickerRow, WheelPicker } from './Picker';
+import { NumberRow, NumberSheet, type NumberSpec } from './NumberPicker';
+import { OptionSheet, PickerRow } from './Picker';
 import { Sheet } from './Sheet';
 import { unitLabel } from "../lib/units";
 
@@ -175,21 +176,18 @@ function FoodRow({ item, m, amount, onOpen, selected, onToggle }: {
 }
 
 const MEAL_OPTS = MEALS.map((m) => ({ value: m.id, label: m.label }));
+const SERV: NumberSpec = { min: 1, max: 24, step: 1, decimals: 0, format: (n) => `${n} serving${n > 1 ? 's' : ''}`, keyMax: 200 };
+const BASE_QTY: NumberSpec = { min: 5, max: 1000, step: 5, decimals: 1, keyMin: 0.1, keyMax: 5000 };
+const PORTION_QTY: NumberSpec = { min: 0.25, max: 10, step: 0.25, decimals: 2, keyMin: 0.01, keyMax: 100 };
 function MealPill({ meal, onChange }: { meal: Meal; onChange: (m: Meal) => void }) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(meal);
   const m = MEALS.find((x) => x.id === meal)!;
   return (
     <>
-      <button className="meal-pill pressable" onClick={() => { setDraft(meal); setOpen(true); }} aria-label={`Meal: ${m.label}`}>
+      <button className="meal-pill pressable" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={`Meal: ${m.label}`}>
         <Icon name={m.icon} size={16} stroke={2} />{m.label}<Icon name="chevronDown" size={14} />
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title="Meal">
-        <div className="stack" style={{ gap: 14 }}>
-          <WheelPicker options={MEAL_OPTS} value={draft} onChange={setDraft} ariaLabel="Meal" />
-          <button className="btn primary lg block" onClick={() => { onChange(draft); setOpen(false); }}><Icon name="check" size={20} stroke={2.6} /> Done</button>
-        </div>
-      </Sheet>
+      <OptionSheet open={open} onClose={() => setOpen(false)} title="Meal" options={MEAL_OPTS} value={meal} onPick={onChange} />
     </>
   );
 }
@@ -205,6 +203,7 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
   const [qty, setQty] = useState('100');
   const [unit, setUnit] = useState('g');
   const [meal, setMeal] = useState<Meal>(meal0);
+  const [qtyOpen, setQtyOpen] = useState(false);
   const [key, setKey] = useState<string | null>(null);
   const curKey = item ? `${item.key}:${entry?.id ?? ''}` : null;
   if (curKey !== key) {
@@ -245,7 +244,7 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
         <div className="amount-top">
           <div>
             <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
-              <input className="amount-input num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} onFocus={(e) => e.target.select()} aria-label="Amount" />
+              <button type="button" className="amount-input num" aria-haspopup="dialog" aria-label={`Amount: ${qty}`} onClick={() => setQtyOpen(true)}>{qty || '0'}</button>
               <span className="amount-unit" dir="auto">{portion ? unitLabel(portion.label, english).replace(/^1 /, '') : b}</span>
             </div>
             <div className="muted num" style={{ fontSize: '0.8125rem' }}>{portion ? `= ${Math.round(grams)} ${b}` : ' '}</div>
@@ -267,6 +266,8 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
         <button className="btn primary lg block" onClick={go} disabled={!grams}><Icon name="check" size={20} stroke={2.6} /> {mode === 'pick' ? 'Add to recipe' : entry ? 'Save' : 'Add'}</button>
         {entry && <DeleteEntry entry={entry} onDone={onClose} />}
       </div>
+      <NumberSheet open={qtyOpen} onClose={() => setQtyOpen(false)} title="Amount" value={Number.isFinite(n) ? n : null}
+        onPick={(v) => setQty(String(v))} spec={portion ? { ...PORTION_QTY, unit: unitLabel(portion.label, english).replace(/^1 /, '') } : { ...BASE_QTY, unit: b }} />
     </Sheet>
   );
 }
@@ -468,13 +469,12 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
     });
     onSaved?.(saved); onClose();
   };
-  const SERV = Array.from({ length: 24 }, (_, i) => ({ value: i + 1, label: `${i + 1} serving${i ? 's' : ''}` }));
   return (
     <Sheet open={open} onClose={onClose} title={recipe ? 'Edit recipe' : 'New recipe'} full>
       <div className="stack" style={{ gap: 12 }}>
         <label className="field"><span>Name</span><input className="input" dir="auto" value={name} placeholder="Overnight oats" onChange={(e) => setName(e.target.value)} /></label>
         <div className="list" style={{ background: 'var(--card-2)' }}>
-          <PickerRow label="Makes" options={SERV} value={servings} onChange={setServings} title="Servings" />
+          <NumberRow label="Makes" spec={SERV} value={servings} onChange={setServings} title="Servings" />
         </div>
         <div className="section-title" style={{ margin: '8px 4px 0' }}>Ingredients</div>
         <div className="list" style={{ background: 'var(--card-2)' }}>

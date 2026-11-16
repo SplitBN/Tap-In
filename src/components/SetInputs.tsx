@@ -1,67 +1,69 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { run } from '../api/registry';
 import { exercisesUpdate } from '../api/gym';
 import { settingsUpdate } from '../api/body';
 import type { EffortMode, Exercise, Unit } from '../db/types';
 import { defaultStepKg, fromKg, toKg } from '../lib/science';
-import { fmtNum, fmtWeight } from '../lib/format';
+import { fmtNum } from '../lib/format';
 import { Sheet } from './Sheet';
 import { Icon } from './Icon';
-import { Wheel } from './Wheel';
+import { NumberSheet, type NumberSpec } from './NumberPicker';
 
 const STEPS: Record<Unit, number[]> = { kg: [0.5, 1, 1.25, 2, 2.5, 5], lb: [1, 2.5, 5, 10] };
 
-/** Big weight wheel. Unit can be switched right here (changes the app-wide unit; stored values stay kg). */
+/** Weight entry: tap list stepping by the exercise's increment (in the current unit) + keypad.
+ *  Unit and increment can be switched right here (unit is app-wide; stored values stay kg). */
 export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, label }: {
   open: boolean; onClose: () => void; valueKg: number | null | undefined; onDone: (kg: number | null) => void;
   unit: Unit; exercise?: Exercise; label: string;
 }) {
   const stepKg = exercise?.stepKg ?? defaultStepKg(exercise?.equipment ?? 'other', unit);
   const stepU = closest(STEPS[unit], fromKg(stepKg, unit));
-  const values = useMemo(() => {
-    const max = unit === 'kg' ? 400 : 900;
-    const out: number[] = [];
-    for (let v = 0; v <= max + 1e-9; v += stepU) out.push(Math.round(v * 100) / 100);
-    return out;
-  }, [unit, stepU]);
-  const [cur, setCur] = useState<number>(0);
-  const [was, setWas] = useState(false);
-  const [typed, setTyped] = useState<string | null>(null);
-  if (open !== was) { setWas(open); if (open) { setCur(fromKg(valueKg ?? (exercise?.equipment === 'barbell' ? 20 : 0), unit)); setTyped(null); } }
-  const index = nearestIndex(values, cur);
-  const typedNum = typed != null && typed.trim() !== '' ? parseFloat(typed) : NaN;
-  const final = Number.isFinite(typedNum) ? typedNum : values[index];
+  const curKg = valueKg ?? (exercise?.equipment === 'barbell' ? 20 : 0);
+  const cur = Math.round(fromKg(curKg, unit) * 100) / 100;
+  const spec = useMemo<NumberSpec>(() => ({
+    min: 0, max: unit === 'kg' ? 400 : 900, step: stepU, decimals: 2, unit, keyMax: unit === 'kg' ? 1000 : 2200,
+  }), [unit, stepU]);
 
   const setStep = (s: number) => exercise && run(exercisesUpdate, { id: exercise.id, stepKg: toKg(s, unit) });
-  const setUnit = (u: Unit) => { if (u === unit) return; setCur(fromKg(toKg(cur, unit), u)); run(settingsUpdate, { unit: u }); };
+  const setUnit = (u: Unit) => { if (u !== unit) run(settingsUpdate, { unit: u }); };
+  // the highlighted off-grid row (e.g. 60 kg shown as 132.28 lb) gives back the exact stored kg
+  const pick = (v: number) => onDone(Math.abs(v - cur) < 1e-9 && valueKg != null ? valueKg : toKg(v, unit));
 
   return (
-    <Sheet open={open} onClose={onClose} title={label}>
-      <div className="stack" style={{ gap: 14 }}>
-        <div className="seg" role="group" aria-label="Unit">
-          {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>{u}</button>)}
-        </div>
-        <Wheel values={values} index={index} onIndex={(i) => { setCur(values[i]); setTyped(null); }} format={(v) => fmtNum(v)} ariaLabel={`${label} in ${unit}`} />
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span className="faint" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>±</span>
-          <div className="chips">
-            {STEPS[unit].map((s) => <button key={s} className="chip" aria-pressed={s === stepU} onClick={() => setStep(s)}>{fmtNum(s)}</button>)}
+    <NumberSheet open={open} onClose={onClose} title={label} value={cur} onPick={pick} spec={spec}
+      extra={
+        <div className="row" style={{ gap: 8 }}>
+          <div className="seg" role="group" aria-label="Unit" style={{ width: 112, flex: 'none' }}>
+            {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>{u}</button>)}
+          </div>
+          <div className="chips grow" role="group" aria-label="Step" style={{ justifyContent: 'flex-end' }}>
+            <span className="faint" aria-hidden style={{ fontSize: '0.8125rem', fontWeight: 600 }}>±</span>
+            {STEPS[unit].map((s) => <button key={s} className="chip" aria-pressed={s === stepU} aria-label={`Step ${fmtNum(s)} ${unit}`} onClick={() => setStep(s)}>{fmtNum(s)}</button>)}
           </div>
         </div>
-        <div className="row">
-          <button className="icon-btn filled" aria-label="Clear" onClick={() => { onDone(null); onClose(); }} style={{ color: 'var(--text-2)' }}><Icon name="close" size={18} /></button>
-          {/* exact entry: type any value (e.g. 23.75) — overrides the wheel */}
-          <input className="input num" inputMode="decimal" aria-label={`Type ${label.toLowerCase()}`} placeholder={fmtNum(values[index])}
-            value={typed ?? ''} onChange={(e) => setTyped(e.target.value.replace(',', '.'))}
-            style={{ width: 96, textAlign: 'center', borderRadius: 999, fontWeight: 700, fontSize: '1.125rem' }} />
-          <button className="btn primary grow lg" onClick={() => { onDone(toKg(final, unit)); onClose(); }} disabled={!(final >= 0)}>
-            <Icon name="check" size={20} stroke={2.6} /> {fmtWeight(toKg(final, unit), unit)}
-          </button>
-        </div>
-      </div>
-    </Sheet>
+      }
+      footer={valueKg != null && (
+        <button className="btn block" onClick={() => { onDone(null); onClose(); }} style={{ color: 'var(--text-2)' }}><Icon name="close" size={16} /> Clear</button>
+      )}
+    />
   );
 }
+
+/** Reps entry: 0–100 tap list + keypad. Same contract as WeightSheet (null = clear). */
+export function RepsSheet({ open, onClose, value, onDone, label = 'Reps' }: {
+  open: boolean; onClose: () => void; value: number | null | undefined; onDone: (reps: number | null) => void; label?: string;
+}) {
+  return (
+    <NumberSheet open={open} onClose={onClose} title={label} value={value ?? null} onPick={(v) => onDone(Math.round(v))}
+      spec={REPS_SPEC}
+      footer={value != null && (
+        <button className="btn block" onClick={() => { onDone(null); onClose(); }} style={{ color: 'var(--text-2)' }}><Icon name="close" size={16} /> Clear</button>
+      )}
+    />
+  );
+}
+const REPS_SPEC: NumberSpec = { min: 0, max: 100, step: 1, decimals: 0, keyMax: 999 };
 
 export function EffortSheet({ open, onClose, mode, value, onDone }: {
   open: boolean; onClose: () => void; mode: EffortMode; value: number | null | undefined; onDone: (v: number | null, mode: EffortMode) => void;
@@ -91,8 +93,3 @@ export function EffortSheet({ open, onClose, mode, value, onDone }: {
 
 const range = (a: number, b: number, s: number) => Array.from({ length: Math.round((b - a) / s) + 1 }, (_, i) => a + i * s);
 const closest = (arr: number[], v: number) => arr.reduce((p, c) => (Math.abs(c - v) < Math.abs(p - v) ? c : p));
-const nearestIndex = (arr: number[], v: number) => {
-  let best = 0;
-  for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - v) < Math.abs(arr[best] - v)) best = i;
-  return best;
-};

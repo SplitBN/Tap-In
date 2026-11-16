@@ -601,3 +601,131 @@ button.cell:active { transform: scale(0.96); }
 .time-chip input { border: 0; background: none; color: var(--text); font-weight: 700; font-size: 1rem; outline: none; }
 .time-chip button { border: 0; background: none; color: var(--text-2); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; }
 .code-box { padding: 18px; border-radius: 18px; background: var(--card-2); text-align: center; font-size: 1.375rem; font-weight: 800; letter-spacing: 0.08em; word-break: break-all; user-select: all; -webkit-user-select: all; }
+
+/* ---------- number picker: value list + keypad (NumberPicker.tsx) ----------
+   Plain native scrolling: no scroll-snap, no mask on the scroller, no per-row transitions,
+   so a flick is pure compositor work and never wakes React. */
+.np { display: flex; flex-direction: column; gap: 10px; }
+.np-list {
+  position: relative; display: flex; flex-direction: column; gap: 8px;
+  height: clamp(112px, calc(100dvh - 440px - var(--safe-t) - var(--safe-b) - var(--np-reserve, 0px)), 340px); overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; scrollbar-width: none; padding: 4px 0; contain: content;
+}
+.np-list::-webkit-scrollbar { display: none; }
+.np-inline .np-list { height: clamp(156px, calc(100dvh - 600px - var(--safe-t) - var(--safe-b)), 280px); }
+.np-row {
+  flex: none; min-height: 56px; width: 100%; border: 0; border-radius: 18px; background: var(--card-2); color: var(--text);
+  font-size: 1.25rem; font-weight: 650; letter-spacing: -0.01em;
+  transition: transform 140ms var(--ease-out), background-color 140ms;
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+.np-row:active { transform: scale(0.96); }
+.np-row.on { background: var(--accent-solid); color: var(--accent-text); font-weight: 750; }
+.np-pad { display: flex; flex-direction: column; gap: 6px; }
+.np-entry { display: flex; gap: 8px; align-items: stretch; }
+.np-display {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 16px;
+  border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--card-3);
+  font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; overflow: hidden; white-space: nowrap;
+}
+.np-display.empty { color: var(--text-3); }
+.np-display.bad { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.np-ok {
+  flex: none; width: 72px; border: 0; border-radius: 18px; background: var(--accent-solid); color: var(--accent-text);
+  display: grid; place-items: center; transition: transform 140ms var(--ease-out), opacity 140ms;
+}
+.np-ok:not(:disabled):active { transform: scale(0.96); }
+.np-ok:disabled { opacity: 0.35; }
+.np-err { min-height: 1.1em; font-size: 0.8125rem; font-weight: 600; color: var(--danger); text-align: center; line-height: 1.1; }
+.np-err:empty { min-height: 0; }
+.np-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.np-key {
+  min-height: 52px; border: 0; border-radius: 16px; background: var(--card-2); color: var(--text);
+  font-size: 1.5rem; font-weight: 600; display: grid; place-items: center;
+  transition: transform 140ms var(--ease-out), background-color 140ms;
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+.np-key:not(:disabled):active { transform: scale(0.96); background: var(--card-3); }
+.np-key:disabled { opacity: 0.25; }
+.np-padonly .np-key { min-height: 60px; }
+.np-field { display: flex; align-items: center; text-align: left; font-weight: 650; cursor: pointer; }
+.np-field.empty { color: var(--text-3); font-weight: 400; }
+/* tap list for non-numeric choices (Picker.tsx) */
+.opt-list { display: flex; flex-direction: column; gap: 8px; max-height: min(60dvh, 460px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 2px 0; }
+.opt-row {
+  flex: none; display: flex; align-items: center; gap: 12px; min-height: 56px; width: 100%; padding: 0 18px; border: 0; border-radius: 18px;
+  background: var(--card-2); color: var(--text); font-size: 1.0625rem; font-weight: 600; text-align: left;
+  transition: transform 140ms var(--ease-out), background-color 140ms; -webkit-tap-highlight-color: transparent;
+}
+.opt-row:active { transform: scale(0.96); }
+.opt-row.on { box-shadow: inset 0 0 0 2px var(--role, var(--accent)); }
+.opt-row .opt-sub { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-2); margin-top: 2px; }
+.opt-row .opt-check { margin-left: auto; color: var(--role, var(--accent)); flex: none; }
+@media (prefers-reduced-motion: reduce) { .np-row, .np-key, .np-ok, .opt-row { transition: background-color 140ms; } .np-row:active, .np-key:active, .np-ok:active, .opt-row:active { transform: none; } }
+button.amount-input { width: auto; min-width: 72px; text-align: left; cursor: pointer; }
+button.amount-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+
+/* ---------- workout summary (WorkoutSummary.tsx) ---------- */
+.sum { padding-bottom: 8px; }
+.sum-when { margin: -6px 4px 12px; font-size: 0.875rem; font-weight: 560; }
+.sum-stats { display: grid; grid-template-columns: 1fr 1.45fr 0.8fr; gap: 8px; }
+.sum-stat { background: var(--card-2); border-radius: var(--r); padding: 12px 12px 10px; min-width: 0; }
+.sum-stat-label { font-size: 0.75rem; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.sum-stat-value { font-size: 1.625rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-stat-unit { font-size: 0.875rem; font-weight: 650; letter-spacing: 0; color: var(--text-2); margin-left: 3px; }
+.sum-delta { font-size: 0.8125rem; font-weight: 650; color: var(--text-2); margin-top: 2px; }
+.sum-delta.good { color: var(--good); }
+.sum-delta.bad { color: var(--warn); }
+.sum-caption { margin: 8px 4px 0; font-size: 0.8125rem; text-align: center; }
+.sum-hl { border-radius: var(--r-lg); padding: 4px 14px; background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 16%, var(--card-2)), var(--card-2) 70%); }
+.sum-hl-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; }
+.sum-hl-row + .sum-hl-row { box-shadow: inset 0 1px 0 var(--line); }
+.sum-hl-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--good-soft); color: var(--good); }
+.sum-hl-icon.pr { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+.sum-hl-title { display: block; font-weight: 650; }
+.sum-hl-sub { display: block; font-size: 0.875rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.sum-trend { flex: none; min-width: 34px; height: 28px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font-weight: 800; font-size: 1rem; background: var(--card-2); color: var(--text-2); }
+.sum-trend.up { background: var(--good-soft); color: var(--good); }
+.sum-trend.down { background: var(--danger-soft); color: var(--danger); }
+.sum-trend.new { background: var(--accent-soft); color: var(--accent); font-size: 0.75rem; }
+.sum-muscles { padding: 14px 16px; }
+.sum-m-row { display: grid; grid-template-columns: 6.5em 1fr auto; align-items: center; gap: 10px; min-height: 30px; }
+.sum-m-name { font-size: 0.9375rem; font-weight: 560; }
+.sum-m-bar { position: relative; height: 10px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.sum-m-bar > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+.sum-m-bar .wk { background: color-mix(in srgb, var(--c-gym) 35%, transparent); }
+.sum-m-bar .now { background: var(--c-gym); }
+.sum-m-num { font-size: 0.875rem; font-weight: 650; min-width: 3.6em; text-align: right; }
+.sum-rpe { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.sum-choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sum-opt {
+  min-height: 44px; border: 0; border-radius: var(--r-sm); background: var(--card-2); color: var(--text);
+  font-weight: 650; font-size: 1rem; -webkit-tap-highlight-color: transparent;
+  transition-property: background-color, color, scale; transition-duration: 150ms; transition-timing-function: ease-out;
+}
+.sum-opt:active { scale: 0.96; }
+.sum-opt[aria-pressed='true'] { background: var(--accent-solid); color: var(--accent-text); }
+.sum-done { position: sticky; bottom: 0; margin: 20px -18px -18px; padding: 12px 18px 14px; background: linear-gradient(to top, var(--bg-raised) 70%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .sum-in { animation: sum-in 300ms ease-out both; animation-delay: calc(var(--i, 0) * 100ms); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sum-in { animation: sum-fade 200ms ease-out both; }
+  .sum-opt:active { scale: none; }
+}
+@keyframes sum-in { from { opacity: 0; filter: blur(4px); transform: translateY(12px); } }
+@keyframes sum-fade { from { opacity: 0; } }
+/* the summary lives in a sheet (bg-raised = card colour), so its surfaces step up one level */
+.sum .list, .sum .card { background: var(--card-2); }
+.sum .sum-m-bar, .sum .sum-opt, .sum .sum-trend:not(.up):not(.down):not(.new) { background: var(--card-3); }
+.sum .sum-opt[aria-pressed='true'] { background: var(--accent-solid); }
+.sum .sum-hl { background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 18%, var(--card-2)), var(--card-2) 70%); }
+div:not(.field) > .np-field { justify-content: center; text-align: center; padding: 0 8px; }
+/* short phones (SE): tighter keypad so list + keypad still fit without the sheet scrolling */
+@media (max-height: 720px) {
+  .np-key { min-height: 44px; font-size: 1.375rem; }
+  .np-keys { gap: 6px; }
+  .np-display, .np-entry { min-height: 50px; }
+  .np-row { min-height: 50px; }
+  .np-list { height: clamp(112px, calc(100dvh - 390px - var(--safe-t) - var(--safe-b) - var(--np-reserve, 0px)), 340px); }
+}

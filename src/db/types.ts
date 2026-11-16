@@ -69,8 +69,15 @@ export interface Session extends Base {
   endedAt?: number | null;
   items: WorkoutItem[]; // editable copy of the workout structure
   currentKey?: string;
-  notes?: string;
+  notes?: string; // free text; the post-workout survey's note writes here too
+  // Post-workout survey (all optional, raw answers; see sessions.rate)
+  sessionRpe?: number | null; // session RPE, CR-10 0–10 (Foster et al. 2001) — not the per-set RIR-based RPE
+  sleep?: SurveySleep | null; // last night's sleep
+  soreness?: SurveyBody | null; // how the body felt going in
+  ratedAt?: number | null; // when the survey was last answered (sRPE is meant to be given ~30 min after)
 }
+export type SurveySleep = 'bad' | 'ok' | 'good';
+export type SurveyBody = 'fresh' | 'normal' | 'beat';
 
 export type SetKind = 'warmup' | 'working' | 'drop';
 export type Side = 'both' | 'left' | 'right';
@@ -112,8 +119,7 @@ export interface Settings {
     gym: boolean;
     food: boolean;
     supplements: boolean;
-    checkins: boolean;
-    progressPhotos: boolean;
+    survey: boolean; // post-workout survey on the summary screen
     restTimer: boolean;
     effort: boolean;
     warmups: boolean;
