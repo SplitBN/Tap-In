@@ -123,7 +123,9 @@ function Keypad({ spec, fmt, value, onPick, ariaLabel }: {
       return next;
     });
   };
-  const commit = () => { if (ok) { onPick(round(n, dec)); setTyped(''); } };
+  // nothing typed: ✓ accepts the highlighted / current value (same as tapping it in the list)
+  const keep = typed === '' && value != null && Number.isFinite(value);
+  const commit = () => { if (ok) { onPick(round(n, dec)); setTyped(''); } else if (keep) onPick(value!); };
 
   // hardware keyboard (desktop / iPad keyboard): digits, dot/comma, Backspace, Enter
   const onKey = (e: React.KeyboardEvent) => {
@@ -131,7 +133,7 @@ function Keypad({ spec, fmt, value, onPick, ariaLabel }: {
     if (/^[0-9]$/.test(k)) press(k);
     else if (k === '.' || k === ',') press('.');
     else if (k === 'Backspace') press('del');
-    else if (k === 'Enter' && typed) commit();
+    else if (k === 'Enter' && (typed || keep)) commit();
     else return;
     e.preventDefault();
   };
@@ -143,7 +145,7 @@ function Keypad({ spec, fmt, value, onPick, ariaLabel }: {
         <output className={'np-display num' + (typed ? '' : ' empty') + (err ? ' bad' : '')} aria-live="polite" aria-label={`Typed ${ariaLabel.toLowerCase()}`}>
           {typed ? `${typed}${spec.unit ? ` ${spec.unit}` : ''}` : value != null ? fmt(value) : '–'}
         </output>
-        <button type="button" className="np-ok" aria-label={ok ? `Set ${fmt(round(n, dec))}` : 'Set typed value'} disabled={!ok} onClick={commit}>
+        <button type="button" className="np-ok" aria-label={ok ? `Set ${fmt(round(n, dec))}` : keep ? `Keep ${fmt(value!)}` : 'Set typed value'} disabled={!ok && !keep} onClick={commit}>
           <Icon name="check" size={24} stroke={2.8} />
         </button>
       </div>

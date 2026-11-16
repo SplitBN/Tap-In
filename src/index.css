@@ -394,7 +394,7 @@ textarea.input { padding: 12px 16px; }
 .note-line.editing { background: var(--card-2); border-radius: 14px; padding: 10px 12px; }
 .note-line textarea { flex: 1; border: 0; outline: none; background: none; resize: none; padding: 0; color: var(--text); line-height: 1.4; }
 
-/* ---------- workout: set table (current set = pills, future = plain text) ---------- */
+/* ---------- workout: set table (next set = pills, later sets = plain text) ---------- */
 .set-grid { display: grid; grid-template-columns: 44px 1fr 1fr 52px; gap: 8px; align-items: center; }
 .set-grid[data-effort='true'] { grid-template-columns: 44px 1fr 1fr 0.8fr 52px; }
 .set-head { padding: 2px 0 6px; font-size: 0.8125rem; font-weight: 650; color: var(--text-3); text-align: center; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -418,9 +418,8 @@ textarea.input { padding: 12px 16px; }
 .set-row.active.warmup .set-no { color: var(--c-warm); }
 .set-row.active .cell:focus { box-shadow: inset 0 0 0 2px var(--accent); }
 button.cell:active { transform: scale(0.96); }
-/* future rows: just text, not interactive */
+/* future rows: quiet text, still tappable (sets can be logged in any order) */
 .set-row.future .cell, .set-row.future .set-no { color: var(--text-3); }
-.set-row.future .cell { pointer-events: none; }
 /* done rows: tappable to edit, quiet */
 .set-row.done .cell { color: var(--text); }
 .set-row.done .cell:focus { background: var(--card-2); box-shadow: inset 0 0 0 2px var(--accent); }
@@ -431,7 +430,7 @@ button.cell:active { transform: scale(0.96); }
 .check:not(:disabled):active { transform: scale(0.96); }
 .check.on { background: var(--good); color: #000; box-shadow: 0 4px 14px color-mix(in srgb, var(--good) 40%, transparent); }
 .check.ready { background: var(--good-soft); color: var(--good); }
-.check.locked { background: transparent; color: transparent; pointer-events: none; }
+.check.later { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1.5px var(--line); }
 .set-row.shake { animation: shake 320ms; }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 .set-row.ghost { min-height: 32px; }
@@ -729,3 +728,5 @@ div:not(.field) > .np-field { justify-content: center; text-align: center; paddi
   .np-row { min-height: 50px; }
   .np-list { height: clamp(112px, calc(100dvh - 390px - var(--safe-t) - var(--safe-b) - var(--np-reserve, 0px)), 340px); }
 }
+/* long exercise names in the workout header: two lines, then … */
+.ex-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }

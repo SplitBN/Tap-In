@@ -12,7 +12,8 @@ import { run } from '../api/registry';
 import { goalFor } from '../db/food';
 import { latestBodyweightKg } from '../db/gym';
 import type { Activity, Food, NutritionGoal, Sex } from '../db/types';
-import { ACTIVITY_LABEL, KCAL_PER_KG, PROTEIN_G_PER_KG, dateKey, estimateMaintenance, targetKcal } from '../lib/nutrition';
+import { ACTIVITY_LABEL, KCAL_PER_KG, PROTEIN_G_PER_KG, estimateMaintenance, targetKcal } from '../lib/nutrition';
+import { useToday } from '../lib/today';
 
 const ACTIVITY_SUB: Record<Activity, string> = {
   sedentary: 'Desk job, little walking', light: 'Some walking, training 2–4×/wk', active: 'On your feet, training most days', very: 'Physical job or hard daily training',
@@ -71,7 +72,7 @@ async function persist(d: Draft, kgLogged: number | undefined) {
  *  Saving creates a goal version effective today, so past days keep the targets that applied then. */
 export function NutritionPage() {
   const nav = useNavigate();
-  const today = dateKey();
+  const today = useToday();
   const current = useLiveQuery(async () => (await goalFor(today)) ?? null, [today]); // null = none yet
   const kg = useLiveQuery(async () => (await latestBodyweightKg()) ?? null, []);
   const [d, setD] = useState<Draft | null>(null);

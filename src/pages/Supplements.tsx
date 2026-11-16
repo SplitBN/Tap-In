@@ -14,6 +14,7 @@ import { notesAdd, notesDelete, stackDelete, stackSave, suppDelete, suppSave, su
 import { fmtNum } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { Ring } from './Food';
+import { useToday } from '../lib/today';
 
 const slotName = (slot: string) => {
   if (slot === '--:--') return 'Any time';
@@ -32,7 +33,7 @@ export function useSuppDay(date: string) {
 
 export function SupplementsPage() {
   const [params, setParams] = useSearchParams();
-  const today = dateKey();
+  const today = useToday();
   const date = params.get('d') ?? today;
   const setDate = (d: string) => setParams(d === today ? {} : { d }, { replace: true });
   const { sups, stacks, logs, day, done, total } = useSuppDay(date);
@@ -260,7 +261,7 @@ const UNIT_OPTS = UNITS.map((u) => ({ value: u, label: u }));
 const FORM_OPTS = FORMS.map((f) => ({ value: f.value as SuppForm, label: f.label }));
 
 function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplement; onClose: () => void }) {
-  const today = dateKey();
+  const today = useToday();
   const [name, setName] = useState('');
   const [form, setForm] = useState<SuppForm>('capsule');
   const [unit, setUnit] = useState('mg');

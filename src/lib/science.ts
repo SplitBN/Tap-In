@@ -59,3 +59,25 @@ export function defaultStepKg(equipment: string, unit: Unit) {
   if (equipment === 'dumbbell' || equipment === 'kettlebells') return 2;
   return 2.5;
 }
+
+/** Weight-picker steps offered per unit. */
+export const WEIGHT_STEPS: Record<Unit, number[]> = { kg: [0.5, 1, 1.25, 2, 2.5, 5], lb: [1, 2.5, 5, 10] };
+// Usual counterpart of each step in the other unit (plates: 1.25 kg ≈ 2.5 lb, 2.5 kg ≈ 5 lb, 5 kg ≈ 10 lb).
+const STEP_EQUIV: Record<Unit, Record<string, number>> = {
+  kg: { '1': 0.5, '2.5': 1.25, '5': 2.5, '10': 5 },
+  lb: { '0.5': 1, '1': 2.5, '1.25': 2.5, '2': 5, '2.5': 5, '5': 10 },
+};
+/** A stored step (kg) as a standard step of `unit`, so plate steps round-trip between units: 5 lb (2.268 kg) shows as
+ *  2.5 kg, and 2.5 kg shows as 5 lb. Exact steps of either unit map through STEP_EQUIV; anything else snaps to the nearest. */
+export function stepInUnit(stepKg: number, unit: Unit): number {
+  const match = (u: Unit) => WEIGHT_STEPS[u].find((s) => Math.abs(toKg(s, u) - stepKg) < 0.005);
+  const own = match(unit);
+  if (own != null) return own;
+  const other: Unit = unit === 'kg' ? 'lb' : 'kg';
+  const o = match(other);
+  if (o != null && STEP_EQUIV[unit][String(o)] != null) return STEP_EQUIV[unit][String(o)];
+  const u = fromKg(stepKg, unit);
+  return WEIGHT_STEPS[unit].reduce((p, c) => (Math.abs(c - u) < Math.abs(p - u) ? c : p));
+}
+/** The step actually used in `unit`, back in kg (for rounding suggestions to loadable weights). */
+export const snappedStepKg = (stepKg: number, unit: Unit) => toKg(stepInUnit(stepKg, unit), unit);

@@ -41,8 +41,9 @@ export const effLoad = (s: StatSet) => (s.loadType === 'assisted' ? -s.loadKg : 
 /** Volume load = Σ load × reps (kg), working sets + drop steps, warm-ups excluded. Both sides of one-side sets count. */
 export const volumeKg = (sets: StatSet[]) => sets.filter((s) => s.kind !== 'warmup' && s.reps > 0).reduce((a, s) => a + s.totalKg * s.reps, 0);
 
-/** Working sets: one per (slot, set number) — a left+right pair is one set, drop steps fold into their parent set. */
-export const workingSetCount = (sets: StatSet[]) => new Set(sets.filter((s) => s.kind === 'working').map((s) => `${s.itemKey}:${s.setNo}`)).size;
+/** Working sets: one per (slot, set number) — a left+right pair is one set, drop steps fold into their parent set.
+ *  Pass done sets of ONE session (slot keys repeat across sessions of the same plan workout). Works on raw SetLogs too. */
+export const workingSetCount = (sets: Pick<StatSet, 'kind' | 'itemKey' | 'setNo'>[]) => new Set(sets.filter((s) => s.kind === 'working').map((s) => `${s.itemKey}:${s.setNo}`)).size;
 
 export interface BestSet { loadKg: number; totalKg: number; reps: number; rir: number | null; e1rmKg: number; reliable: boolean }
 /** Best working set = highest estimated 1RM (Epley on reps + RIR, see science.ts e1rm); ties (incl. e1RM 0 when a

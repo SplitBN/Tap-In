@@ -78,11 +78,15 @@ export async function warmPushEndpoint() {
   if (endpoint !== undefined || !('serviceWorker' in navigator)) return;
   endpoint = (await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription())?.endpoint ?? null;
 }
-async function restAlert(path: '/push/rest' | '/push/rest/cancel', extra: Record<string, unknown> = {}) {
-  if (!state.account) return;
+/** true = handled (sent, or nothing to do: not signed in / no push subscription); false = the request failed (retry later). */
+async function restAlert(path: '/push/rest' | '/push/rest/cancel', extra: Record<string, unknown> = {}): Promise<boolean> {
+  // right after startup the account may not be loaded into state yet: read it straight from the db
+  const acc = state.account ?? (await meta<Account>('account'));
+  if (!acc) return true;
   if (endpoint === undefined) await warmPushEndpoint();
-  if (!endpoint) return;
-  try { await api(path, { method: 'POST', keepalive: true, body: JSON.stringify({ endpoint, ...extra }) }); } catch { /* offline: the in-app timer still works */ }
+  if (!endpoint) return true;
+  try { await api(path, { method: 'POST', keepalive: true, token: acc.token, body: JSON.stringify({ endpoint, ...extra }) }, acc.api); return true; }
+  catch { return false; } // offline: the in-app timer still works
 }
 export const scheduleRestAlert = (at: number, title: string, body: string) => restAlert('/push/rest', { at, title, body });
 export const cancelRestAlert = () => restAlert('/push/rest/cancel');

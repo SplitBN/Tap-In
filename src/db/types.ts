@@ -48,6 +48,9 @@ export interface WorkoutItem {
   drops?: number; // drop steps after each working set
   warmups?: number;
   notes?: string;
+  /** Session only: this exercise was replaced mid-workout by the slot with this key. The slot stays to hold its done
+   *  sets (history keeps them as this exercise) but is never copied back to the plan. */
+  replacedBy?: string;
 }
 
 export interface Plan extends Base {

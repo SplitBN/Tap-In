@@ -19,6 +19,8 @@ import { useSuppDay } from './Supplements';
 import { fmtNum } from '../lib/format';
 import { dateKey, goalHit, sum } from '../lib/nutrition';
 import { exerciseImage } from '../db/seed';
+import { useToday } from '../lib/today';
+import { workingSetCount } from '../lib/workoutStats';
 
 const DAY = 86400000;
 const dayKey = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
@@ -28,6 +30,7 @@ const weekStart = (ts = Date.now()) => { const d = new Date(ts); d.setHours(0, 0
 export function HomePage() {
   const settings = useSettings();
   const [weighing, setWeighing] = useState(false);
+  useToday(); // re-render the header date and every widget when the day rolls over
   return (
     <div className="page">
       <header className="page-head">
@@ -167,11 +170,13 @@ function MiniLine({ entries }: { entries: BodyweightEntry[] }) {
 
 function WeekWidget() {
   const nav = useNavigate();
-  const ws = weekStart().getTime();
+  const todayKey = useToday();
+  const ws = useMemo(() => weekStart().getTime(), [todayKey]);
   const data = useLiveQuery(async () => {
     const sessions = await db.sessions.where('startedAt').aboveOrEqual(ws).filter((s) => alive(s) && !!s.endedAt).toArray();
     const ids = sessions.map((s) => s.id);
-    const sets = ids.length ? await db.sets.where('sessionId').anyOf(ids).filter((x) => alive(x) && !!x.doneAt && x.kind !== 'warmup').count() : 0;
+    const done = ids.length ? await db.sets.where('sessionId').anyOf(ids).filter((x) => alive(x) && !!x.doneAt).toArray() : [];
+    const sets = ids.reduce((n, id) => n + workingSetCount(done.filter((x) => x.sessionId === id)), 0); // per session: slot keys repeat across sessions
     return { sessions, sets };
   }, [ws]);
   const days = new Set((data?.sessions ?? []).map((s) => (new Date(s.startedAt).getDay() + 6) % 7));
@@ -198,6 +203,7 @@ function CalendarWidget() {
   const nav = useNavigate();
   const settings = useSettings();
 
+  useToday(); // the collapsed week and the today marker follow the date
   const start = expanded ? weekStart(month.getTime()) : weekStart();
   const count = expanded ? 42 : 7;
   const end = start.getTime() + count * DAY;
@@ -310,7 +316,7 @@ function ImageStack({ ids, max = 4 }: { ids: string[]; max?: number }) {
 
 function FoodWidget() {
   const nav = useNavigate();
-  const today = dateKey();
+  const today = useToday();
   const { goal, total, entries } = useDay(today);
   return (
     <Widget role="food" icon="food" title="Food" wide onOpen={() => nav('/food')}
@@ -327,7 +333,7 @@ function FoodWidget() {
 
 function SuppWidget() {
   const nav = useNavigate();
-  const today = dateKey();
+  const today = useToday();
   const { day, done, total, sups } = useSuppDay(today);
   const pending = day.flatMap((g) => g.stacks.flatMap((st) => st.items)).filter((i) => !i.log).slice(0, 3);
   if (!sups.length) {

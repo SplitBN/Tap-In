@@ -44,10 +44,12 @@ export async function startSession(w?: Workout): Promise<Session> {
 }
 
 /** Plan structure fields that matter when asking "save changes to the plan?" */
-const sig = (items: WorkoutItem[]) => JSON.stringify(items.map((i) => [
+/** Session slots that belong in the plan (not ones kept only to hold the done sets of a replaced exercise). */
+export const planItems = (items: WorkoutItem[]) => items.filter((i) => !i.replacedBy);
+const sig = (all: WorkoutItem[]) => { const items = planItems(all); return JSON.stringify(items.map((i) => [
   i.exerciseId, i.sets, i.repsMin ?? null, i.repsMax ?? null, i.rest.mode, i.rest.sec ?? null,
   i.supersetId ? items.findIndex((j) => j.supersetId === i.supersetId) : null, i.drops ?? 0, i.warmups ?? 0,
-]));
+])); };
 
 export async function sessionDiffersFromPlan(s: Session) {
   if (!s.workoutId) return false;
@@ -58,7 +60,7 @@ export async function sessionDiffersFromPlan(s: Session) {
 export async function finishSession(s: Session, updatePlan: boolean) {
   if (updatePlan && s.workoutId) {
     const w = await db.workouts.get(s.workoutId);
-    if (w) await save('workouts', { ...w, items: s.items.map((i) => ({ ...i })) });
+    if (w) await save('workouts', { ...w, items: planItems(s.items).map((i) => ({ ...i })) });
   }
   // Drop untouched, unfinished rows so history only holds what happened.
   const sets = await db.sets.where('sessionId').equals(s.id).toArray();

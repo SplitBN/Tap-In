@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useMemo, useState } from 'react';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
-import { exercisesCreate, exercisesDuplicate, exercisesUpdate } from '../api/gym';
+import { exercisesCreate, exercisesDelete, exercisesDuplicate, exercisesUpdate } from '../api/gym';
+import { confirmDialog, notice } from './Dialog';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
@@ -55,6 +56,13 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
     close();
   };
 
+  const createRow = (
+    <button className="list-item pressable" onClick={() => setCreating(true)} style={{ paddingLeft: 4 }}>
+      <span className="thumb" style={{ display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><Icon name="plus" /></span>
+      <span className="title" style={{ color: 'var(--accent)' }}>{q.trim() ? `Create “${q.trim()}”` : 'Create custom exercise'}</span>
+    </button>
+  );
+
   return (
     <Sheet open={open} onClose={close} title={title} full
       actions={multi && sel.length ? <button className="btn primary" onClick={() => done(sel)}>Add {sel.length}</button> : undefined}>
@@ -70,10 +78,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
           ))}
         </div>
       </div>
-      <button className="list-item pressable" onClick={() => setCreating(true)} style={{ paddingLeft: 4 }}>
-        <span className="thumb" style={{ display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><Icon name="plus" /></span>
-        <span className="title" style={{ color: 'var(--accent)' }}>{q ? `Create “${q}”` : 'Create custom exercise'}</span>
-      </button>
+      {!q.trim() && createRow}
       <div>
         {list.map((e) => {
           const on = sel.includes(e.id);
@@ -95,6 +100,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
           );
         })}
         {!list.length && <p className="empty">No exercises match.</p>}
+        {!!q.trim() && createRow /* real matches first, create at the end */}
       </div>
       <ExerciseEditor open={creating} initialName={q} onClose={() => setCreating(false)}
         onSaved={(ex) => (multi ? setSel([...sel, ex.id]) : done([ex.id]))} />
@@ -152,6 +158,15 @@ export function ExerciseEditor({ open, onClose, onSaved, onDuplicated, initialNa
     onClose();
   };
 
+  // custom exercises only; refused (with the reason) while a plan or the workout in progress still uses it
+  const del = async () => {
+    if (!exercise) return;
+    onClose(); // one sheet at a time: the confirm replaces the editor
+    if (!(await confirmDialog({ title: `Delete ${exercise.name}?`, message: 'It leaves search and the picker. Past workouts keep their sets.', confirm: 'Delete exercise', danger: true }))) return;
+    try { await run(exercisesDelete, { id: exercise.id }); }
+    catch (e) { await notice("Can't delete", (e as Error).message); }
+  };
+
   return (
     <Sheet open={open} onClose={onClose} title={exercise ? 'Edit exercise' : 'New exercise'}>
       <div className="stack" style={{ gap: 16 }}>
@@ -188,6 +203,7 @@ export function ExerciseEditor({ open, onClose, onSaved, onDuplicated, initialNa
           <div className="stack" style={{ gap: 6 }}>
             <button className="btn block" onClick={duplicate}><Icon name="copy" size={18} />Duplicate</button>
             <span className="faint" style={{ fontSize: '0.8125rem', textAlign: 'center' }}>Separate copy with its own history, e.g. another machine. A name typed above names the copy.</span>
+            {exercise.custom && <button className="btn block" onClick={del} style={{ color: 'var(--danger)' }}><Icon name="trash" size={18} />Delete</button>}
           </div>
         )}
       </div>

@@ -10,9 +10,10 @@ import { run } from '../api/registry';
 import { alive, db } from '../db/db';
 import { goalFor } from '../db/food';
 import type { FoodEntry, Macros, Meal, NutritionGoal } from '../db/types';
-import { dateKey, keyToDate, shiftDate, sum } from '../lib/nutrition';
+import { keyToDate, shiftDate, sum } from '../lib/nutrition';
 import { MEALS, mealNow, k } from '../lib/meals';
 import { hasHebrew, unitLabel } from '../lib/units';
+import { useToday } from '../lib/today';
 
 export { MEALS, mealNow, k } from '../lib/meals';
 
@@ -30,7 +31,7 @@ type Tab = 'search' | 'scan' | 'quick' | 'mine';
 export function FoodPage() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
-  const today = dateKey();
+  const today = useToday();
   const date = params.get('d') ?? today;
   const setDate = (d: string) => setParams(d === today ? {} : { d }, { replace: true });
   const { entries, goal, status, total } = useDay(date);

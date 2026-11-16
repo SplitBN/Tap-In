@@ -12,12 +12,13 @@ import type { SetLog } from '../db/types';
 import { fmtDate, fmtDuration, fmtWeight, relDay, setText } from '../lib/format';
 import { e1rm, totalLoadKg } from '../lib/science';
 import { ExerciseInfo } from './Session';
+import { workingSetCount } from '../lib/workoutStats';
 
 export function HistoryPage() {
   const sessions = useLiveQuery(() => db.sessions.orderBy('startedAt').reverse().filter((s) => alive(s) && !!s.endedAt).limit(200).toArray(), []) ?? [];
   const counts = useLiveQuery(async () => {
     const m: Record<string, number> = {};
-    for (const s of sessions) m[s.id] = await db.sets.where('sessionId').equals(s.id).filter((x) => alive(x) && !!x.doneAt && x.kind !== 'warmup').count();
+    for (const s of sessions) m[s.id] = workingSetCount(await db.sets.where('sessionId').equals(s.id).filter((x) => alive(x) && !!x.doneAt).toArray()); // same counting as the summary
     return m;
   }, [sessions]) ?? {};
   return (

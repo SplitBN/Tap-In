@@ -3,13 +3,12 @@ import { run } from '../api/registry';
 import { exercisesUpdate } from '../api/gym';
 import { settingsUpdate } from '../api/body';
 import type { EffortMode, Exercise, Unit } from '../db/types';
-import { defaultStepKg, fromKg, toKg } from '../lib/science';
+import { WEIGHT_STEPS as STEPS, defaultStepKg, fromKg, stepInUnit, toKg } from '../lib/science';
 import { fmtNum } from '../lib/format';
 import { Sheet } from './Sheet';
 import { Icon } from './Icon';
 import { NumberSheet, type NumberSpec } from './NumberPicker';
 
-const STEPS: Record<Unit, number[]> = { kg: [0.5, 1, 1.25, 2, 2.5, 5], lb: [1, 2.5, 5, 10] };
 
 /** Weight entry: tap list stepping by the exercise's increment (in the current unit) + keypad.
  *  Unit and increment can be switched right here (unit is app-wide; stored values stay kg). */
@@ -18,7 +17,7 @@ export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, la
   unit: Unit; exercise?: Exercise; label: string;
 }) {
   const stepKg = exercise?.stepKg ?? defaultStepKg(exercise?.equipment ?? 'other', unit);
-  const stepU = closest(STEPS[unit], fromKg(stepKg, unit));
+  const stepU = stepInUnit(stepKg, unit); // standard step in this unit, so 5 lb ↔ 2.5 kg round-trips
   const curKg = valueKg ?? (exercise?.equipment === 'barbell' ? 20 : 0);
   const cur = Math.round(fromKg(curKg, unit) * 100) / 100;
   const spec = useMemo<NumberSpec>(() => ({
@@ -92,4 +91,3 @@ export function EffortSheet({ open, onClose, mode, value, onDone }: {
 }
 
 const range = (a: number, b: number, s: number) => Array.from({ length: Math.round((b - a) / s) + 1 }, (_, i) => a + i * s);
-const closest = (arr: number[], v: number) => arr.reduce((p, c) => (Math.abs(c - v) < Math.abs(p - v) ? c : p));
