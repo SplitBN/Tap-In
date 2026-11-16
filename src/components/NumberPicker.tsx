@@ -185,10 +185,10 @@ function Keypad({ spec, fmt, value, onPick, ariaLabel, scope }: {
     <div className="np-pad">
       <div className="np-entry">
         <output className={'np-display num' + (typed ? '' : ' empty') + (err ? ' bad' : '')} aria-live="polite" aria-label={`Typed ${ariaLabel.toLowerCase()}`}>
-          {typed ? `${typed}${spec.unit ? ` ${spec.unit}` : ''}` : value != null ? fmt(value) : '–'}
+          {typed || (value != null ? fmtNum(value) : '')}<span className="np-caret" aria-hidden />
         </output>
         <button type="button" className="np-ok" aria-label={ok ? `Set ${fmt(round(n, dec))}` : keep ? `Keep ${fmt(value!)}` : 'Set typed value'} disabled={!ok && !keep} onClick={commit}>
-          <Icon name="check" size={24} stroke={2.8} />
+          <Icon name="check" size={30} stroke={3} />
         </button>
       </div>
       <div className="np-err" role="status">{err ?? ''}</div>
@@ -215,11 +215,15 @@ export function NumberSheet({ open, onClose, title, value, onPick, spec, extra, 
   open: boolean; onClose: () => void; title: string; value: number | null | undefined; onPick: (v: number) => void;
   spec: NumberSpec; extra?: ReactNode; footer?: ReactNode; role?: SheetRole;
 }) {
+  // extra controls (unit, step…) stay tucked behind "Options" like Alpha Progression, so the list gets the room
+  const [opts, setOpts] = useState(false);
+  useEffect(() => { if (!open) setOpts(false); }, [open]);
   return (
     <Sheet open={open} onClose={onClose} title={title} role={role}>
       {/* the list shrinks by what extra/footer take, so the sheet never needs its own scroll */}
-      <div className="stack" style={{ gap: 12, ['--np-reserve' as string]: `${(extra ? 92 : 0) + (footer ? 62 : 0)}px` }}>
-        {extra}
+      <div className="stack" style={{ gap: 10, ['--np-reserve' as string]: `${(extra ? (opts ? 100 : 44) : 0) + (footer ? 62 : 0)}px` }}>
+        {extra && <button type="button" className="np-options" aria-expanded={opts} onClick={() => setOpts((o) => !o)}>{opts ? 'Done' : 'Options'}</button>}
+        {extra && opts && extra}
         <NumberPicker value={value} spec={spec} ariaLabel={title} onPick={(v) => { onPick(v); onClose(); }} />
         {footer}
       </div>

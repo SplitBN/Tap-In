@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# third-party app screenshots used as local design references (not published)
+docs/design-refs/*.png
+docs/design-refs/*.jpg

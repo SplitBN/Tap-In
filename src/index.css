@@ -644,36 +644,41 @@ button.cell:active { transform: scale(0.96); }
    Plain native scrolling: no scroll-snap, no mask on the scroller, no per-row transitions,
    so a flick is pure compositor work and never wakes React. */
 .np { display: flex; flex-direction: column; gap: 10px; }
+/* Look modelled on Alpha Progression's weight entry (docs/design-refs): slim centred value pills taking
+   most of the sheet, the current value in a lighter grey (not an accent "selection"), tap = set + close. */
 .np-list {
-  position: relative; display: flex; flex-direction: column; gap: 8px;
-  height: clamp(112px, calc(100dvh - 440px - var(--safe-t) - var(--safe-b) - var(--np-reserve, 0px)), 340px); overflow-y: auto; overscroll-behavior: contain;
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  height: clamp(150px, calc(100dvh - 450px - var(--safe-t) - var(--safe-b) - var(--np-reserve, 0px)), 560px); overflow-y: auto; overscroll-behavior: contain;
   touch-action: pan-y; scrollbar-width: none; padding: 4px 0; contain: content;
 }
 .np-list::-webkit-scrollbar { display: none; }
 .np-inline .np-list { height: clamp(156px, calc(100dvh - 600px - var(--safe-t) - var(--safe-b)), 280px); }
 .np-row {
-  flex: none; min-height: 56px; width: 100%; border: 0; border-radius: 18px; background: var(--card-2); color: var(--text);
-  font-size: 1.25rem; font-weight: 650; letter-spacing: -0.01em;
+  flex: none; min-height: 60px; width: min(48%, 210px); border: 0; border-radius: 20px; background: var(--card-2); color: var(--text);
+  font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em;
   transition: transform 140ms var(--ease-out), background-color 140ms;
-  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation;
 }
-.np-row:active { transform: scale(0.96); }
-.np-row.on { background: var(--role-solid, var(--accent-solid)); color: var(--on-role, var(--accent-text)); font-weight: 750; }
+.np-row:active { transform: scale(0.96); background: var(--card-3); }
+.np-row.on { background: #48484a; }
 .np-pad { display: flex; flex-direction: column; gap: 6px; }
-.np-entry { display: flex; gap: 8px; align-items: stretch; }
+/* entry row uses the keypad's 3 columns: typed number across the first two, ✓ key in the third */
+.np-entry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
 .np-display {
-  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 16px;
-  border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--card-3);
-  font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; overflow: hidden; white-space: nowrap;
+  grid-column: span 2; min-width: 0; display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 12px;
+  font-size: 2.125rem; font-weight: 700; letter-spacing: -0.02em; overflow: hidden; white-space: nowrap;
 }
 .np-display.empty { color: var(--text-3); }
-.np-display.bad { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.np-display.bad { color: var(--danger); }
+.np-caret { display: inline-block; width: 3px; height: 1.05em; margin-left: 3px; border-radius: 2px; background: var(--role-solid, var(--accent-solid)); animation: np-blink 1s steps(1) infinite; }
+@keyframes np-blink { 50% { opacity: 0; } }
 .np-ok {
-  flex: none; width: 72px; border: 0; border-radius: 18px; background: var(--role-solid, var(--accent-solid)); color: var(--on-role, var(--accent-text));
-  display: grid; place-items: center; transition: transform 140ms var(--ease-out), opacity 140ms;
+  border: 0; border-radius: 16px; background: var(--card-2); color: var(--role, var(--accent));
+  display: grid; place-items: center; transition: transform 140ms var(--ease-out), opacity 140ms; -webkit-tap-highlight-color: transparent;
 }
-.np-ok:not(:disabled):active { transform: scale(0.96); }
+.np-ok:not(:disabled):active { transform: scale(0.96); background: var(--card-3); }
 .np-ok:disabled { opacity: 0.35; }
+.np-options { align-self: flex-end; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--role, var(--accent)); font-size: 1.0625rem; font-weight: 600; }
 .np-err { min-height: 1.1em; font-size: 0.8125rem; font-weight: 600; color: var(--danger); text-align: center; line-height: 1.1; }
 .np-err:empty { min-height: 0; }
 .np-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
