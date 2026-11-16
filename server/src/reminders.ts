@@ -1,13 +1,16 @@
 // Push reminders: iOS can't schedule local notifications for web apps, so the server sends them.
 // A cron trigger runs every minute; for each subscribed device it looks at the user's synced
 // supplements (records table) in the device's timezone and sends a push for doses that are due now
-// and not logged yet. Weigh-in reminders go out once in the morning when one is due.
+// and not logged yet. Weigh-in reminders go out once in the morning when one is due. Low-stock
+// reminders go out once (around 18:00 local) when a supplement's stock drops to its threshold.
 import { buildPushPayload, type PushSubscription, type VapidKeys } from '@block65/webcrypto-web-push';
 import type { Env } from './index';
 
 // ---- schedule logic (mirror of app/src/db/supps.ts isDue/doseOn — keep in sync) ----
 interface Schedule { kind: 'daily' | 'weekdays' | 'interval' | 'weekly' | 'asNeeded'; days?: number[]; every?: number; times: string[]; startDate: string; cycle?: { onDays: number; offDays: number } | null }
-interface Supplement { id: string; name: string; unit: string; doses: { from: string; amount: number }[]; schedule: Schedule; archived?: boolean; deletedAt?: number | null }
+interface LowStock { kind: 'days' | 'amount'; value: number }
+interface Supplement { id: string; name: string; unit: string; doses: { from: string; amount: number }[]; schedule: Schedule; archived?: boolean; deletedAt?: number | null;
+  stock?: number | null; lowStock?: LowStock | null }
 interface SuppLog { supplementId: string; date: string; slot: string | null; deletedAt?: number | null }
 
 const dayNum = (key: string) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
@@ -24,6 +27,44 @@ function isDue(s: Schedule, date: string) {
   return false;
 }
 const doseOn = (s: Supplement, date: string) => [...s.doses].sort((a, b) => b.from.localeCompare(a.from)).find((d) => d.from <= date)?.amount ?? s.doses[0]?.amount ?? 0;
+
+// ---- stock forecast (mirror of app/src/db/supps.ts stockForecast — keep in sync) ----
+// Stock is in dose units. Walk forward from today consuming doseOn × number of daily times on each due day;
+// today's slots that already have a log are not counted again. daysLeft = days until the first due day the
+// stock can't cover (0 = today); null for as-needed. Threshold undefined = 7 days, null = no alert.
+const DEFAULT_LOW_STOCK: LowStock = { kind: 'days', value: 7 };
+const STOCK_HORIZON = 400;
+const addDays = (key: string, n: number) => { const [y, m, d] = key.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+export function stockForecast(s: Supplement, today: string, logs: { supplementId: string; date: string; slot: string | null; deletedAt?: number | null }[]) {
+  if (s.stock == null || s.archived || s.deletedAt) return null;
+  const threshold = s.lowStock === undefined ? DEFAULT_LOW_STOCK : s.lowStock; // null = alerts off
+  let daysLeft: number | null = null;
+  let runsOutOn: string | null = null;
+  if (s.schedule.kind !== 'asNeeded') {
+    const mine = logs.filter((l) => !l.deletedAt && l.supplementId === s.id && l.date === today);
+    const times = s.schedule.times;
+    const slots = Math.max(1, times.length);
+    const logged = times.length ? times.filter((t) => mine.some((l) => l.slot === t)).length : Math.min(1, mine.filter((l) => l.slot == null).length);
+    let left = s.stock;
+    daysLeft = STOCK_HORIZON;
+    for (let i = 0; i < STOCK_HORIZON; i++) {
+      const d = addDays(today, i);
+      if (!isDue(s.schedule, d)) continue;
+      const need = (i === 0 ? slots - logged : slots) * doseOn(s, d);
+      if (need > left + 1e-9) { daysLeft = i; runsOutOn = d; break; }
+      left -= need;
+    }
+  }
+  const low = !threshold ? false : threshold.kind === 'amount' ? s.stock <= threshold.value : daysLeft != null && daysLeft <= threshold.value;
+  return { stock: s.stock, daysLeft, runsOutOn, threshold, low };
+}
+/** Same wording as the app (stockText in app/src/db/supps.ts). */
+function stockText(f: NonNullable<ReturnType<typeof stockForecast>>, unit: string) {
+  if (f.stock <= 0) return 'Out of stock';
+  if (f.threshold?.kind === 'amount' || f.daysLeft == null || f.daysLeft >= STOCK_HORIZON) return `${+f.stock.toFixed(2)} ${unit} left`;
+  if (f.daysLeft === 0) return 'Runs out today';
+  return `~${f.daysLeft} ${f.daysLeft === 1 ? 'day' : 'days'} left`;
+}
 
 /** Local date "YYYY-MM-DD" and time "HH:MM" in an IANA zone. */
 function localNow(tz: string, at = new Date()) {
@@ -85,6 +126,23 @@ export async function runReminders(env: Env) {
       }
     }
 
+    // low stock: checked 18:00–18:10 local. One push per low spell: the claim "stock:<id>@<tz>" stays while the
+    // supplement is low and is released once it isn't (restock, threshold change, stopped, deleted), so the next drop
+    // below the threshold reminds again. Missed doses or day changes don't re-send (the key has no date).
+    const nowMin = minutes(now.time);
+    if (nowMin >= minutes('18:00') && nowMin < minutes('18:10')) {
+      const allSups = await env.DB.prepare('SELECT id, data FROM records WHERE user_id = ? AND tbl = ?').bind(userId, 'supplements').all<{ id: string; data: string }>();
+      for (const row of allSups.results) {
+        const s = JSON.parse(row.data) as Supplement;
+        const f = stockForecast(s, now.date, logs);
+        if (f?.low) {
+          due.push({ key: `stock:${s.id}`, title: `${s.name} · ${stockText(f, s.unit)}`, body: f.stock <= 0 ? 'Time to restock. Tap to update the stock.' : 'Running low. Restock soon, then tap to add it.' });
+        } else {
+          await env.DB.prepare('DELETE FROM sent_reminders WHERE user_id = ? AND key = ?').bind(userId, `stock:${s.id}@${tz}`).run(); // not low (or deleted): re-arm
+        }
+      }
+    }
+
     // weigh-in: once at 08:00 local when the last one is older than the interval
     if (now.time === '08:00') {
       const settings = (await records<{ weighInEveryDays?: number }>(env, userId, 'settings'))[0];
@@ -96,7 +154,7 @@ export async function runReminders(env: Env) {
     dbg.push(`${tz} ${now.date} ${now.time}: ${sups.length} supps, ${due.length} due`);
     for (const d of due) {
       if (!(await once(env, userId, `${d.key}@${tz}`))) continue; // per timezone group; the notification tag stays shared
-      const group = d.key.startsWith('supp:') ? 'supps' : 'weight';
+      const group = d.key.startsWith('supp:') || d.key.startsWith('stock:') ? 'supps' : 'weight';
       for (const dev of devices) {
         try { await sendPush(env, dev, { title: d.title, body: d.body, url: `./#/${group}`, tag: d.key }); sent++; }
         catch (e) { console.error('push failed', dev.endpoint.slice(0, 40), (e as Error).message); }
@@ -104,6 +162,8 @@ export async function runReminders(env: Env) {
     }
   }
   console.log(`reminders: ${byUser.size} users, ${sent} pushes · ${dbg.join(' | ')}`);
-  // keep the de-dup table small
-  await env.DB.prepare('DELETE FROM sent_reminders WHERE sent_at < ?').bind(Date.now() - 3 * 86400000).run();
+  // keep the de-dup table small. Stock claims live as long as the supplement stays low (released above when it isn't);
+  // a 180-day backstop covers supplements deleted while low.
+  await env.DB.prepare("DELETE FROM sent_reminders WHERE (sent_at < ? AND key NOT LIKE 'stock:%') OR sent_at < ?")
+    .bind(Date.now() - 3 * 86400000, Date.now() - 180 * 86400000).run();
 }

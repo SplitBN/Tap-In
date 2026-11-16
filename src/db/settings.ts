@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
     warmups: true,
     progression: true,
     planWeek: true,
+    adaptiveMaintenance: true,
   },
 };
 

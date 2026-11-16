@@ -19,6 +19,7 @@ import { NutritionPage } from './pages/Nutrition';
 import { SupplementsPage } from './pages/Supplements';
 import { StatsPage } from './pages/Stats';
 import { ExercisesPage } from './pages/Exercises';
+import { CalendarPage } from './pages/Calendar';
 
 type Tab = { to: string; icon: string; label: string; home?: boolean };
 
@@ -59,7 +60,7 @@ function TabBar() {
 const TITLES: [string, string][] = [ // longest prefix first
   ['/plans/all', 'Plans'], ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
   ['/exercises', 'Exercises'], ['/exercise/', 'Exercise'], ['/stats', 'Stats'], ['/weight', 'Weight'], ['/settings', 'Settings'],
-  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'],
+  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'], ['/calendar', 'Calendar'],
 ];
 
 /** .app is the scroll container (see index.css), so reset it to the top on every route change.
@@ -111,6 +112,7 @@ export default function App() {
           <Route path="/food" element={<FoodPage />} />
           <Route path="/nutrition" element={<NutritionPage />} />
           <Route path="/supps" element={<SupplementsPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
         </main>

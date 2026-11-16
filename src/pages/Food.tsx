@@ -1,11 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router';
-import { AddFoodSheet, EntrySheet, FoodTile, MacroLine, RecipeEditor } from '../components/FoodSheets';
+import { AddFoodSheet, EntriesTransferSheet, EntrySheet, FoodTile, MacroLine, RecipeEditor } from '../components/FoodSheets';
+import { toast } from '../components/Toast';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
-import { daysComplete } from '../api/food';
+import { daysComplete, entriesDeleteMany } from '../api/food';
+import { recordsRestore } from '../api/body';
 import { run } from '../api/registry';
 import { alive, db } from '../db/db';
 import { goalFor } from '../db/food';
@@ -41,6 +43,21 @@ export function FoodPage() {
   const [recipe, setRecipe] = useState(false);
   const [editing, setEditing] = useState<FoodEntry | null>(null);
   const byMeal = (m: Meal) => entries.filter((e) => e.meal === m);
+  // selection mode: tick entries (any meal) -> copy / move / delete
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [xfer, setXfer] = useState<'copy' | 'move' | null>(null);
+  const chosen = entries.filter((e) => picked.includes(e.id)); // only live entries of this day count
+  const [seenDate, setSeenDate] = useState(date);
+  if (seenDate !== date) { setSeenDate(date); setSelecting(false); setPicked([]); }
+  const endSelect = () => { setSelecting(false); setPicked([]); };
+  const togglePick = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const press = useLongPress((id) => { setSelecting(true); setPicked((p) => (p.includes(id) ? p : [...p, id])); });
+  const removePicked = async () => {
+    const ids = chosen.map((e) => e.id); if (!ids.length) return;
+    await run(entriesDeleteMany, { ids }); endSelect();
+    toast(`${ids.length} deleted`, async () => { for (const id of ids) await run(recordsRestore, { table: 'entries', id }); });
+  };
   const log = (tab: Tab) => { setShortcuts(false); setAdding({ meal: mealNow(), tab }); };
 
   const label = date === today ? 'Today' : date === shiftDate(today, -1) ? 'Yesterday'
@@ -51,7 +68,9 @@ export function FoodPage() {
     <div className="page" data-role="food">
       <header className="title-more lt">
         <h1>Food</h1>
-        <button className="more-pill" aria-label="Food options" onClick={() => setMenu(true)}><Icon name="more" size={22} stroke={3} /></button>
+        {selecting
+          ? <button className="btn ghost sel-done" onClick={endSelect}>Done</button>
+          : <button className="more-pill" aria-label="Food options" onClick={() => setMenu(true)}><Icon name="more" size={22} stroke={3} /></button>}
       </header>
 
       <div className="date-pill">
@@ -80,12 +99,22 @@ export function FoodPage() {
               <span className="role-chip" aria-hidden><Icon name={m.icon} size={16} stroke={2} /></span>
               <h2 id={`meal-h-${m.id}`} className="grow">{m.label}</h2>
               {mt.kcal > 0 && <span className="num muted">{k(mt.kcal)} kcal</span>}
-              <button className="icon-btn sm tint" aria-label={`Add to ${m.label}`} onClick={() => setAdding({ meal: m.id, tab: 'search' })}><Icon name="plus" size={18} stroke={2.4} /></button>
+              {!selecting
+                ? <button className="icon-btn sm tint" aria-label={`Add to ${m.label}`} onClick={() => setAdding({ meal: m.id, tab: 'search' })}><Icon name="plus" size={18} stroke={2.4} /></button>
+                : list.length > 0 && (() => {
+                  const all = list.every((e) => picked.includes(e.id));
+                  return <button className={'sel-circle' + (all ? ' on' : '')} aria-pressed={all} aria-label={`Select all ${m.label}`}
+                    onClick={() => setPicked((p) => (all ? p.filter((id) => !list.some((e) => e.id === id)) : [...new Set([...p, ...list.map((e) => e.id)])]))}>
+                    {all && <Icon name="check" size={16} stroke={3} />}</button>;
+                })()}
             </div>
             {list.length > 0 && (
               <div className="group">
                 {list.map((e) => (
-                  <button key={e.id} className="fd-row pressable" onClick={() => setEditing(e)}>
+                  <button key={e.id} className={'fd-row pressable' + (selecting ? ' selecting' : '')} {...press.bind(e.id)}
+                    aria-pressed={selecting ? picked.includes(e.id) : undefined}
+                    onClick={() => { if (press.fired()) return; if (selecting) togglePick(e.id); else setEditing(e); }}>
+                    {selecting && <span className={'sel-circle' + (picked.includes(e.id) ? ' on' : '')} aria-hidden>{picked.includes(e.id) && <Icon name="check" size={16} stroke={3} />}</span>}
                     <FoodTile name={e.name} quick={e.source === 'quick'} />
                     <span className="grow" style={{ minWidth: 0 }}>
                       <span className="fd-name ellipsis bidi-start" dir="auto">{e.name}</span>
@@ -115,9 +144,18 @@ export function FoodPage() {
         <button className="text-link" onClick={() => setRecipe(true)}>New recipe</button>
       </nav>
 
+      {selecting && <div className="sel-spacer" aria-hidden />}
       {/* floating + (lives in the app frame, above the tab bar) */}
-      {shell && createPortal(
-        <button className="fab" aria-label="Log food" onClick={() => setShortcuts(true)}><Icon name="plus" size={28} stroke={2.4} /></button>, shell)}
+      {shell && createPortal(selecting ? (
+        <div className="sel-bar" data-role="food" role="toolbar" aria-label="Selected entries">
+          <button className="icon-btn" aria-label="Cancel selection" onClick={endSelect}><Icon name="close" size={20} /></button>
+          <span className="sel-count num" aria-live="polite">{chosen.length}<span className="sr-only"> selected</span></span>
+          <span className="grow" />
+          <button className="sel-act" disabled={!chosen.length} onClick={() => setXfer('copy')}><Icon name="copy" size={20} /><span>Copy</span></button>
+          <button className="sel-act" disabled={!chosen.length} onClick={() => setXfer('move')}><Icon name="chevronRight" size={20} stroke={2.4} /><span>Move</span></button>
+          <button className="sel-act danger" disabled={!chosen.length} onClick={removePicked}><Icon name="trash" size={20} /><span>Delete</span></button>
+        </div>
+      ) : <button className="fab" aria-label="Log food" onClick={() => setShortcuts(true)}><Icon name="plus" size={28} stroke={2.4} /></button>, shell)}
 
       <Sheet open={shortcuts} onClose={() => setShortcuts(false)} title="Log food">
         <div className="am">
@@ -143,6 +181,9 @@ export function FoodPage() {
             <button className="am-row pressable" onClick={() => { setMenu(false); setAdding({ meal: mealNow(), tab: 'mine' }); }}><Icon name="food" /><span className="grow">My foods</span></button>
             <button className="am-row pressable" onClick={() => { setMenu(false); setRecipe(true); }}><Icon name="note" /><span className="grow">New recipe</span></button>
           </div>
+          {entries.length > 0 && <div className="group">
+            <button className="am-row pressable" onClick={() => { setMenu(false); setSelecting(true); }}><Icon name="check" /><span className="grow">Select<span className="am-sub">Copy, move or delete entries · or hold one</span></span></button>
+          </div>}
           {date !== today && <nav className="text-links" aria-label="Day"><button className="text-link" onClick={() => { setMenu(false); setDate(today); }}>Go to today</button></nav>}
         </div>
       </Sheet>
@@ -150,8 +191,31 @@ export function FoodPage() {
       <AddFoodSheet open={!!adding} meal={adding?.meal ?? 'snacks'} initialTab={adding?.tab} date={date} onClose={() => setAdding(null)} />
       <RecipeEditor open={recipe} onClose={() => setRecipe(false)} />
       <EntrySheet entry={editing} onClose={() => setEditing(null)} />
+      <EntriesTransferSheet open={!!xfer} kind={xfer ?? 'copy'} entries={chosen} viewing={date} today={today} onClose={() => setXfer(null)}
+        onDone={(text, undo) => { setXfer(null); endSelect(); toast(text, undo); }} />
     </div>
   );
+}
+
+/** Hold ~0.45 s on a row (without scrolling) to start selecting; the click that follows is swallowed. */
+function useLongPress(onLong: (id: string) => void) {
+  const t = useRef(0), start = useRef<{ x: number; y: number } | null>(null), fired = useRef(false);
+  const cb = useRef(onLong); cb.current = onLong;
+  useEffect(() => () => clearTimeout(t.current), []);
+  const cancel = () => { clearTimeout(t.current); start.current = null; };
+  return {
+    fired: () => { const f = fired.current; fired.current = false; return f; },
+    bind: (id: string) => ({
+      onPointerDown: (e: RPointerEvent) => {
+        if (e.button !== 0) return;
+        fired.current = false; start.current = { x: e.clientX, y: e.clientY }; clearTimeout(t.current);
+        t.current = window.setTimeout(() => { fired.current = true; start.current = null; cb.current(id); }, 450);
+      },
+      onPointerMove: (e: RPointerEvent) => { const s = start.current; if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > 10) cancel(); },
+      onPointerUp: cancel, onPointerCancel: cancel, onPointerLeave: cancel,
+      onContextMenu: (e: RMouseEvent) => e.preventDefault(),
+    }),
+  };
 }
 
 const fmtQty = (e: FoodEntry) => {

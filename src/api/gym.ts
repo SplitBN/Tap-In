@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { defineCommand, zDate, zId } from './registry';
 import { alive, db, newRecord, remove, save, uuid } from '../db/db';
-import { createPlan, createWorkout, finishSession, latestBodyweightKg, newItem, setOrder, startSession } from '../db/gym';
+import { createPlan, createWorkout, finishSession, latestBodyweightKg, newItem, planItems, setOrder, startSession } from '../db/gym';
 import { getSettings, updateSettings } from '../db/settings';
 import type { Exercise, Session, SetLog, SurveyBody, SurveySleep, Workout, WorkoutItem } from '../db/types';
 import { normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
@@ -312,6 +312,60 @@ export const sessionsUpdate = defineCommand({ name: 'sessions.update', kind: 'ac
     return save('sessions', { ...s, name: name ?? s.name, notes: notes === null ? undefined : notes ?? s.notes, startedAt: start,
       endedAt: resume ? null : durationMin && s.endedAt ? start + durationMin * 60000 : s.endedAt, currentKey: currentItemKey ?? s.currentKey });
   } });
+/** A finished session's structure as fresh slots: replaced-exercise slots dropped (they only hold old done sets),
+ *  slots whose exercise was deleted skipped, new item keys and superset ids so nothing collides with the original. */
+async function copySessionItems(s: Session) {
+  const src = planItems(s.items);
+  const exs = await db.exercises.bulkGet(src.map((i) => i.exerciseId));
+  const skipped: string[] = [];
+  const groups = new Map<string, string>();
+  const items: WorkoutItem[] = [];
+  src.forEach((i, k) => {
+    const ex = exs[k];
+    if (!ex || ex.deletedAt) { skipped.push(ex ? exerciseLabel(ex) : i.exerciseId); return; }
+    const supersetId = i.supersetId ? groups.get(i.supersetId) ?? (groups.set(i.supersetId, uuid()), groups.get(i.supersetId)!) : undefined;
+    items.push({ ...i, key: uuid(), supersetId, replacedBy: undefined, rest: { ...i.rest } });
+  });
+  return { items: normalizeSupersets(items), skipped };
+}
+
+export const sessionsRepeat = defineCommand({ name: 'sessions.repeat', kind: 'action',
+  description: 'Repeat a past (finished) workout: starts a NEW live session with the same exercises in the same order, set counts, rep targets, rest, supersets, warm-ups, drop sets and notes (no sets are copied: ' +
+    'what to lift comes from history as usual, see exercises.nextTarget). Slots of exercises replaced mid-workout and exercises that were deleted since are left out (listed in skipped). ' +
+    'If the original came from a plan workout that still exists, the new session stays linked to it (plan rotation, "save changes to plan" on finish). ' +
+    'Refused when a workout is already in progress: then returns { alreadyRunning: true, session } (the live one; resume it or finish/discard it first) and starts nothing. ' +
+    'Otherwise returns { alreadyRunning: false, session, skipped }.',
+  input: z.object({ id: zId.describe('Id of the finished session to repeat (from sessions.list / progress.sessions)') }),
+  run: async ({ id }) => {
+    const src = await need(db.sessions.get(id), 'Session');
+    if (!src.endedAt) throw new Error('That workout is still in progress; only finished workouts can be repeated');
+    const cur = await db.sessions.filter((x) => alive(x) && !x.endedAt).first();
+    if (cur) return { alreadyRunning: true as const, session: await sessionView(cur), skipped: [] as string[] };
+    const { items, skipped } = await copySessionItems(src);
+    if (!items.length) throw new Error('Nothing to repeat: that workout has no exercises left');
+    const w = src.workoutId ? await db.workouts.get(src.workoutId) : undefined;
+    const linked = !!w && alive(w) && !!(await db.plans.get(w.planId).then((p) => p && alive(p)));
+    const s = await save('sessions', newRecord({
+      workoutId: linked ? w!.id : undefined, planId: linked ? w!.planId : undefined, name: src.name,
+      startedAt: Date.now(), endedAt: null, items, currentKey: items[0].key,
+    }) as Session);
+    return { alreadyRunning: false as const, session: await sessionView(s), skipped };
+  } });
+
+export const workoutsCreateFromSession = defineCommand({ name: 'workouts.createFromSession', kind: 'action',
+  description: 'Save a past workout session as a new plan workout ("Save as workout"): copies its exercises, order, set counts, rep targets, rest, supersets, warm-ups, drop sets and notes ' +
+    '(not the logged weights/reps) into a new workout at the end of the plan\'s rotation. name defaults to the session name. Replaced-exercise slots and deleted exercises are left out (listed in skipped). ' +
+    'Returns { workout, skipped }.',
+  input: z.object({ sessionId: zId, planId: zId.describe('Plan to add the workout to (from plans.list)'), name: z.string().trim().min(1).optional() }),
+  run: async ({ sessionId, planId, name }) => {
+    const s = await need(db.sessions.get(sessionId), 'Session');
+    const plan = await need(db.plans.get(planId), 'Plan');
+    const { items, skipped } = await copySessionItems(s);
+    if (!items.length) throw new Error('Nothing to save: that workout has no exercises left');
+    const w = await createWorkout(plan, name ?? s.name);
+    return { workout: await save('workouts', { ...w, items } as Workout), skipped };
+  } });
+
 export const sessionsDelete = defineCommand({ name: 'sessions.delete', kind: 'action', description: 'Discard a live workout or delete a finished one, with all its sets.',
   input: z.object({ id: zId }), run: async ({ id }) => {
     for (const s of await db.sets.where('sessionId').equals(id).toArray()) await remove('sets', s.id);

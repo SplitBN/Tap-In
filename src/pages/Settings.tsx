@@ -76,6 +76,13 @@ export function SettingsPage() {
         </div>
       </>}
 
+      {f.food && <>
+        <div className="section-title">Food</div>
+        <div className="list">
+          <Toggle label="Adaptive maintenance" sub="Maintenance from your logs and weight trend. Off: formula only" on={f.adaptiveMaintenance !== false} onChange={feat('adaptiveMaintenance')} />
+        </div>
+      </>}
+
       {f.gym && f.restTimer && <>
         <div className="section-title">Default rest</div>
         <div className="list">

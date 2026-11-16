@@ -15,6 +15,7 @@ import { fromKg } from '../lib/science';
 import { run } from '../api/registry';
 import { progressExercise, progressSessions, type ExerciseProgress } from '../api/progress';
 import { ExerciseInfo } from './Session';
+import { RepeatRows, SaveAsWorkoutSheet, useRepeatWorkout } from '../components/RepeatWorkout';
 
 /** Volume in the display unit, rounded, with thousands separators ("8,450 kg"). */
 export const fmtVolume = (kg: number, unit: Unit) => `${Math.round(fromKg(kg, unit)).toLocaleString()} ${unit}`;
@@ -23,6 +24,9 @@ export function HistoryPage() {
   const settings = useSettings();
   const nav = useNavigate();
   const rows = useLiveQuery(() => run(progressSessions, { limit: 200 }), []);
+  const [menuFor, setMenuFor] = useState<{ id: string; name: string } | null>(null);
+  const [saveAs, setSaveAs] = useState<{ id: string; name: string } | null>(null);
+  const repeat = useRepeatWorkout();
   return (
     <div className="page" data-role="gym">
       <header className="page-head">
@@ -33,7 +37,8 @@ export function HistoryPage() {
       {!rows ? null : rows.length ? (
         <div className="list">
           {rows.map((s) => (
-            <Link key={s.id} to={`/session/${s.id}`} className="list-item pressable">
+            <div key={s.id} className="list-item hist-row">
+            <Link to={`/session/${s.id}`} className="hist-link pressable">
               <span className="grow">
                 <span className="title">{s.name}</span>
                 <span className="sub num" style={{ display: 'block' }}>
@@ -41,11 +46,23 @@ export function HistoryPage() {
                 </span>
               </span>
               {s.prs > 0 && <span className="badge good num" aria-label={`${plural(s.prs, 'personal record', 'personal records')}`}><Icon name="flag" size={12} /> {s.prs}</span>}
-              <Icon name="chevronRight" className="chev" size={18} />
             </Link>
+            <button className="icon-btn sm hist-more" aria-label={`${s.name}, ${relDay(keyToDate(s.date).getTime())}: options`} aria-haspopup="dialog" onClick={() => setMenuFor({ id: s.id, name: s.name })}>
+              <Icon name="more" size={20} stroke={3} />
+            </button>
+            </div>
           ))}
         </div>
       ) : <div className="empty"><Icon name="history" size={40} /><h3>No workouts yet</h3><p>Finished workouts land here.</p><Link to="/" className="btn primary"><Icon name="play" size={18} /> Start a workout</Link></div>}
+      <Sheet open={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor?.name} role="gym">
+        {menuFor && (
+          <div className="am"><div className="group">
+            <button className="am-row pressable" onClick={() => { const id = menuFor.id; setMenuFor(null); nav(`/session/${id}`); }}><Icon name="chart" /><span className="grow">Open</span></button>
+            <RepeatRows onRepeat={() => repeat(menuFor.id, () => setMenuFor(null))} onSaveAs={() => { setSaveAs(menuFor); setMenuFor(null); }} />
+          </div></div>
+        )}
+      </Sheet>
+      <SaveAsWorkoutSheet open={!!saveAs} sessionId={saveAs?.id ?? ''} sessionName={saveAs?.name ?? ''} onClose={() => setSaveAs(null)} />
     </div>
   );
 }

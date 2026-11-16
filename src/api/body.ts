@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { defineCommand, zDate, zId, zTime } from './registry';
 import { alive, db, newRecord, remove, save } from '../db/db';
-import { buildDay, doseOn, logTake, nextSite, scheduleText, undoTake } from '../db/supps';
+import { buildDay, doseOn, logTake, nextSite, scheduleText, stockForecast, stockText, undoTake } from '../db/supps';
 import { getSettings, updateSettings } from '../db/settings';
 import type { DoseStep, Note, Schedule, Settings, Stack, SuppForm, SuppLog, SuppRoute, Supplement } from '../db/types';
 import { BACKUP_TABLES, buildBackup, restoreBackup } from '../lib/backup';
@@ -42,8 +42,15 @@ const zSchedule = z.object({
   cycle: z.object({ onDays: z.number().int().min(1), offDays: z.number().int().min(0) }).nullable().optional().describe('on/off cycle counted from startDate; null removes it'),
 });
 const zDoseStep = z.object({ from: zDate, amount: z.number().positive() });
-const suppView = (s: Supplement) => ({ id: s.id, name: s.name, form: s.form, route: s.route, unit: s.unit, currentDose: doseOn(s, dateKey()), doseHistory: s.doses,
-  schedule: s.schedule, scheduleText: scheduleText(s.schedule), stock: s.stock ?? null, notes: s.notes, archived: !!s.archived });
+const suppView = (s: Supplement, todayLogs: SuppLog[] = []) => {
+  const f = stockForecast(s, dateKey(), todayLogs);
+  return { id: s.id, name: s.name, form: s.form, route: s.route, unit: s.unit, currentDose: doseOn(s, dateKey()), doseHistory: s.doses,
+    schedule: s.schedule, scheduleText: scheduleText(s.schedule), stock: s.stock ?? null, lowStock: s.lowStock === undefined ? 'default' as const : s.lowStock,
+    stockDaysLeft: f?.daysLeft ?? null, stockRunsOutOn: f?.runsOutOn ?? null, stockLow: f?.low ?? false, notes: s.notes, archived: !!s.archived };
+};
+const todaysLogs = () => db.supplogs.where('date').equals(dateKey()).filter(alive).toArray();
+const zLowStock = z.object({ kind: z.enum(['days', 'amount']), value: z.number().min(0) }).nullable()
+  .describe('Low-stock alert threshold: {kind:"days", value:N} = when the stock covers N days or fewer of scheduled doses; {kind:"amount", value:N} = when N or less (in the supplement unit) is left; null = no alert. Default when never set: 7 days');
 const routeFor = (form: SuppForm): SuppRoute => (form === 'injection' ? 'subq' : form === 'other' ? 'other' : 'oral');
 /** Normalise + validate a schedule: times sorted and de-duplicated, none for as-needed. */
 function cleanSchedule(s: Schedule): Schedule {
@@ -56,20 +63,22 @@ function cleanSchedule(s: Schedule): Schedule {
 /** One step per date (last wins), oldest first. */
 const cleanDoses = (doses: DoseStep[]) => [...new Map(doses.map((d) => [d.from, d] as const)).values()].sort((a, b) => a.from.localeCompare(b.from));
 
-export const suppList = defineCommand({ name: 'supplements.list', kind: 'query', description: 'All supplements/medications/peptides with dose history, schedule and stock, plus stacks.',
+export const suppList = defineCommand({ name: 'supplements.list', kind: 'query',
+  description: 'All supplements/medications/peptides with dose history, schedule and stock, plus stacks. Stock fields: stock (amount left in unit, null = not tracked), lowStock (alert threshold: "default" = 7 days, null = off), ' +
+    'stockDaysLeft (days from today until the first scheduled day the stock cannot cover, from schedule + dose; null when untracked or as-needed; 400 = a year or more), stockRunsOutOn (that date), stockLow (at or below the threshold).',
   input: z.object({}), run: async () => ({
-    supplements: (await db.supplements.filter(alive).toArray()).map(suppView),
+    supplements: await todaysLogs().then(async (logs) => (await db.supplements.filter(alive).toArray()).map((s) => suppView(s, logs))),
     stacks: (await db.stacks.filter(alive).toArray()).map((s) => ({ id: s.id, name: s.name, supplementIds: s.supplementIds })),
   }) });
 export const suppSave = defineCommand({ name: 'supplements.save', kind: 'action',
   description: 'Create (no id) or update a supplement; on update only the fields you pass change. Creating needs name and dose (or doses); dose applies from the schedule startDate (or today if that is in the future). ' +
     'To titrate an existing one prefer supplements.changeDose (adds a step, keeps history); doses replaces the whole dose history (corrections, removing a wrong step). ' +
     'schedule is merged into the current one (cycle:null removes a cycle); times are sorted and emptied for asNeeded. route is derived from form (injection→subq, other→other, else oral) unless given. ' +
-    'archived:true = "stop taking" (hidden from the checklist, history kept), false resumes. notes:"" clears notes, stock:null clears stock. Returns the saved supplement.',
+    'archived:true = "stop taking" (hidden from the checklist, history kept), false resumes. notes:"" clears notes, stock:null clears stock (to add a new pack prefer supplements.restock). lowStock sets the low-stock alert. Returns the saved supplement.',
   input: z.object({ id: zId.optional(), name: z.string().trim().min(1).optional(), form: z.enum(['capsule', 'tablet', 'powder', 'liquid', 'injection', 'other']).optional(),
     route: z.enum(['oral', 'subq', 'im', 'other']).optional(), unit: z.string().trim().min(1).optional(), dose: z.number().positive().optional().describe('starting dose, only when creating'),
     doses: z.array(zDoseStep).min(1).optional().describe('full dose history (replaces it): each step applies from its date on'),
-    schedule: zSchedule.optional(), stock: z.number().min(0).nullable().optional(), notes: z.string().optional(), archived: z.boolean().optional() }),
+    schedule: zSchedule.optional(), stock: z.number().min(0).nullable().optional(), lowStock: zLowStock.optional(), notes: z.string().optional(), archived: z.boolean().optional() }),
   run: async ({ id, dose, doses, schedule, notes, ...given }) => {
     const today = dateKey();
     const p = Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)) as typeof given; // undefined = leave unchanged
@@ -78,21 +87,36 @@ export const suppSave = defineCommand({ name: 'supplements.save', kind: 'action'
       const s = await db.supplements.get(id); if (!s || !alive(s)) throw new Error('Supplement not found');
       const route = p.route ?? (p.form && p.form !== s.form ? routeFor(p.form) : s.route);
       const sched = schedule ? cleanSchedule({ ...s.schedule, ...schedule, times: schedule.times ?? s.schedule.times, startDate: schedule.startDate ?? s.schedule.startDate }) : s.schedule;
-      return suppView(await save('supplements', { ...s, ...p, ...notesPatch, route, schedule: sched, doses: doses ? cleanDoses(doses) : s.doses } as Supplement));
+      return suppView(await save('supplements', { ...s, ...p, ...notesPatch, route, schedule: sched, doses: doses ? cleanDoses(doses) : s.doses } as Supplement), await todaysLogs());
     }
     if (!p.name || (dose == null && !doses)) throw new Error('name and dose are required to create');
     const form = p.form ?? 'capsule';
     const sched = cleanSchedule({ kind: 'daily', ...schedule, times: schedule?.times ?? ['08:00'], startDate: schedule?.startDate ?? today } as Schedule);
     return suppView(await save('supplements', newRecord({ name: p.name, form, route: p.route ?? routeFor(form), unit: p.unit ?? 'mg',
       doses: doses ? cleanDoses(doses) : [{ from: sched.startDate <= today ? sched.startDate : today, amount: dose! }],
-      schedule: sched, stock: p.stock ?? null, ...notesPatch, archived: p.archived ?? false }) as Supplement));
+      schedule: sched, stock: p.stock ?? null, ...(p.lowStock !== undefined ? { lowStock: p.lowStock } : {}), ...notesPatch, archived: p.archived ?? false }) as Supplement), await todaysLogs());
   } });
 export const suppDose = defineCommand({ name: 'supplements.changeDose', kind: 'action', description: 'Change a dose from a date on (titration); earlier dose steps stay in history. If a step already starts on that exact date it is replaced (a correction).',
   input: z.object({ id: zId, amount: z.number().positive(), from: zDate.optional() }),
   run: async ({ id, amount, from }) => { const s = await db.supplements.get(id); if (!s || !alive(s)) throw new Error('Supplement not found');
-    const d = from ?? dateKey(); return suppView(await save('supplements', { ...s, doses: cleanDoses([...s.doses.filter((x) => x.from !== d), { from: d, amount }]) })); } });
+    const d = from ?? dateKey(); return suppView(await save('supplements', { ...s, doses: cleanDoses([...s.doses.filter((x) => x.from !== d), { from: d, amount }]) }), await todaysLogs()); } });
 export const suppDelete = defineCommand({ name: 'supplements.delete', kind: 'action', description: 'Delete a supplement (its logs stay for analysis). Prefer archived=true via supplements.save to "stop taking".',
   input: z.object({ id: zId }), run: async ({ id }) => { await remove('supplements', id); return { ok: true }; } });
+export const suppRestock = defineCommand({ name: 'supplements.restock', kind: 'action',
+  description: 'Add to a supplement stock (a new bottle/pen/pack arrived): amount is added in the supplement unit (stock that was not tracked starts at amount). To set an exact count use supplements.save stock. Returns the supplement with its new stock and days left.',
+  input: z.object({ id: zId, amount: z.number().positive().describe('How much to add, in the supplement unit (e.g. 60 for 60 caps when the unit is caps, or 300 for 300 g)') }),
+  run: async ({ id, amount }) => { const s = await db.supplements.get(id); if (!s || !alive(s)) throw new Error('Supplement not found');
+    return suppView(await save('supplements', { ...s, stock: Math.round(((s.stock ?? 0) + amount) * 1000) / 1000 }), await todaysLogs()); } });
+export const suppStock = defineCommand({ name: 'supplements.stockStatus', kind: 'query',
+  description: 'Stock forecast for every active supplement whose stock is tracked: stock left, daysLeft (days from today until the first scheduled day it cannot cover; same rule the server uses for the low-stock push; null for as-needed), runsOutOn, threshold, low, and text (e.g. "~5 days left"). Low ones first.',
+  input: z.object({}),
+  run: async () => {
+    const logs = await todaysLogs();
+    return (await db.supplements.filter(alive).sortBy('name')).flatMap((s) => {
+      const f = stockForecast(s, dateKey(), logs);
+      return f ? [{ id: s.id, name: s.name, unit: s.unit, ...f, text: stockText(f, s.unit) }] : [];
+    }).sort((a, b) => Number(b.low) - Number(a.low));
+  } });
 export const stackSave = defineCommand({ name: 'stacks.save', kind: 'action', description: 'Create (no id) or update a stack: supplements taken together; members due at the same time are grouped and checked off in one go. Returns the stack.',
   input: z.object({ id: zId.optional(), name: z.string().trim().min(1), supplementIds: z.array(zId).min(2) }),
   run: async ({ id, name, supplementIds }) => {
@@ -176,10 +200,10 @@ export const notesDelete = defineCommand({ name: 'notes.delete', kind: 'action',
 export const settingsGet = defineCommand({ name: 'settings.get', kind: 'query', description: 'App settings: units, effort mode, active plan, feature switches, default rests, weigh-in interval.',
   input: z.object({}), run: async () => getSettings() });
 const zFeatures = z.object({ gym: z.boolean(), food: z.boolean(), supplements: z.boolean(), survey: z.boolean(),
-  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean(), planWeek: z.boolean() }).partial();
+  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean(), planWeek: z.boolean(), adaptiveMaintenance: z.boolean() }).partial();
 export const settingsUpdate = defineCommand({ name: 'settings.update', kind: 'action',
   description: 'Change settings; only the fields you pass change. unit kg/lb (display unit, data stays in kg), effortMode rir/rpe, activePlanId (a plan id, or null to clear the active plan), ' +
-    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers, planWeek = "Week N" next to the active plan). Returns all settings.',
+    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers, planWeek = "Week N" next to the active plan, adaptiveMaintenance = maintenance estimated from food logs + weight trend instead of the formula only). Returns all settings.',
   input: z.object({ unit: z.enum(['kg', 'lb']).optional(), effortMode: z.enum(['rir', 'rpe']).optional(), activePlanId: zId.nullable().optional(),
     restCompoundSec: z.number().int().min(15).max(600).optional(), restIsolationSec: z.number().int().min(15).max(600).optional(),
     weighInEveryDays: z.number().int().min(1).max(30).optional(), features: zFeatures.optional() }),

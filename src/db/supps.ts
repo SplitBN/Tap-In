@@ -1,5 +1,5 @@
 import { alive, db, newRecord, save } from './db';
-import type { Schedule, Stack, SuppLog, Supplement } from './types';
+import type { LowStock, Schedule, Stack, SuppLog, Supplement } from './types';
 import { keyToDate } from '../lib/nutrition';
 
 export const FORMS = [
@@ -45,6 +45,48 @@ export function scheduleText(s: Schedule) {
     case 'weekly': return `Weekly on ${keyToDate(s.startDate).toLocaleDateString(undefined, { weekday: 'long' })}${t}`;
     case 'asNeeded': return 'As needed';
   }
+}
+
+// ---- stock forecast — mirrored in server/src/reminders.ts (stockForecast): keep in sync ----
+// Stock is in dose units (logTake subtracts the amount taken). Walk forward from today, consuming
+// doseOn × number of daily times on each due day; today's slots that already have a log are not
+// counted again (their take already left the stock). daysLeft = days from today until the first
+// due day the stock can't cover (0 = today); null for as-needed (no schedule to project).
+export const DEFAULT_LOW_STOCK: LowStock = { kind: 'days', value: 7 };
+export const STOCK_HORIZON = 400;
+const addDays = (key: string, n: number) => { const [y, m, d] = key.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+export function stockForecast(s: Supplement, today: string, logs: { supplementId: string; date: string; slot: string | null; deletedAt?: number | null }[]) {
+  if (s.stock == null || s.archived || s.deletedAt) return null;
+  const threshold = s.lowStock === undefined ? DEFAULT_LOW_STOCK : s.lowStock; // null = alerts off
+  let daysLeft: number | null = null;
+  let runsOutOn: string | null = null;
+  if (s.schedule.kind !== 'asNeeded') {
+    const mine = logs.filter((l) => !l.deletedAt && l.supplementId === s.id && l.date === today);
+    const times = s.schedule.times;
+    const slots = Math.max(1, times.length);
+    const logged = times.length ? times.filter((t) => mine.some((l) => l.slot === t)).length : Math.min(1, mine.filter((l) => l.slot == null).length);
+    let left = s.stock;
+    daysLeft = STOCK_HORIZON;
+    for (let i = 0; i < STOCK_HORIZON; i++) {
+      const d = addDays(today, i);
+      if (!isDue(s.schedule, d)) continue;
+      const need = (i === 0 ? slots - logged : slots) * doseOn(s, d);
+      if (need > left + 1e-9) { daysLeft = i; runsOutOn = d; break; }
+      left -= need;
+    }
+  }
+  const low = !threshold ? false : threshold.kind === 'amount' ? s.stock <= threshold.value : daysLeft != null && daysLeft <= threshold.value;
+  return { stock: s.stock, daysLeft, runsOutOn, threshold, low };
+}
+export type StockForecast = NonNullable<ReturnType<typeof stockForecast>>;
+
+/** "~5 days left", "Runs out today", "Out of stock", or the amount (amount alerts, or no schedule to project).
+ *  Same wording as stockText in server/src/reminders.ts — keep in sync. */
+export function stockText(f: StockForecast, unit: string) {
+  if (f.stock <= 0) return 'Out of stock';
+  if (f.threshold?.kind === 'amount' || f.daysLeft == null || f.daysLeft >= STOCK_HORIZON) return `${+f.stock.toFixed(2)} ${unit} left`; // amount alert: say the amount
+  if (f.daysLeft === 0) return 'Runs out today';
+  return `~${f.daysLeft} ${f.daysLeft === 1 ? 'day' : 'days'} left`;
 }
 
 export interface DueItem { sup: Supplement; slot: string; amount: number; log?: SuppLog }

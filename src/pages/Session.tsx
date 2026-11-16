@@ -12,6 +12,7 @@ import { ExThumb } from '../components/ExThumb';
 import { EffortExplainer, EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
 import { WorkoutSummary } from '../components/WorkoutSummary';
+import { SaveAsWorkoutSheet, useRepeatWorkout } from '../components/RepeatWorkout';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { lastPerformance, latestBodyweightKg, sessionDiffersFromPlan, setOrder } from '../db/gym';
@@ -86,6 +87,8 @@ export function SessionPage() {
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
   // summary sheet: 'finish' right after finishing (Done goes Home), 'view' for a past session (Done just closes)
   const [summary, setSummary] = useState<null | 'finish' | 'view'>(null);
+  const [savingAs, setSavingAs] = useState(false);
+  const repeat = useRepeatWorkout();
 
   // stop a rest timer left over from another workout (e.g. a new one was started)
   const restSt = useRest();
@@ -211,6 +214,8 @@ export function SessionPage() {
       <Sheet open={menu === 'session'} onClose={() => setMenu(null)} title="Workout">
         <button className="menu-item" onClick={() => { setMenu(null); setPicking('add'); }}><Icon name="plus" />Add exercise</button>
         {!live && <button className="menu-item" onClick={() => { setMenu(null); setSummary('view'); }}><Icon name="chart" />Summary</button>}
+        {!live && <button className="menu-item" onClick={() => repeat(session.id, () => { setMenu(null); setSummary(null); })}><Icon name="play" />Repeat workout</button>}
+        {!live && <button className="menu-item" onClick={() => { setMenu(null); setSavingAs(true); }}><Icon name="copy" />Save as workout</button>}
         <button className="menu-item" onClick={() => setMenu('details')}><Icon name="edit" />Name, date & time</button>
         <NotesField value={session.notes} onChange={(notes) => run(sessionsUpdate, { id: session.id, notes: notes ?? null })} />
         {!live && <button className="menu-item" onClick={() => run(sessionsUpdate, { id: session.id, resume: true })}><Icon name="play" />Resume this workout</button>}
@@ -227,6 +232,7 @@ export function SessionPage() {
       <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => run(sessionsUpdate, { id: session.id, ...p })} />
       <FinishSheet open={menu === 'finish'} onClose={() => setMenu(null)} session={session} doneCount={doneCount} sets={sets}
         onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); setSummary('finish'); }} />
+      {!live && <SaveAsWorkoutSheet open={savingAs} sessionId={session.id} sessionName={session.name} onClose={() => setSavingAs(false)} />}
       <WorkoutSummary open={!!summary} sessionId={session.id} onClose={() => setSummary(null)}
         onDone={() => { const fromFinish = summary === 'finish'; setSummary(null); if (fromFinish) nav('/'); }} />
 

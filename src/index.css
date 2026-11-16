@@ -1029,3 +1029,123 @@ body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--sa
 .mm-tile .muscle-map { --mm-body: #48484a; --mm-base: #5c5c60; }
 .sum .group { background: var(--card-2); }
 
+
+/* ---------- food: select entries (copy · move · delete) ---------- */
+.fd-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.fd-row.selecting { gap: 12px; padding-left: 14px; }
+.fd-row.selecting[aria-pressed='true'] { background: color-mix(in srgb, var(--role-solid, var(--accent-solid)) 10%, transparent); }
+.fd-row .sel-circle { pointer-events: none; }
+.meal-head .sel-circle { margin-right: 7px; }
+.sel-done { min-height: 36px; margin-left: auto; font-weight: 700; }
+.sel-bar {
+  position: absolute; z-index: 25; left: 12px; right: 12px; bottom: calc(var(--tab-h) + max(10px, calc(var(--safe-b) - 6px)) + 10px);
+  display: flex; align-items: center; gap: 2px; min-height: 64px; padding: 6px 8px; border-radius: 26px;
+  background: color-mix(in srgb, var(--card-2) 82%, transparent); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 var(--line);
+}
+.sel-count { font-size: var(--fs-20); font-weight: 750; min-width: 1.5em; }
+.sel-act {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 60px; min-height: 52px; padding: 0 6px;
+  border: 0; border-radius: 18px; background: none; color: var(--role, var(--accent)); font-size: 0.6875rem; font-weight: 650;
+  transition-property: scale, background-color; transition-duration: 150ms; transition-timing-function: ease-out;
+}
+.sel-act:not(:disabled):active { scale: 0.96; background: var(--card-3); }
+.sel-act.danger { color: var(--danger); }
+.sel-act:disabled { opacity: 0.35; }
+@media (prefers-reduced-transparency: reduce) { .sel-bar { background: var(--card-2); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+body:has(.sel-bar) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--safe-b) - 6px)) + 88px); }
+/* copy / move sheet */
+.xfer-chips { flex-wrap: wrap; overflow: visible; }
+.xfer-here { margin-left: 4px; opacity: 0.7; }
+.xfer-date { position: relative; gap: 6px; padding: 0 12px; }
+.xfer-date.on { background: color-mix(in srgb, var(--role, var(--accent)) 18%, transparent); color: var(--role, var(--accent)); }
+.xfer-date input { border: 0; background: none; color: inherit; font: inherit; font-size: 16px; min-height: 40px; color-scheme: dark; max-width: 9.5rem; }
+.xfer-meals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.xfer-meal {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 6px 2px;
+  border: 0; border-radius: 16px; background: var(--card-2); color: var(--text-2); font-size: 0.75rem; font-weight: 650;
+  transition-property: scale, background-color, color; transition-duration: 150ms; transition-timing-function: ease-out;
+}
+.xfer-meal:active { scale: 0.96; }
+.xfer-meal[aria-pressed='true'] { background: color-mix(in srgb, var(--role, var(--accent)) 18%, transparent); color: var(--role, var(--accent)); }
+.xfer-eq { font-size: 1.25rem; font-weight: 800; line-height: 20px; }
+/* add-food sheet: multi-add bar */
+.add-bar {
+  position: sticky; bottom: -18px; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 12px -18px -18px; padding: 10px 18px 14px;
+  background: linear-gradient(to top, var(--bg-raised) 70%, color-mix(in srgb, var(--bg-raised) 0%, transparent));
+}
+.add-bar .btn.grow { flex: 1; }
+.add-bar-clear { background: var(--card-2); }
+.add-bar-kcal { margin-left: auto; padding-left: 8px; font-size: var(--fs-15); font-weight: 650; opacity: 0.75; }
+.add-done { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 6px 0 14px; border-radius: 999px; background: var(--card-2); font-weight: 650; }
+.add-done-ic { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--role-solid, var(--accent-solid)); color: var(--on-role, var(--accent-text)); flex: none; }
+@media (prefers-reduced-motion: no-preference) { .add-done { animation: add-done-in 220ms ease-out both; } }
+@keyframes add-done-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------- adaptive maintenance (Goals page card + how sheet) ---------- */
+.maint-card { display: flex; flex-direction: column; gap: 10px; }
+.maint-src { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-13); font-weight: 600; }
+.maint-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.maint-dot.adaptive { background: var(--good); }
+.maint-dot.blended { background: var(--role, var(--accent)); }
+.maint-dot.manual { background: var(--text-2); }
+.maint-how { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 0 -4px -6px; padding: 0 4px; border: 0; border-top: 1px solid var(--line);
+  background: none; color: var(--text-2); font: inherit; font-size: var(--fs-13); font-weight: 600; text-align: start; cursor: pointer; }
+.maint-how .chev { color: var(--text-3); }
+.maint-tag { padding: 2px 7px; border-radius: 999px; background: var(--card-3); color: var(--text-2); font-size: 0.6875rem; font-weight: 700; white-space: nowrap; }
+.maint-sheet { display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+.maint-head { display: flex; flex-direction: column; gap: 2px; }
+.maint-list { margin: 0; padding-inline-start: 20px; color: var(--text-2); }
+.maint-math { display: flex; flex-direction: column; border-radius: var(--r-lg, 14px); background: var(--card-2); padding: 4px 14px; }
+.maint-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; font-size: var(--fs-15); color: var(--text-2); }
+.maint-row + .maint-row { border-top: 1px solid var(--line); }
+.maint-row .num { flex: none; color: var(--text); font-weight: 650; }
+.maint-row.strong span:first-child { color: var(--text); font-weight: 600; }
+.maint-row.strong .num { font-weight: 800; }
+.maint-chart { margin: 0; padding: 10px 10px 8px; border-radius: var(--r-lg, 14px); background: var(--card-2); }
+.maint-chart svg { display: block; width: 100%; height: auto; }
+.maint-trend { fill: none; stroke: var(--role, var(--accent)); stroke-width: 2.5; stroke-linecap: round; }
+.maint-ewma { fill: none; stroke: var(--text-3); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.maint-pt { fill: var(--text-2); }
+.maint-pt.off { fill: none; stroke: var(--danger, #ff453a); stroke-width: 1.5; }
+.maint-chart figcaption { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.maint-key { display: inline-block; width: 14px; height: 0; border-top: 2.5px solid var(--role, var(--accent)); margin-inline-start: 6px; }
+.maint-key:first-child { margin-inline-start: 0; }
+.maint-key.ewma { border-top: 1.5px dashed var(--text-3); }
+.maint-key.pt { width: 6px; height: 6px; border: 0; border-radius: 50%; background: var(--text-2); }
+.maint-foot { margin: 4px 2px 0; }
+
+/* ---- repeat workout: History row = link + ⋯ (a button can't sit inside the link) ---- */
+.hist-row { padding: 0 6px 0 0; gap: 0; }
+.hist-link { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 56px; padding: 10px 8px 10px 16px; color: inherit; text-decoration: none; }
+.hist-more { flex: none; color: var(--text-3); }
+
+/* ---- supplement low stock ---- */
+.low-stock { padding: 4px 0; margin-bottom: 4px; }
+.low-row { gap: 12px; min-height: 60px; padding: 8px 12px 8px 16px; }
+.low-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; flex: none; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.low-btn { flex: none; gap: 4px; min-height: 44px; padding: 0 14px; font-weight: 650; color: var(--role, var(--accent)); }
+.low-tag { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+
+/* ---- calendar page ---- */
+.cal-title { text-align: left; }
+.cal-card { padding: 12px 10px 10px; overflow: hidden; }
+.cal-swipe { touch-action: pan-y; }
+.cal-swipe > .cal { gap: 4px 2px; }
+.cal-card .cal-day { min-height: 52px; }
+.cal-day.future { color: var(--text-3); }
+.cal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 6px 0; min-height: 36px; }
+.cal-dots i.dot-supp { width: 7px; height: 7px; border-radius: 1px; background: var(--c-supp); transform: rotate(45deg) scale(0.85); }
+.dot-food-done { background: transparent; box-shadow: inset 0 0 0 2px var(--c-food); border-radius: 2px !important; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 6px 0; font-size: 0.8125rem; color: var(--text-2); }
+.cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.cal-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.cal-legend i.dot-supp { border-radius: 1px; background: var(--c-supp); transform: rotate(45deg) scale(0.85); }
+.maint-sheet .list-item .title, .maint-sheet .list-item .sub { display: block; }
+.maint-key.off { width: 7px; height: 7px; border: 1.5px solid var(--danger, #ff453a); border-radius: 50%; }
+.low-text { color: var(--warn); font-weight: 700; }
+/* the add bar sits at the sheet's foot even when the list is short */
+.sheet-body:has(> .add-bar) { display: flex; flex-direction: column; }
+.sheet-body:has(> .add-bar) > * { flex: none; }
+.sheet-body:has(> .add-bar) > .add-bar { margin-top: auto; }
+.sel-spacer { height: 72px; } /* the selection bar is wider than the + button: keep the last row clear of it */

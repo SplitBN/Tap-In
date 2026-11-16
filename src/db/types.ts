@@ -129,6 +129,7 @@ export interface Settings {
     warmups: boolean;
     progression?: boolean; // progression targets (greyed "today" numbers) instead of last time's; undefined = on
     planWeek?: boolean; // "Week N" next to the active plan; undefined = on
+    adaptiveMaintenance?: boolean; // maintenance estimated from logs + weight trend; undefined = on
   };
 }
 
@@ -227,9 +228,14 @@ export interface Supplement extends Base {
   doses: DoseStep[];
   schedule: Schedule;
   stock?: number | null; // remaining amount in `unit` or count, optional
+  /** Low-stock alert: when days of supply (from schedule + dose) or the amount left drops to this.
+   *  undefined = default (7 days), null = no alert. See stockForecast in db/supps.ts. */
+  lowStock?: LowStock | null;
   notes?: string;
   archived?: boolean;
 }
+
+export interface LowStock { kind: 'days' | 'amount'; value: number }
 
 /** Items taken together (e.g. "Morning stack"): due members at the same time are checked off in one tap. */
 export interface Stack extends Base {

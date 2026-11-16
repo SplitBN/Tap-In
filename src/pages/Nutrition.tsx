@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { FoodEditor, useMyFoods } from '../components/FoodSheets';
 import { Icon } from '../components/Icon';
+import { MaintenanceCard, type MaintEstimate } from '../components/MaintenanceCard';
 import { NumberPicker, NumberRow, NumberSheet, type NumberSpec } from '../components/NumberPicker';
 import { OptionList, PickerRow, range, type Option } from '../components/Picker';
 import { weightLog } from '../api/body';
 import { goalsSet } from '../api/food';
+import { maintenanceApply, maintenanceEstimate } from '../api/maintenance';
 import { run } from '../api/registry';
 import { goalFor } from '../db/food';
 import { latestBodyweightKg } from '../db/gym';
@@ -35,9 +37,10 @@ interface Draft {
 function draftFrom(g: NutritionGoal | null, kg: number | undefined): Draft {
   const d = draftBase(g, kg);
   // a stored calorie target that isn't what the formula gives (e.g. set by the agent or typed in) is an override: keep it
-  if (g?.kcal != null) { const auto = compute({ ...d, kcalOverride: null }).kcal; if (auto == null || Math.abs(auto - g.kcal) > 1) d.kcalOverride = g.kcal; }
+  // compared with the target the stored maintenance + rate gave, not the live estimate (log-based maintenance moves daily)
+  if (g?.kcal != null && Math.abs(targetKcal(g.maintenanceKcal, g.rateKgPerWeek) - g.kcal) > 1) d.kcalOverride = g.kcal;
   // same for protein: only an explicit value differing from the 1.6 g/kg default is an override
-  if (g?.proteinG != null && compute({ ...d, proteinG: null }).protein === g.proteinG) d.proteinG = null;
+  if (g?.proteinG != null && compute({ ...d, proteinG: null }, null).protein === g.proteinG) d.proteinG = null;
   return d;
 }
 
@@ -49,17 +52,22 @@ function draftBase(g: NutritionGoal | null, kg: number | undefined): Draft {
   } : { sex: 'male', birthYear: 1998, heightCm: 178, weightKg: kg ?? 80, activity: 'light', rate: -0.5, maintOverride: null, useKcal: true, kcalOverride: null, useProtein: true, proteinG: null, carbsG: null, fatG: null };
 }
 
-function compute(d: Draft) {
-  const age = new Date().getFullYear() - d.birthYear;
-  const formula = estimateMaintenance(d.sex, d.weightKg, d.heightCm, age, d.activity);
-  const maintenance = d.maintOverride ?? formula;
+const formulaOf = (d: Draft) => estimateMaintenance(d.sex, d.weightKg, d.heightCm, new Date().getFullYear() - d.birthYear, d.activity);
+/** Log-based maintenance when maintenance.estimate has enough data (and the feature is on), else null. */
+const adaptiveOf = (est: MaintEstimate | null | undefined) => (est && est.source !== 'formula' ? est.kcal : null);
+
+/** Maintenance in force: your override, else the estimate from your logs, else the formula (computed on read). */
+function compute(d: Draft, adaptive: number | null) {
+  const formula = formulaOf(d);
+  const auto = adaptive ?? formula;
+  const maintenance = d.maintOverride ?? auto;
   const kcal = d.useKcal ? d.kcalOverride ?? targetKcal(maintenance, d.rate) : null;
   const protein = d.useProtein ? d.proteinG ?? Math.round(d.weightKg * PROTEIN_G_PER_KG / 5) * 5 : null;
-  return { formula, maintenance, kcal, protein };
+  return { formula, auto, maintenance, kcal, protein };
 }
 
-async function persist(d: Draft, kgLogged: number | undefined) {
-  const { kcal, protein } = compute(d);
+async function persist(d: Draft, kgLogged: number | undefined, adaptive: number | null) {
+  const { kcal, protein } = compute(d, adaptive);
   // log the weight first: the goal's formula maintenance uses the latest weigh-in
   if (kgLogged == null || Math.abs(kgLogged - d.weightKg) >= 0.05) await run(weightLog, { kg: d.weightKg });
   // effective today; goals.set updates today's goal in place if one exists. maintenanceKcal null = formula estimate
@@ -67,6 +75,14 @@ async function persist(d: Draft, kgLogged: number | undefined) {
     sex: d.sex, birthYear: d.birthYear, heightCm: d.heightCm, activity: d.activity, rateKgPerWeek: d.rate,
     maintenanceKcal: d.maintOverride || null, kcal, proteinG: protein, carbsG: d.carbsG, fatG: d.fatG,
   });
+  // the target above already uses the log-based maintenance; record it as the goal's maintenance (source "adaptive")
+  if (!d.maintOverride && adaptive != null) await run(maintenanceApply, { maintenanceKcal: adaptive, updateTarget: false });
+}
+
+/** maintenance.estimate, live, with the draft's formula as the starting point it blends toward. */
+function useEstimate(d: Draft | null, today: string) {
+  const formula = d ? formulaOf(d) : undefined;
+  return useLiveQuery(async () => (formula == null ? null : run(maintenanceEstimate, { asOf: today, formulaKcal: formula })), [formula, today]);
 }
 
 /** Goals. First visit runs a short setup; afterwards every answer is an editable row.
@@ -77,19 +93,21 @@ export function NutritionPage() {
   const current = useLiveQuery(async () => (await goalFor(today)) ?? null, [today]); // null = none yet
   const kg = useLiveQuery(async () => (await latestBodyweightKg()) ?? null, []);
   const [d, setD] = useState<Draft | null>(null);
+  const est = useEstimate(d, today);
   if (!d && current !== undefined && kg !== undefined) setD(draftFrom(current, kg ?? undefined));
   if (!d || current === undefined) return null;
-  return current ? <GoalsEditor d={d} setD={setD} kg={kg ?? undefined} onDone={() => nav('/food')} />
-    : <Setup d={d} setD={setD} onDone={async () => { await persist(d, kg ?? undefined); nav('/food'); }} onBack={() => nav(-1)} />;
+  const adaptive = adaptiveOf(est);
+  return current ? <GoalsEditor d={d} setD={setD} kg={kg ?? undefined} est={est ?? null} saved={current} onDone={() => nav('/food')} />
+    : <Setup d={d} setD={setD} adaptive={adaptive} onDone={async () => { await persist(d, kg ?? undefined, adaptive); nav('/food'); }} onBack={() => nav(-1)} />;
 }
 
 /* ------------------------------------------------------------------ */
 /* First-run questionnaire: one question per screen                     */
 /* ------------------------------------------------------------------ */
-function Setup({ d, setD, onDone, onBack }: { d: Draft; setD: (d: Draft) => void; onDone: () => void; onBack: () => void }) {
+function Setup({ d, setD, adaptive, onDone, onBack }: { d: Draft; setD: (d: Draft) => void; adaptive: number | null; onDone: () => void; onBack: () => void }) {
   const [step, setStep] = useState(0);
   const set = (p: Partial<Draft>) => setD({ ...d, ...p });
-  const c = compute(d);
+  const c = compute(d, adaptive);
   const steps: { q: string; sub?: string; body: React.ReactNode }[] = [
     { q: 'Sex', sub: 'Used for the resting-energy formula', body: (
       <div className="stack" style={{ gap: 10 }}>
@@ -155,11 +173,14 @@ function TargetToggle({ label, value, unit, on, onToggle, note }: { label: strin
 /* ------------------------------------------------------------------ */
 /* Editing afterwards                                                   */
 /* ------------------------------------------------------------------ */
-function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => void; kg: number | undefined; onDone: () => void }) {
+function GoalsEditor({ d, setD, kg, est, saved, onDone }: { d: Draft; setD: (d: Draft) => void; kg: number | undefined; est: MaintEstimate | null; saved: NutritionGoal; onDone: () => void }) {
   const myFoods = useMyFoods();
   const [editFood, setEditFood] = useState<Food | null>(null);
   const set = (p: Partial<Draft>) => setD({ ...d, ...p });
-  const c = compute(d);
+  const adaptive = adaptiveOf(est);
+  const c = compute(d, adaptive);
+  // the stored target only changes on Save: show the new one as a suggestion until then
+  const kcalChanged = c.kcal != null && saved.kcal != null && Math.abs(c.kcal - saved.kcal) >= 10 && d.kcalOverride == null;
   return (
     <div className="page" data-role="food">
       <header className="page-head">
@@ -181,18 +202,15 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
       </div>
 
       <div className="section-title">Maintenance</div>
-      <div className="card row">
-        <div className="grow">
-          <div className="big-value num">{c.maintenance.toLocaleString()}<span className="muted" style={{ fontSize: '0.875rem', fontWeight: 600 }}> kcal</span></div>
-          <div className="muted" style={{ fontSize: '0.8125rem' }}>{d.maintOverride ? 'Set by you' : 'Estimate'} · refines from your logs later</div>
-        </div>
-        <ValueButton icon label="Maintenance" value={c.maintenance} spec={MAINT} onChange={(x) => set({ maintOverride: x, kcalOverride: null })} />
-      </div>
-      {d.maintOverride && <button className="link" onClick={() => set({ maintOverride: null })}>Use estimate ({c.formula.toLocaleString()})</button>}
+      <MaintenanceCard value={c.maintenance} override={d.maintOverride} est={est} formula={c.formula}
+        edit={<ValueButton icon label="Maintenance" value={c.maintenance} spec={MAINT} onChange={(x) => set({ maintOverride: x, kcalOverride: null })} />} />
+      {d.maintOverride && <button className="link" onClick={() => set({ maintOverride: null, kcalOverride: null })}>
+        {adaptive != null ? `Use from your logs (${c.auto.toLocaleString()})` : `Use estimate (${c.formula.toLocaleString()})`}</button>}
 
       <div className="section-title">Daily goals</div>
       <div className="list">
         <OptRow label="Calories" unit="kcal" on={d.useKcal} value={c.kcal} step={50} min={800} max={6000}
+          sub={kcalChanged ? `Was ${saved.kcal!.toLocaleString()} · Save to use` : undefined}
           onToggle={(useKcal) => set({ useKcal })} onChange={(kcalOverride) => set({ kcalOverride })} />
         <OptRow label="Protein" unit="g" on={d.useProtein} value={c.protein} step={5} min={20} max={400}
           sub={c.protein ? `${(c.protein / d.weightKg).toFixed(1)} g/kg` : undefined}
@@ -203,7 +221,7 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
           onToggle={(on) => set({ fatG: on ? Math.round(((c.kcal ?? c.maintenance) * 0.28) / 9 / 5) * 5 : null })} onChange={(fatG) => set({ fatG })} />
       </div>
 
-      <button className="btn primary lg block" style={{ marginTop: 20 }} onClick={async () => { await persist(d, kg); onDone(); }}>
+      <button className="btn primary lg block" style={{ marginTop: 20 }} onClick={async () => { await persist(d, kg, adaptive); onDone(); }}>
         <Icon name="check" size={20} stroke={2.6} /> Save
       </button>
 

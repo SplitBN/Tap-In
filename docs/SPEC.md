@@ -105,14 +105,22 @@ Written down from the user's own description on 2026-11-15. Platform notes are i
 - The model always tries to get it in one go. **If a detail changes the answer a lot and the photo can't show it** (oil vs water tuna, fried vs grilled, sauce, portion size), it asks a short multiple-choice question before logging.
 - The user always reviews and edits before saving. Runs through the AI adapter (ChatGPT plan first, API fallback).
 
-**Adaptive maintenance**
-- **Weight trend:** a smoothed bodyweight series (exponential moving average) instead of raw weigh-ins, because water weight is noise.
-- Weekly: maintenance ≈ average intake − (trend change in kg × ~7700 kcal ÷ days).
-- **Noise protection:**
-  - Only use days that were fully logged. A missing day is never treated as 0 kcal; the user can mark a day as complete or incomplete.
-  - Require a minimum amount of data (about 2 weeks).
-  - Blend the new estimate with the previous one instead of jumping, and cap the weekly change.
-- The calorie target updates from the new maintenance estimate. Show it as a suggestion the user can accept.
+**Adaptive maintenance** (built 2026-11-16, `maintenance.estimate` / `maintenance.apply`, `src/lib/maintenance.ts`; feature switch "Adaptive maintenance", on by default)
+- **Computed on read** from raw facts (food entries, day status, weigh-ins); nothing derived is stored except the maintenance value saved into a goal version when the user saves Goals.
+- **Window:** the 28 days ending today (14–42 selectable via the command).
+- **Intake noise rules:**
+  - Only days marked "fully logged" count. A missing or unmarked day is never 0 kcal; it's left out.
+  - A complete day under 800 kcal ("likely not fully logged") or over 2.5 × the formula estimate ("absurd") is excluded.
+  - Then a robust outlier rule on the rest (≥ 7 days): modified z-score |x − median| / (1.4826·MAD) > 3.5 (Iglewicz & Hoaglin), with the scale floored at 20% of the median so a very regular eater isn't flagged. 3.5 is deliberately loose, because dropping real big-eating days biases maintenance low. A known bias remains: a genuine feast day more than ~3.5 robust SDs above your usual intake (> 70% above the median for a very regular eater) is still left out, and it shows in the "Days left out" list.
+  - Every excluded day is returned with its reason and listed in the "how" sheet.
+- **Weight noise rules:** one value per day (median of that day's weigh-ins). Outside 25–350 kg = typo. More than max(2 kg, 3%) from the median of weigh-ins within ±7 days (needs ≥ 2 neighbours) = likely mistake (our own rule). Cleaning happens before any smoothing or fitting. The formula estimate also uses the latest clean weigh-in, so a typo can't wreck it.
+- **Trend:** Theil–Sen line (median of pairwise slopes) through the clean weigh-ins in the window. It's robust to leftover water spikes, handles gaps, and has no EWMA lag. Trend start/end and kg/week come from this line. An EWMA (10%/day, Hacker's Diet style; a weigh-in after a g-day gap gets weight 1 − 0.9^g) is returned per day for the agent. It isn't drawn, because in a steady trend it lags and looks wrong.
+- **Estimate:** data TDEE = mean intake on used days − slope (kg/day) × 7700 kcal/kg. It needs ≥ 10 used intake days and ≥ 5 clean weigh-ins spanning ≥ 10 days; otherwise the formula is used and `needs` says what's missing.
+- **Shrinkage toward the formula** (precision weighting, normal–normal): w = τ² / (τ² + SE²), SE² = SD(intake)²/n + (7700·SE(slope))², SE(slope) from the residual scatter around the line (floored at 0.3 kg), τ = 15% of the formula estimate (our convention). Source: `formula` (no data or feature off), `blended` (w < 0.75), `adaptive` (w ≥ 0.75). Confidence from SE: high ≤ 150, medium ≤ 300 kcal, else low.
+- **Stability:** the estimate is replayed day by day over the last 56 days and moves at most 75 kcal/day (≈ 500/week, after rounding to 10). When the data thins out it eases back toward the formula at the same rate, never in one jump; source stays "blended" until it gets there.
+- **Manual override wins:** a goal with maintenanceSource "manual" keeps its number; the sheet still shows what the logs say.
+- **Calorie target:** the Goals page computes maintenance = override ?? log-based ?? formula and derives the target from it. The stored target (read by Food/Home) changes only when the user saves Goals. Until then the new target is shown as a suggestion ("New · was …"). Saving stores maintenanceKcal with source "adaptive". `maintenance.apply` lets the agent accept the estimate (and reset the target) directly.
+- **UI:** the Goals maintenance card shows the source ("From your logs · 21 days", "Logs + formula · 9 days", "Formula estimate", "Set by you"), ± range, and a "Rough guide" tag. The "how" sheet shows the weigh-ins with the trend line (ignored weigh-ins as red rings), the arithmetic, the days left out, and the ignored weigh-ins.
 
 ## Supplements and medications
 
@@ -233,9 +241,12 @@ Every formula in the code links back here. **Verify each source before implement
 | Beat last time / PRs | Higher e1RM or more reps at ≥ the previous top weight; e1RM PRs only from ≤ 10 reps to failure; 1% margin for bodyweight/assisted e1RM. Our own definitions. | Reynolds et al. 2006 (reliability cut-off); otherwise — (labelled as our own rule) |
 | Progression target | Double progression: all working sets at the top of the rep range with RIR ≥ 1 → + one equipment step, back to the bottom; most sets below the range → − one step; otherwise +1 rep per set (sets at RIR 0 repeat). A **coaching convention** (as in Alpha Progression and similar apps), labelled a rough guide in the UI; no study validates these thresholds. RIR read on the RIR-based RPE scale. | Convention. Effort scale: Zourdos et al. 2016; Helms et al. 2016. Background only (RIR-autoregulated vs fixed loading studied, not this rule): Graham & Cleather 2021, *JSCR* 35(9):2451–2456 (existence and design verified; result not checked) |
 | Goal hit (calendar dot) | Calories within ±10% of target and protein ≥ 95% of target. Our own tolerance, not a published standard. | — (labelled as a rough guide) |
-| Weight trend | Exponentially smoothed moving average of weigh-ins | Walker, *The Hacker's Diet* (method); note this one is not peer-reviewed |
-| Adaptive maintenance | Intake − trend change × energy density. ~7700 kcal/kg is a simplification, and the true value varies with body composition. | Hall 2008, *Int J Obes*, "What is the required energy deficit per unit weight loss?" |
-
+| Weight trend (display) | EWMA of clean daily weigh-ins, 10% per day, gaps weighted 1 − 0.9^g. A **convention**. | Walker, *The Hacker's Diet* (method); not peer-reviewed |
+| Weight trend (estimate) | Theil–Sen robust line: median of pairwise slopes, intercept = median(y − b·t). **Verified** (bibliographic record and method). | Sen 1968, *JASA* 63(324):1379–1389, "Estimates of the regression coefficient based on Kendall's tau"; Theil 1950 (not checked) |
+| Intake outliers | Modified z-score > 3.5 with MAD (×1.4826) flagged as outlier. **Verified** via the NIST handbook, which attributes the 3.5 cut-off to Iglewicz & Hoaglin. Background: Leys et al. 2013 argue for MAD over mean ± SD (they suggest 2.5; we use the looser 3.5 so real high days stay in). | Iglewicz & Hoaglin 1993, *How to Detect and Handle Outliers* (ASQC), as given in NIST/SEMATECH e-Handbook §1.3.5.17; Leys et al. 2013, *J Exp Soc Psychol* 49(4):764–766 |
+| Intake / weight plausibility | < 800 kcal, > 2.5 × formula, weigh-in outside 25–350 kg, or > max(2 kg, 3%) from nearby weigh-ins. Our own thresholds, labelled a rough guide. | — (our own rules) |
+| Adaptive maintenance | TDEE ≈ mean intake on fully logged days − trend slope × 7700 kcal/kg. **Verified (abstract):** Hall shows the 3500 kcal/lb (≈ 32.2 MJ/kg ≈ 7700 kcal/kg) rule roughly fits people with > ~30 kg body fat and **overstates** the energy per kg for leaner people. The "early weight change is water and glycogen, so it's less energy-dense" caveat in the UI is general physiology. Hall's reference list includes glycogen–water storage papers, but we couldn't read the full text, so it isn't attributed to him. | Hall 2008, *Int J Obes* 32(3):573–576, "What is the required energy deficit per unit weight loss?" (PMID 17848938) |
+| Blending with the formula | Precision-weighted (normal–normal) shrinkage, τ = 15% of the formula estimate. The formula's spread is a **convention**: Mifflin-St Jeor is within ±10% of measured RMR for more adults than other equations, but individual errors remain, and PAL adds more. 75 kcal/day cap is our convention. | Standard Bayesian normal–normal update (textbook result, e.g. Gelman et al., *Bayesian Data Analysis*; chapter not checked); Frankenfield, Roth-Yousey & Compher 2005, *J Am Diet Assoc* 105(5):775–789 (RMR, background only) |
 ## Food data sources (bundled, offline)
 
 | Data | Source & licence | Refresh |

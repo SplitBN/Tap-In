@@ -1,11 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { entriesDelete, entriesLog, entriesQuick, entriesUpdate, foodsCreate, foodsDelete, foodsUpdate, recipesSave } from '../api/food';
+import { entriesCopy, entriesDelete, entriesDeleteMany, entriesMove, entriesLog, entriesLogMany, entriesQuick, entriesUpdate, foodsCreate, foodsDelete, foodsUpdate, recipesSave } from '../api/food';
 import { run } from '../api/registry';
 import { alive, db } from '../db/db';
 import { foodToItem, frequentFor, getItem, lookupBarcode, recipeNutrition, searchFoods, type FoodItem } from '../db/food';
 import type { Food, FoodEntry, Ingredient, Macros, Meal, Portion } from '../db/types';
-import { scale } from '../lib/nutrition';
+import { keyToDate, scale, shiftDate } from '../lib/nutrition';
 import { MEALS, k } from '../lib/meals';
 import { confirmDialog } from './Dialog';
 import { toast } from './Toast';
@@ -14,10 +14,26 @@ import { Icon } from './Icon';
 import { NumberRow, NumberSheet, type NumberSpec } from './NumberPicker';
 import { OptionSheet, PickerRow } from './Picker';
 import { Sheet } from './Sheet';
-import { unitLabel } from "../lib/units";
+import { hasHebrew, unitLabel } from "../lib/units";
 import { plural } from '../lib/format';
 
 const baseUnit = (it: { unitBase?: 'g' | 'ml' }) => it.unitBase ?? 'g';
+
+/** An amount to log: grams drive nutrition, qty + unit are the label (same shape entries.log takes). */
+type Amount = { grams: number; qty: number; unit: string };
+/** What a row shows and what ticking it logs: the amount you used last time, else 1 of its first unit, else 100 g/ml. */
+const rowAmount = (it: FoodItem, last?: Amount): Amount => {
+  if (last) return last;
+  const p = it.portions[0];
+  return p ? { grams: p.g, qty: 1, unit: p.label } : { grams: 100, qty: 100, unit: baseUnit(it) };
+};
+const amountText = (it: FoodItem, a: Amount, english: boolean) => {
+  if (a.unit === 'g' || a.unit === 'ml' || a.unit === baseUnit(it)) return `${Math.round(a.qty)} ${a.unit}`;
+  const u = unitLabel(a.unit, english);
+  if (english && hasHebrew(u)) return `${Math.round(a.grams)} ${baseUnit(it)}`; // untranslatable Hebrew measure in an English list
+  const label = u.replace(/^1 /, '');
+  return a.qty === 1 ? label : `${+a.qty.toFixed(2)} × ${label}`;
+};
 
 /** Soft rounded tile with the food's first letter (a bolt for a quick add): the food stand-in for an exercise photo. */
 export function FoodTile({ name, quick, recipe }: { name: string; quick?: boolean; recipe?: boolean }) {
@@ -58,10 +74,14 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
   const dq = useDeferredValue(q);
   const [picked, setPicked] = useState<{ item: FoodItem; qty?: number; unit?: string } | null>(null);
   const [results, setResults] = useState<FoodItem[] | null>(null);
-  const [sel, setSel] = useState<string[]>([]);
+  // ticked foods by key; kept across tabs and queries so a basket can be built from several searches
+  const [sel, setSel] = useState<{ item: FoodItem; a: Amount }[]>([]);
+  const [added, setAdded] = useState<{ ids: string[]; n: number; seq: number } | null>(null);
+  const [said, setSaid] = useState('');
+  const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<null | { kind: 'food'; draft?: Partial<Food> } | { kind: 'recipe' }>(null);
   const [was, setWas] = useState(false);
-  if (open !== was) { setWas(open); if (open) { setTab(initialTab); setMeal(meal0); setQ(''); setSel([]); setResults(null); } }
+  if (open !== was) { setWas(open); if (open) { setTab(initialTab); setMeal(meal0); setQ(''); setSel([]); setResults(null); setAdded(null); setSaid(''); } }
 
   const frequent = useLiveQuery(() => (open ? frequentFor(meal) : Promise.resolve([])), [open, meal]) ?? [];
   const mine = useLiveQuery(() => db.foods.filter(alive).sortBy('name'), []) ?? [];
@@ -78,14 +98,31 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
   const show = (it: FoodItem) => (english && it.alt ? { ...it, name: it.alt, alt: it.name } : it);
   const close = () => onClose();
 
+  const lastUsed = useMemo(() => new Map(frequent.map((f) => [f.item.key, { grams: f.grams, qty: f.qty, unit: f.unit }])), [frequent]);
+  const isSel = (key: string) => sel.some((x) => x.item.key === key);
+  const toggle = (it: FoodItem, a: Amount) => setSel((s) => (s.some((x) => x.item.key === it.key) ? s.filter((x) => x.item.key !== it.key) : [...s, { item: it, a }]));
+  const selProps = (it: FoodItem, a: Amount) => (mode === 'log' ? { selected: isSel(it.key), onToggle: () => toggle(it, a) } : {});
+
+  // "Added 3 · Undo" stays a few seconds, then the bar is free for the next basket
+  useEffect(() => { if (!added) return; const t = setTimeout(() => setAdded(null), 6000); return () => clearTimeout(t); }, [added]);
   const logSelected = async () => {
-    for (const f of frequent.filter((x) => sel.includes(x.item.key))) await run(entriesLog, { foodKey: f.item.key, grams: f.grams, qty: f.qty, unit: f.unit, meal, date });
-    close();
+    if (busy || !sel.length) return;
+    setBusy(true);
+    try {
+      const out = await run(entriesLogMany, { meal, date, items: sel.map(({ item, a }) => ({ foodKey: item.key, name: item.name || undefined, ...a })) });
+      setSel([]); setAdded({ ids: out.map((e) => e.id), n: out.length, seq: Date.now() });
+      setSaid(`Added ${plural(out.length, 'food', 'foods')} to ${mealLabel}`);
+    } finally { setBusy(false); }
+  };
+  const undoAdded = async () => {
+    if (!added) return;
+    await run(entriesDeleteMany, { ids: added.ids });
+    setSaid(`Removed ${plural(added.n, 'food', 'foods')}`); setAdded(null);
   };
 
   return (
-    <Sheet open={open} onClose={close} full title={mode === 'pick' ? 'Add ingredient' : undefined}
-      actions={mode === 'log' && sel.length ? <button className="btn primary" onClick={logSelected}><Icon name="check" size={18} stroke={2.6} /> Add {sel.length}</button> : undefined}>
+    <Sheet open={open} onClose={close} full title={mode === 'pick' ? 'Add ingredient' : undefined} role={mode === 'log' ? 'food' : undefined}
+>
       {mode === 'log' && (
         <div className="add-head">
           <MealPill meal={meal} onChange={setMeal} />
@@ -119,18 +156,16 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
           <div className={(results?.length || (!results && frequent.length)) ? 'group' : undefined}>
             {(results ?? []).map((raw) => {
               const it = show(raw);
-              const p = it.portions[0];
-              const g = p ? p.g : 100;
+              const a = rowAmount(it, lastUsed.get(it.key));
               return (
-                <FoodRow key={it.key} item={it} m={scale(it.per100, g)} amount={p ? (english && /\p{Script=Hebrew}/u.test(p.label) ? `${Math.round(g)} ${baseUnit(it)}` : p.label.replace(/^1 /, '')) : `100 ${baseUnit(it)}`}
-                  onOpen={() => setPicked({ item: it })} />
+                <FoodRow key={it.key} item={it} m={scale(it.per100, a.grams)} amount={amountText(it, a, english)}
+                  {...selProps(it, a)} onOpen={() => setPicked({ item: it })} />
               );
             })}
             {!results && frequent.map((f) => (
               <FoodRow key={f.item.key} item={f.item} m={scale(f.item.per100, f.grams)}
                 amount={f.unit === 'g' || f.unit === 'ml' ? `${Math.round(f.qty)} ${f.unit}` : `${+f.qty.toFixed(2)} × ${f.unit.replace(/^1 /, '')}`}
-                selected={mode === 'log' ? sel.includes(f.item.key) : undefined}
-                onToggle={mode === 'log' ? () => setSel(sel.includes(f.item.key) ? sel.filter((x) => x !== f.item.key) : [...sel, f.item.key]) : undefined}
+                {...selProps(f.item, { grams: f.grams, qty: f.qty, unit: f.unit })}
                 onOpen={() => setPicked({ item: f.item, qty: f.qty, unit: f.unit })} />
             ))}
           </div>
@@ -154,8 +189,8 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
           {mine.length ? <>
             <div className="group" style={{ marginTop: 12 }}>
               {mine.map((f) => {
-                const it = foodToItem(f); const p = it.portions[0];
-                return <FoodRow key={f.id} item={it} m={scale(it.per100, p ? p.g : 100)} amount={p ? p.label.replace(/^1 /, '') : `100 ${baseUnit(it)}`} onOpen={() => setPicked({ item: it })} />;
+                const it = foodToItem(f); const a = rowAmount(it, lastUsed.get(it.key));
+                return <FoodRow key={f.id} item={it} m={scale(it.per100, a.grams)} amount={amountText(it, a, !hasHebrew(it.name))} {...selProps(it, a)} onOpen={() => setPicked({ item: it })} />;
               })}
             </div>
             <nav className="text-links" aria-label="Create">
@@ -174,6 +209,27 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
             </div>
           )}
         </>
+      )}
+
+      {mode === 'log' && <div className="sr-only" role="status">{said}</div>}
+      {mode === 'log' && (sel.length > 0 || added) && (
+        <div className="add-bar">
+          {sel.length > 0 ? (
+            <>
+              <button className="icon-btn add-bar-clear" onClick={() => setSel([])} aria-label="Clear selection"><Icon name="close" size={18} /></button>
+              <button className="btn primary lg grow" onClick={logSelected} disabled={busy}>
+                <Icon name="plus" size={20} stroke={2.6} /> Add {sel.length}
+                <span className="add-bar-kcal num">{k(sel.reduce((t, x) => t + scale(x.item.per100, x.a.grams).kcal, 0))} kcal</span>
+              </button>
+            </>
+          ) : added && (
+            <div key={added.seq} className="add-done">
+              <span className="add-done-ic" aria-hidden><Icon name="check" size={16} stroke={3} /></span>
+              <span className="grow" aria-hidden>Added {added.n} · {mealLabel}</span>
+              <button className="toast-undo" onClick={undoAdded}>Undo</button>
+            </div>
+          )}
+        </div>
       )}
 
       <AmountSheet item={picked?.item ?? null} initialQty={picked?.qty} initialUnit={picked?.unit} meal={meal} date={date} mode={mode}
@@ -639,4 +695,79 @@ function ScanPane({ active, onFood, onDraft }: { active: boolean; onFood: (f: Fo
 /** Your own, scanned and recipe foods (Goals page list). */
 export function useMyFoods() {
   return useLiveQuery(() => db.foods.filter(alive).sortBy('name'), []) ?? [];
+}
+
+/* ================================================================== */
+/* Copy / move selected entries: pick a day and a meal                  */
+/* ================================================================== */
+export function EntriesTransferSheet({ open, kind, entries: live, viewing, today, onClose, onDone }: {
+  open: boolean; kind: 'copy' | 'move'; entries: FoodEntry[]; viewing: string; today: string; onClose: () => void;
+  onDone: (text: string, undo: () => unknown) => void;
+}) {
+  const [date, setDate] = useState(today);
+  const [meal, setMeal] = useState<Meal | 'same'>('same');
+  const [busy, setBusy] = useState(false);
+  const [was, setWas] = useState(false);
+  const dateId = useId();
+  const [entries, setEntries] = useState<FoodEntry[]>([]); // frozen at open, so the title doesn't change while the sheet leaves
+  // default: today; copying while already on today → tomorrow (moving within today is usually a meal change)
+  if (open !== was) { setWas(open); if (open) { setEntries(live); setDate(kind === 'copy' && viewing === today ? shiftDate(today, 1) : today); setMeal('same'); } }
+  const chips = [{ d: shiftDate(today, -1), label: 'Yesterday' }, { d: today, label: 'Today' }, { d: shiftDate(today, 1), label: 'Tomorrow' }];
+  const other = !chips.some((c) => c.d === date);
+  const dayName = (d: string) => chips.find((c) => c.d === d)?.label ?? keyToDate(d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const n = entries.length;
+  // a move that changes nothing for any entry is not offered
+  const noop = kind === 'move' && entries.every((e) => e.date === date && (meal === 'same' || e.meal === meal));
+  const verb = kind === 'copy' ? 'Copy' : 'Move';
+  const go = async () => {
+    if (busy || noop || !date) return;
+    setBusy(true);
+    try {
+      const target = { ids: entries.map((e) => e.id), date, meal: meal === 'same' ? undefined : meal };
+      const where = `${dayName(date)}${meal === 'same' ? '' : ` · ${MEALS.find((m) => m.id === meal)!.label}`}`;
+      if (kind === 'copy') {
+        const out = await run(entriesCopy, target);
+        onDone(`Copied ${n} → ${where}`, () => run(entriesDeleteMany, { ids: out.map((e) => e.id) }));
+      } else {
+        // remember where each one was, so Undo puts them back by (date, meal) without touching their nutrition
+        const groups = new Map<string, { date: string; meal: Meal; ids: string[] }>();
+        for (const e of entries) { const key = `${e.date}|${e.meal}`; const g = groups.get(key) ?? { date: e.date, meal: e.meal, ids: [] }; g.ids.push(e.id); groups.set(key, g); }
+        await run(entriesMove, target);
+        onDone(`Moved ${n} → ${where}`, async () => { for (const g of groups.values()) await run(entriesMove, g); });
+      }
+    } finally { setBusy(false); }
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title={`${verb} ${n}`} role="food">
+      <div className="stack" style={{ gap: 18 }}>
+        <div role="group" aria-labelledby={dateId}>
+          <div id={dateId} className="section-title" style={{ margin: '0 4px 8px' }}>Day</div>
+          <div className="chips xfer-chips">
+            {chips.map((c) => (
+              <button key={c.d} className="chip" aria-pressed={date === c.d} onClick={() => setDate(c.d)}>
+                {c.label}{c.d === viewing && <span className="xfer-here" aria-label=" (this day)">•</span>}
+              </button>
+            ))}
+            <label className={'chip xfer-date' + (other ? ' on' : '')}>
+              <Icon name="calendar" size={16} />
+              <span className="sr-only">Other day</span>
+              <input type="date" className="num" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Other day" />
+            </label>
+          </div>
+        </div>
+        <div role="group" aria-label="Meal">
+          <div className="section-title" style={{ margin: '0 4px 8px' }} aria-hidden>Meal</div>
+          <div className="xfer-meals">
+            <button className="xfer-meal" aria-pressed={meal === 'same'} onClick={() => setMeal('same')}><span className="xfer-eq" aria-hidden>=</span><span>Same</span></button>
+            {MEALS.map((m) => (
+              <button key={m.id} className="xfer-meal" aria-pressed={meal === m.id} onClick={() => setMeal(m.id)}><Icon name={m.icon} size={20} stroke={2} /><span>{m.label}</span></button>
+            ))}
+          </div>
+        </div>
+        <button className="btn primary lg block" onClick={go} disabled={busy || noop}>
+          <Icon name={kind === 'copy' ? 'copy' : 'chevronRight'} size={20} stroke={2.4} /> {verb} → {dayName(date)}{meal !== 'same' && ` · ${MEALS.find((m) => m.id === meal)!.label}`}
+        </button>
+      </div>
+    </Sheet>
+  );
 }

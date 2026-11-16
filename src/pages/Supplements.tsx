@@ -8,10 +8,10 @@ import { PickerRow } from '../components/Picker';
 import { Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
 import { alive, db } from '../db/db';
-import { FORMS, SITES, UNITS, WEEKDAYS, buildDay, doseOn, nextSite, scheduleText, type DueItem } from '../db/supps';
-import type { DoseStep, SchedKind, Schedule, Stack, SuppForm, SuppLog, Supplement } from '../db/types';
+import { FORMS, SITES, UNITS, WEEKDAYS, buildDay, doseOn, isDue, nextSite, scheduleText, type DueItem } from '../db/supps';
+import type { DoseStep, LowStock, SchedKind, Schedule, Stack, SuppForm, SuppLog, Supplement } from '../db/types';
 import { run } from '../api/registry';
-import { notesAdd, notesDelete, recordsRestore, stackDelete, stackSave, suppDelete, suppSave, suppTake, suppUnlog } from '../api/body';
+import { notesAdd, notesDelete, recordsRestore, stackDelete, stackSave, suppDelete, suppRestock, suppSave, suppStock, suppTake, suppUnlog } from '../api/body';
 import { fmtNum, plural } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { Ring } from './Food';
@@ -37,6 +37,12 @@ export function useSuppDay(date: string) {
   return { sups, stacks, logs, day, done: items.filter((i) => i.log?.status === 'taken').length, total: items.length };
 }
 
+/** Stock forecast per supplement (supplements.stockStatus), always for today: id -> forecast + text. */
+export function useStock() {
+  const list = useLiveQuery(() => run(suppStock, {}), []) ?? [];
+  return { list, byId: new Map(list.map((x) => [x.id, x])), low: list.filter((x) => x.low) };
+}
+
 export function SupplementsPage() {
   const [params, setParams] = useSearchParams();
   const today = useToday();
@@ -49,6 +55,8 @@ export function SupplementsPage() {
   const [stackEdit, setStackEdit] = useState<Stack | 'new' | null>(null);
   const [noting, setNoting] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [restocking, setRestocking] = useState<Supplement | null>(null);
+  const stock = useStock();
   // Home's "Add supplement" lands here with ?new=1
   useEffect(() => { if (params.get('new')) { setEditing('new'); setParams({}, { replace: true }); } }, [params, setParams]);
   const asNeeded = sups.filter((s) => !s.archived && s.schedule.kind === 'asNeeded');
@@ -98,6 +106,25 @@ export function SupplementsPage() {
                 <div className="w-7 t-20">{done === total ? <>All taken <span aria-hidden>✓</span></> : `${total - done} to go`}</div>
                 <div className="muted t-15">✓ logs the dose · tap a row to adjust</div>
               </div>
+            </div>
+          )}
+
+          {stock.low.length > 0 && (
+            <div className="group low-stock" role="group" aria-label="Running low">
+              {stock.low.map((x) => {
+                const sup = sups.find((s) => s.id === x.id);
+                return (
+                  <div key={x.id} className="row low-row">
+                    <span className="low-ic" aria-hidden><Icon name="bolt" size={16} stroke={2.2} /></span>
+                    <span className="grow" style={{ minWidth: 0 }}>
+                      <span className="ellipsis w-6" dir="auto" style={{ display: 'block' }}>{x.name}</span>
+                      <span className="t-13 num" style={{ display: 'block' }}><b className="low-text">{x.text}</b>
+                        <span className="muted">{x.daysLeft != null && x.stock > 0 ? ` · ${fmtNum(x.stock)} ${x.unit}` : ''}{x.runsOutOn && (x.daysLeft ?? 0) > 1 ? ` · out ${keyToDate(x.runsOutOn).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span></span>
+                    </span>
+                    {sup && <button className="pill-btn low-btn" onClick={() => setRestocking(sup)} aria-label={`Restock ${x.name}`}><Icon name="plus" size={16} stroke={2.4} />Restock</button>}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -175,16 +202,20 @@ export function SupplementsPage() {
 
           <h2 className="section-title">All</h2>
           <div className="group">
-            {sups.map((s) => (
-              <button key={s.id} className="fd-row pressable" onClick={() => setEditing(s)} style={s.archived ? { opacity: 0.5 } : undefined}>
-                <SuppTile sup={s} />
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="fd-name ellipsis supp-name" dir="auto">{s.name}</span>
-                  <span className="fd-sub">{fmtNum(doseOn(s, today))} {s.unit} · {scheduleText(s.schedule)}{s.stock != null ? ` · ${fmtNum(s.stock)} left` : ''}{s.archived ? ' · stopped' : ''}</span>
-                </span>
-                <Icon name="chevronRight" className="chev" size={18} />
-              </button>
-            ))}
+            {sups.map((s) => {
+              const f = stock.byId.get(s.id);
+              return (
+                <button key={s.id} className="fd-row pressable" onClick={() => setEditing(s)} style={s.archived ? { opacity: 0.5 } : undefined}>
+                  <SuppTile sup={s} />
+                  <span className="grow" style={{ minWidth: 0 }}>
+                    <span className="fd-name ellipsis supp-name" dir="auto">{s.name}</span>
+                    <span className="fd-sub">{fmtNum(doseOn(s, today))} {s.unit} · {scheduleText(s.schedule)}{s.stock != null && !f?.low ? ` · ${f ? f.text : `${fmtNum(s.stock)} left`}` : ''}{s.archived ? ' · stopped' : ''}</span>
+                    {f?.low && <span className="low-tag"><Icon name="bolt" size={12} stroke={2.4} />{f.text}</span>}
+                  </span>
+                  <Icon name="chevronRight" className="chev" size={18} />
+                </button>
+              );
+            })}
           </div>
 
           {stacks.length > 0 && <>
@@ -237,7 +268,9 @@ export function SupplementsPage() {
         </div>
       </Sheet>
       <TakeSheet t={taking} date={date} onClose={() => setTaking(null)} />
-      <SupplementEditor open={!!editing} sup={editing === 'new' ? undefined : editing ?? undefined} onClose={() => setEditing(null)} />
+      <SupplementEditor open={!!editing} sup={editing === 'new' ? undefined : editing ?? undefined} onClose={() => setEditing(null)}
+        onRestock={(sup) => { setEditing(null); setRestocking(sup); }} />
+      <RestockSheet sup={restocking} onClose={() => setRestocking(null)} />
       <StackEditor open={!!stackEdit} stack={stackEdit === 'new' ? undefined : stackEdit ?? undefined} sups={sups.filter((s) => !s.archived)} onClose={() => setStackEdit(null)} />
       <NoteSheet open={noting} sups={sups} onClose={() => setNoting(false)} />
     </div>
@@ -315,7 +348,57 @@ const CYCLE: NumberSpec = { min: 1, max: 120, step: 1, decimals: 0, format: (n) 
 const UNIT_OPTS = UNITS.map((u) => ({ value: u, label: u }));
 const FORM_OPTS = FORMS.map((f) => ({ value: f.value as SuppForm, label: f.label }));
 
-function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplement; onClose: () => void }) {
+/** What N days of the current schedule use, as an amount in the supplement unit (restock presets). */
+function supplyFor(sup: Supplement, days: number, from: string) {
+  if (sup.schedule.kind === 'asNeeded') return 0;
+  let n = 0;
+  for (let i = 0; i < days; i++) { const d = shiftDate(from, i); if (isDue(sup.schedule, d)) n += Math.max(1, sup.schedule.times.length) * doseOn(sup, d); }
+  return Math.round(n * 100) / 100;
+}
+
+/* ---------------- restock: add a new pack to the stock ---------------- */
+function RestockSheet({ sup, onClose }: { sup: Supplement | null; onClose: () => void }) {
+  const today = useToday();
+  const [amount, setAmount] = useState('');
+  const [key, setKey] = useState<string | null>(null);
+  const inputId = useId();
+  if ((sup?.id ?? null) !== key) { setKey(sup?.id ?? null); setAmount(''); }
+  if (!sup) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
+  const amt = parseFloat(amount.replace(',', '.'));
+  const presets = [30, 60, 90].map((d) => ({ d, n: supplyFor(sup, d, today) })).filter((p) => p.n > 0);
+  const go = async () => {
+    if (!(amt > 0)) { document.getElementById(inputId)?.focus(); return; }
+    const r = await run(suppRestock, { id: sup.id, amount: amt });
+    onClose();
+    toast(`${sup.name}: ${fmtNum(r.stock ?? 0)} ${sup.unit} in stock`);
+  };
+  return (
+    <Sheet open onClose={onClose} title={`Restock ${sup.name}`} role="supp">
+      <div className="stack" style={{ gap: 14 }}>
+        <p className="muted" style={{ margin: 0 }}>Now <b className="num">{fmtNum(sup.stock ?? 0)} {sup.unit}</b>. How much did you add?</p>
+        <label className="field"><span>Add ({sup.unit})</span>
+          <input id={inputId} className="input num" inputMode="decimal" value={amount} placeholder={sup.unit} onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void go(); }} />
+        </label>
+        {presets.length > 0 && (
+          <div className="chips" style={{ flexWrap: 'wrap' }} role="group" aria-label="Quick amounts">
+            {presets.map((p) => <button key={p.d} className="chip" aria-pressed={amt === p.n} onClick={() => setAmount(String(p.n))}>{p.d} days · {fmtNum(p.n)} {sup.unit}</button>)}
+          </div>
+        )}
+        <p className="faint num" style={{ margin: 0, minHeight: '1.25em' }} aria-live="polite">{amt > 0 ? `New stock: ${fmtNum(Math.round(((sup.stock ?? 0) + amt) * 1000) / 1000)} ${sup.unit}` : ''}</p>
+        <button className="btn primary lg block" disabled={!(amt > 0)} onClick={go}><Icon name="plus" size={20} stroke={2.6} /> Restock</button>
+      </div>
+    </Sheet>
+  );
+}
+
+const LOW_OPTS: { value: string; label: string }[] = [
+  { value: 'd3', label: '3 days left' }, { value: 'd5', label: '5 days left' }, { value: 'd7', label: '7 days left' },
+  { value: 'd14', label: '14 days left' }, { value: 'd30', label: '30 days left' }, { value: 'amount', label: 'Amount left' }, { value: 'off', label: 'Off' },
+];
+const lowToOpt = (l: LowStock | null | undefined) => (l === null ? 'off' : !l ? 'd7' : l.kind === 'amount' ? 'amount' : LOW_OPTS.some((o) => o.value === `d${l.value}`) ? `d${l.value}` : 'd7');
+
+function SupplementEditor({ open, sup, onClose, onRestock }: { open: boolean; sup?: Supplement; onClose: () => void; onRestock: (s: Supplement) => void }) {
   const today = useToday();
   const [name, setName] = useState('');
   const [form, setForm] = useState<SuppForm>('capsule');
@@ -324,6 +407,8 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
   const [amount, setAmount] = useState('');
   const [sched, setSched] = useState<Schedule>({ kind: 'daily', times: ['08:00'], startDate: today });
   const [stock, setStock] = useState('');
+  const [low, setLow] = useState('d7');
+  const [lowAmount, setLowAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [newDose, setNewDose] = useState<{ amount: string; from: string } | null>(null);
   const [err, setErr] = useState<{ field: 'name' | 'dose' | 'days' | 'times' | 'save'; msg: string } | null>(null);
@@ -336,6 +421,7 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
       setName(sup?.name ?? ''); setForm(sup?.form ?? 'capsule'); setUnit(sup?.unit ?? 'mg'); setDoses(sup?.doses ?? []);
       setAmount(sup ? '' : ''); setSched(sup?.schedule ?? { kind: 'daily', times: ['08:00'], startDate: today });
       setStock(sup?.stock != null ? String(sup.stock) : ''); setNotes(sup?.notes ?? ''); setNewDose(null);
+      setLow(lowToOpt(sup?.lowStock)); setLowAmount(sup?.lowStock?.kind === 'amount' ? String(sup.lowStock.value) : '');
     }
   }
   const s = sched;
@@ -356,6 +442,13 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
   };
   const errFor = (f: NonNullable<typeof err>['field']) => (err?.field === f ? { 'aria-invalid': true, 'aria-describedby': ids.err } : {});
 
+  /** undefined = leave as stored (untouched); null = alert off */
+  const lowStockValue = (): LowStock | null | undefined => {
+    if (low === lowToOpt(sup?.lowStock) && (low !== 'amount' || lowAmount === String(sup?.lowStock?.value ?? ''))) return undefined;
+    if (low === 'off') return null;
+    if (low === 'amount') { const v = parseFloat(lowAmount.replace(',', '.')); return Number.isFinite(v) && v >= 0 ? { kind: 'amount', value: v } : undefined; }
+    return { kind: 'days', value: +low.slice(1) };
+  };
   const go = async () => {
     const m = missing();
     if (m) return fail(m);
@@ -366,6 +459,7 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
         id: sup?.id, name, form, unit, ...(doses.length ? { doses } : { dose: parseFloat(amount.replace(',', '.')) }),
         schedule: { kind: s.kind, days: s.days, every: s.every, times: s.times.filter(Boolean), startDate: s.startDate, cycle: s.cycle ?? null },
         stock: stock.trim() === '' ? null : Number.isFinite(st) && st >= 0 ? st : undefined, notes,
+        ...(lowStockValue() !== undefined ? { lowStock: lowStockValue() } : {}),
       });
       onClose();
     } catch (e) {
@@ -460,6 +554,18 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
         </>}
 
         <label className="field"><span>Stock left (optional)</span><input className="input num" inputMode="decimal" value={stock} placeholder={unit} onChange={(e) => setStock(e.target.value)} style={{ maxWidth: 200 }} /></label>
+        {stock.trim() !== '' && (
+          <div className="group">
+            <PickerRow label="Low-stock alert" sub={low === 'off' ? 'No reminder' : 'One reminder at 18:00'} options={LOW_OPTS} value={low} onChange={setLow} />
+            {low === 'amount' && (
+              <label className="list-item"><span className="grow title">Alert at</span>
+                <input className="inline-input num" inputMode="decimal" value={lowAmount} placeholder="0" aria-label={`Alert when this much is left, in ${unit}`} onChange={(e) => setLowAmount(e.target.value)} style={{ maxWidth: 110 }} />
+                <span className="muted">{unit}</span>
+              </label>
+            )}
+            {sup && sup.stock != null && <button className="list-item pressable role-text" onClick={() => onRestock(sup)}><Icon name="plus" size={18} /><span className="title">Restock</span></button>}
+          </div>
+        )}
         <label className="field"><span>Notes</span><textarea className="input" rows={2} dir="auto" value={notes} placeholder="Brand, with food, reconstitution…" onChange={(e) => setNotes(e.target.value)} /></label>
 
         <p id={ids.err} className="field-err" role="status">{err?.msg ?? ''}</p>

@@ -1,5 +1,4 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { Icon } from '../components/Icon';
@@ -10,7 +9,7 @@ import { run } from '../api/registry';
 import { sessionsStart } from '../api/gym';
 import { suppTake } from '../api/body';
 import { useSettings } from '../db/settings';
-import type { BodyweightEntry, Macros, Session } from '../db/types';
+import type { BodyweightEntry } from '../db/types';
 import { fmtDate, fmtDuration, fmtWeight, plural, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
 import { fromKg } from '../lib/science';
@@ -18,14 +17,15 @@ import { WeighInSheet } from './Weight';
 import { Ring, Summary, useDay } from './Food';
 import { useSuppDay } from './Supplements';
 import { fmtNum } from '../lib/format';
-import { dateKey, goalHit, sum } from '../lib/nutrition';
+import { keyToDate, shiftDate } from '../lib/nutrition';
+import { calendarRangeCmd } from '../api/calendar';
+import { DayDots, markerWords, mondayOf } from './Calendar';
 import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
 
 const DAY = 86400000;
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const longDate = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-const dayKey = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 const weekStart = (ts = Date.now()) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
 
 /** Home = dashboard of widgets. Each widget is a role-coloured tile; tap opens its page. */
@@ -198,105 +198,31 @@ function WeekWidget() {
   );
 }
 
+/** This week with the calendar markers (calendar.range). Tap the title for the month view, a day for its summary. */
 function CalendarWidget() {
-  const [expanded, setExpanded] = useState(false);
-  const [month, setMonth] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
-  const [sel, setSel] = useState<string>();
   const nav = useNavigate();
-  const settings = useSettings();
-
-  useToday(); // the collapsed week and the today marker follow the date
-  const start = expanded ? weekStart(month.getTime()) : weekStart();
-  const count = expanded ? 42 : 7;
-  const end = start.getTime() + count * DAY;
-  const data = useLiveQuery(async () => {
-    const [sessions, weights, entries, goals] = await Promise.all([
-      db.sessions.where('startedAt').between(start.getTime(), end).filter((s) => alive(s) && !!s.endedAt).toArray(),
-      db.bodyweight.where('at').between(start.getTime(), end).filter(alive).toArray(),
-      db.entries.where('date').between(dateKey(start), dateKey(end - DAY), true, true).filter(alive).toArray(),
-      db.goals.orderBy('effectiveFrom').filter(alive).toArray(),
-    ]);
-    // days where calories landed within ±10% of target and protein was met (see lib/nutrition goalHit)
-    const byDate = new Map<string, Macros[]>();
-    entries.forEach((e) => byDate.set(e.date, [...(byDate.get(e.date) ?? []), e.n]));
-    const hits = new Set<string>();
-    for (const [d, list] of byDate) {
-      const g = [...goals].reverse().find((x) => x.effectiveFrom <= d) ?? goals[0];
-      if (g && goalHit(sum(list), g.kcal, g.proteinG)) hits.add(d);
-    }
-    return { sessions, weights, hits };
-  }, [start.getTime(), end]);
-  const byDay = useMemo(() => {
-    const m = new Map<string, { sessions: Session[]; weights: BodyweightEntry[] }>();
-    const get = (k: string) => m.get(k) ?? (m.set(k, { sessions: [], weights: [] }), m.get(k)!);
-    data?.sessions.forEach((s) => get(dayKey(s.startedAt)).sessions.push(s));
-    data?.weights.forEach((w) => get(dayKey(w.at)).weights.push(w));
-    return m;
-  }, [data]);
-  const days = Array.from({ length: count }, (_, i) => new Date(start.getTime() + i * DAY + 3600000)); // +1h: DST-safe
-  const today = dayKey(Date.now());
-  const selData = sel ? byDay.get(sel) : undefined;
-  const shift = (n: number) => { const d = new Date(month); d.setMonth(d.getMonth() + n); setMonth(d); setSel(undefined); };
-
+  const today = useToday(); // the week and the today marker follow the date
+  const start = mondayOf(today);
+  const days = Array.from({ length: 7 }, (_, i) => shiftDate(start, i));
+  const data = useLiveQuery(() => run(calendarRangeCmd, { from: days[0], to: days[6] }), [start]);
+  const byDate = new Map((data?.days ?? []).map((d) => [d.date, d]));
   return (
-    <Widget role="neutral" icon="calendar" wide title={expanded ? month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'Calendar'}
-      action={
-        <div className="row" style={{ gap: 0 }}>
-          {expanded && <>
-            <button className="icon-btn sm" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronLeft" size={18} /></button>
-            <button className="icon-btn sm" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" size={18} /></button>
-          </>}
-          <button className="icon-btn sm" aria-label={expanded ? 'Collapse calendar' : 'Expand calendar'} aria-expanded={expanded}
-            onClick={() => { setExpanded(!expanded); setSel(undefined); const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setMonth(d); }}>
-            <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ type: 'spring', bounce: 0, duration: 0.3 }} style={{ display: 'grid' }}>
-              <Icon name="chevronDown" size={18} />
-            </motion.span>
-          </button>
-        </div>
-      }>
+    <Widget role="neutral" icon="calendar" wide title="Calendar" onOpen={() => nav('/calendar')}
+      action={<button className="icon-btn sm" aria-label="Open calendar" onClick={() => nav('/calendar')}><Icon name="chevronRight" size={18} /></button>}>
       <div className="cal">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} className="cal-dow">{d}</div>)}
-        {days.map((d) => {
-          const k = dayKey(d.getTime());
-          const e = byDay.get(k);
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} className="cal-dow" aria-hidden>{d}</div>)}
+        {days.map((k) => {
+          const d = byDate.get(k);
+          const words = markerWords(d);
           return (
-            <button key={k} className={'cal-day' + (expanded && d.getMonth() !== month.getMonth() ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '')}
-              onClick={() => setSel(k === sel ? undefined : k)} aria-pressed={k === sel} aria-current={k === today ? 'date' : undefined}
-              aria-label={(k === today ? 'Today, ' : '') + longDate.format(d) + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '') + (data?.hits.has(dateKey(d)) ? ', food goals hit' : '')}>
-              <span className="num">{d.getDate()}</span>
-              <span className="cal-dots" aria-hidden>
-                {e?.sessions.length ? <i className="dot-workout" /> : null}
-                {e?.weights.length ? <i className="dot-weight" /> : null}
-                {data?.hits.has(dateKey(d)) ? <i className="dot-food" /> : null}
-              </span>
+            <button key={k} className={'cal-day' + (k === today ? ' today' : '') + (k > today ? ' future' : '')} onClick={() => nav(`/calendar?d=${k}`)}
+              aria-current={k === today ? 'date' : undefined} aria-label={(k === today ? 'Today, ' : '') + longDate.format(keyToDate(k)) + (words ? `, ${words}` : '')}>
+              <span className="num">{keyToDate(k).getDate()}</span>
+              <DayDots d={d} />
             </button>
           );
         })}
       </div>
-      <AnimatePresence initial={false}>
-        {sel && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', bounce: 0, duration: 0.3 }} style={{ overflow: 'hidden' }}>
-            <div className="stack" style={{ gap: 6, paddingTop: 10 }}>
-              {selData?.sessions.map((s) => (
-                <button key={s.id} className="mini-row pressable" data-role="gym" onClick={() => nav(`/session/${s.id}`)}>
-                  <span className="role-chip"><Icon name="dumbbell" size={14} stroke={2} /></span>
-                  <span className="grow ellipsis">{s.name}</span>
-                  <span className="num muted">{fmtDuration((s.endedAt ?? s.startedAt) - s.startedAt)}</span>
-                </button>
-              ))}
-              {selData?.weights.map((w) => (
-                <button key={w.id} className="mini-row pressable" data-role="weight" onClick={() => nav('/weight')}>
-                  <span className="role-chip"><Icon name="scale" size={14} stroke={2} /></span>
-                  <span className="grow num">{fmtWeight(w.kg, settings.unit)}</span>
-                  <span className="muted">{new Date(w.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
-                </button>
-              ))}
-              {!selData && <p className="faint t-15" style={{ textAlign: 'center', margin: 4 }}>Nothing logged</p>}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </Widget>
   );
 }

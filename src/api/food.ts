@@ -136,6 +136,77 @@ export const entriesUpdate = defineCommand({ name: 'entries.update', kind: 'acti
   } });
 export const entriesDelete = defineCommand({ name: 'entries.delete', kind: 'action', description: 'Delete a food log entry (soft delete, syncs).',
   input: z.object({ id: zId }), run: async ({ id }) => { await remove('entries', id); return { ok: true }; } });
+
+// ---------------- bulk: copy · move · delete · log many ----------------
+const zIds = z.array(zId).min(1).max(200).describe('Entry ids (from entries.list)');
+async function liveEntries(ids0: string[]) {
+  const ids = [...new Set(ids0)];
+  const got = await db.entries.bulkGet(ids);
+  const missing = ids.filter((_, i) => !alive(got[i]));
+  if (missing.length) throw new Error(`Entry not found: ${missing.join(', ')}`);
+  return (got as FoodEntry[]).sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
+}
+/** A timestamp on `date` at the current time of day (+i ms keeps the copied order). */
+const atOn = (date: string, i: number) => {
+  const now = new Date(); const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()).getTime() + i;
+};
+
+export const entriesCopy = defineCommand({ name: 'entries.copy', kind: 'action',
+  description: 'Copy logged entries (any dates/meals) to a date, e.g. "same breakfast as yesterday". Each copy is a new entry with a new id, the same food, amount and nutrition snapshot (not recomputed), timestamped on the target date at the current time of day, in the original order. meal moves all copies into that meal; omit it to keep each entry\'s own meal. Returns the new entries.',
+  input: z.object({ ids: zIds, date: zDate, meal: zMeal.optional().describe('target meal; omit = same meal as each original') }),
+  run: async ({ ids, date, meal }) => {
+    const src = await liveEntries(ids);
+    const out: FoodEntry[] = [];
+    for (const [i, e] of src.entries()) {
+      const { id: _id, createdAt: _c, updatedAt: _u, deletedAt: _d, ...rest } = e;
+      out.push(await save('entries', newRecord({ ...rest, date, meal: meal ?? e.meal, at: atOn(date, i) }) as FoodEntry));
+    }
+    return out.map(entryView);
+  } });
+export const entriesMove = defineCommand({ name: 'entries.move', kind: 'action',
+  description: 'Move logged entries to another date and/or meal (e.g. "that snack was lunch", "I logged it on the wrong day"). Only date and meal change; id, food, amount, nutrition and timestamp stay as they are. meal omitted = each entry keeps its meal. Returns the updated entries.',
+  input: z.object({ ids: zIds, date: zDate, meal: zMeal.optional().describe('target meal; omit = keep each entry\'s meal') }),
+  run: async ({ ids, date, meal }) => {
+    const out: FoodEntry[] = [];
+    for (const e of await liveEntries(ids)) out.push(await save('entries', { ...e, date, meal: meal ?? e.meal }));
+    return out.map(entryView);
+  } });
+export const entriesDeleteMany = defineCommand({ name: 'entries.deleteMany', kind: 'action', description: 'Delete several food log entries at once (soft delete, syncs; records.restore brings one back).',
+  input: z.object({ ids: zIds }), run: async ({ ids }) => { for (const id of ids) await remove('entries', id); return { ok: true, deleted: ids.length }; } });
+
+/** Amount for a food with none given: the amount you used last time, else its first unit × 1, else 100 g/ml. */
+async function defaultAmount(it: FoodItem) {
+  const last = await db.entries.orderBy('at').reverse().filter((e) => alive(e) && e.foodId === it.key && !!e.grams).first();
+  if (last?.grams) {
+    const b = it.unitBase ?? 'g';
+    // keep the last unit only if the food still has it, so the amount means the same thing
+    if (last.unit && !isBaseUnit(last.unit, b) && !findPortion(it, last.unit)) return { g: last.grams, q: last.grams, u: b };
+    return { g: last.grams, q: last.qty ?? last.grams, u: last.unit && !isBaseUnit(last.unit, b) ? last.unit : b };
+  }
+  const p = it.portions[0];
+  return p ? { g: p.g, q: 1, u: p.label } : { g: 100, q: 100, u: it.unitBase ?? 'g' };
+}
+export const entriesLogMany = defineCommand({ name: 'entries.logMany', kind: 'action',
+  description: 'Log several foods at once to one meal (e.g. "add eggs, toast and coffee to breakfast"). Each item: foodKey (from foods.search), and optionally grams, or qty + unit like entries.log, and name (override, like entries.log). With no amount, the food is logged with the amount you used last time, else 1 of its first unit, else 100 g/ml. date defaults to today, meal to the time of day. All foods are checked before anything is logged. Returns the new entries in order.',
+  input: z.object({
+    items: z.array(z.object({ foodKey: z.string(), grams: z.number().positive().optional(), qty: z.number().positive().optional(), unit: z.string().optional(),
+      name: z.string().trim().min(1).optional().describe('stored entry name override, as in entries.log') })
+      .refine((v) => (v.qty == null) === (v.unit == null), 'Give qty and unit together')).min(1).max(60),
+    meal: zMeal.optional(), date: zDate.optional() }),
+  run: async ({ items, meal, date }) => {
+    const { mealNow } = await import('../lib/meals');
+    const m = meal ?? mealNow(), d = date ?? dateKey();
+    const plan = [];
+    for (const i of items) {
+      const it = await getItem(i.foodKey); if (!it) throw new Error(`Unknown food ${i.foodKey}`);
+      plan.push({ it: i.name ? { ...it, name: i.name } : it, a: i.grams != null || i.qty != null ? resolveAmount(it, i) : await defaultAmount(it) });
+    }
+    const out = [];
+    for (const { it, a } of plan) out.push(entryView(await logEntry(it, a.g, a.q, a.u, m, d)));
+    return out;
+  } });
+
 export const daysComplete = defineCommand({ name: 'days.setComplete', kind: 'action', description: 'Mark a day as fully logged or not (only complete days are used to estimate maintenance). Returns the day status.',
   input: z.object({ date: zDate, complete: z.boolean() }),
   run: async ({ date, complete }) => { const d = await db.days.get(date); return save('days', d ? { ...d, complete } : { ...newRecord({ complete }), id: date } as DayStatus); } });
@@ -154,8 +225,10 @@ export const goalsSet = defineCommand({ name: 'goals.set', kind: 'action',
     const kg = (await db.bodyweight.orderBy('at').reverse().filter(alive).first())?.kg ?? 80;
     const sex = i.sex ?? cur?.sex ?? 'male', birthYear = i.birthYear ?? cur?.birthYear ?? 1995, heightCm = i.heightCm ?? cur?.heightCm ?? 175, activity = i.activity ?? cur?.activity ?? 'light';
     const rate = i.rateKgPerWeek ?? cur?.rateKgPerWeek ?? 0;
+    // omitted maintenanceKcal keeps a manual override or an accepted log-based (adaptive) value as-is, with its label
     const keepManual = i.maintenanceKcal === undefined && cur?.maintenanceSource === 'manual';
-    const maint = i.maintenanceKcal ?? (keepManual ? cur!.maintenanceKcal : estimateMaintenance(sex, kg, heightCm, new Date().getFullYear() - birthYear, activity));
+    const keepAdaptive = i.maintenanceKcal === undefined && cur?.maintenanceSource === 'adaptive' && cur.maintenanceKcal != null;
+    const maint = i.maintenanceKcal ?? (keepManual || keepAdaptive ? cur!.maintenanceKcal : estimateMaintenance(sex, kg, heightCm, new Date().getFullYear() - birthYear, activity));
     const fields = { effectiveFrom: today, sex, birthYear, heightCm, activity, rateKgPerWeek: rate, maintenanceKcal: maint,
       maintenanceSource: (i.maintenanceKcal != null || keepManual ? 'manual' : i.maintenanceKcal === null ? 'formula' : cur?.maintenanceSource ?? 'formula') as NutritionGoal['maintenanceSource'],
       kcal: i.kcal === undefined ? cur?.kcal ?? targetKcal(maint, rate) : i.kcal, proteinG: i.proteinG === undefined ? cur?.proteinG ?? Math.round(kg * 1.6) : i.proteinG,

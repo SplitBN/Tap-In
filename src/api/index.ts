@@ -5,6 +5,8 @@ import './food';
 import './body';
 import './analysis';
 import './progress';
+import './maintenance';
+import './calendar';
 
 export { call, listCommands, run, toolDefinitions } from './registry';
 export * as gym from './gym';
@@ -12,3 +14,5 @@ export * as food from './food';
 export * as body from './body';
 export * as analysis from './analysis';
 export * as progress from './progress';
+export * as maintenance from './maintenance';
+export * as calendar from './calendar';
