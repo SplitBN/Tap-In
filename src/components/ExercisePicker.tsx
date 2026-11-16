@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { alive, db, newRecord, save } from '../db/db';
+import { alive, db } from '../db/db';
+import { run } from '../api/registry';
+import { exercisesCreate, exercisesUpdate } from '../api/gym';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
@@ -129,8 +131,8 @@ export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exerc
 
   const submit = async () => {
     if (!name.trim()) return;
-    const base = exercise ?? newRecord({ name: '', mechanic, equipment, muscles: [], secondary: [], loadType, unilateral, images: [], custom: true });
-    const ex = await save('exercises', { ...base, name: name.trim(), mechanic, equipment, loadType, unilateral, muscles: [muscle, ...base.muscles.filter((m) => m !== muscle)] });
+    const fields = { name: name.trim(), mechanic, equipment, loadType, unilateral, muscles: [muscle, ...(exercise?.muscles ?? []).filter((m) => m !== muscle)] };
+    const ex = exercise ? await run(exercisesUpdate, { id: exercise.id, ...fields }) : await run(exercisesCreate, fields);
     onSaved?.(ex);
     onClose();
   };

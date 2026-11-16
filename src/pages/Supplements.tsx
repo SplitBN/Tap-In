@@ -1,13 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { confirmDialog } from '../components/Dialog';
+import { confirmDialog, notice } from '../components/Dialog';
 import { Icon } from '../components/Icon';
 import { PickerRow, range } from '../components/Picker';
 import { Sheet } from '../components/Sheet';
-import { alive, db, newRecord, remove, save } from '../db/db';
-import { FORMS, SITES, UNITS, WEEKDAYS, buildDay, doseOn, logTake, nextSite, scheduleText, undoTake, type DueItem } from '../db/supps';
-import type { DoseStep, Note, SchedKind, Schedule, Stack, SuppForm, SuppLog, Supplement } from '../db/types';
+import { alive, db } from '../db/db';
+import { FORMS, SITES, UNITS, WEEKDAYS, buildDay, doseOn, nextSite, scheduleText, type DueItem } from '../db/supps';
+import type { DoseStep, SchedKind, Schedule, Stack, SuppForm, SuppLog, Supplement } from '../db/types';
+import { run } from '../api/registry';
+import { notesAdd, notesDelete, stackDelete, stackSave, suppDelete, suppSave, suppTake, suppUnlog } from '../api/body';
 import { fmtNum } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { Ring } from './Food';
@@ -42,14 +44,14 @@ export function SupplementsPage() {
   const asNeededLogs = logs.filter((l) => l.slot == null && l.status === 'taken');
   const label = date === today ? 'Today' : date === shiftDate(today, -1) ? 'Yesterday' : keyToDate(date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // the command fills in the time (now, or the scheduled time when back-filling) and rotates injection sites
   const quickToggle = async (d: DueItem) => {
-    if (d.log) return undoTake(d.log, d.sup);
-    await logTake(d.sup, date, d.slot === '--:--' ? null : d.slot, d.amount,
-      { site: d.sup.route === 'subq' || d.sup.route === 'im' ? await nextSite(d.sup.id) : null, takenAt: date === today ? Date.now() : stampFor(date, d.slot) });
+    if (d.log) { await run(suppUnlog, { logId: d.log.id }); return; }
+    await run(suppTake, { supplementId: d.sup.id, date, time: d.slot === '--:--' ? null : d.slot, amount: d.amount });
   };
   const takeAll = async (items: DueItem[]) => {
     const open = items.filter((i) => !i.log);
-    if (!open.length) { for (const i of items) await undoTake(i.log!, i.sup); return; }
+    if (!open.length) { for (const i of items) await run(suppUnlog, { logId: i.log!.id }); return; }
     for (const i of open) await quickToggle(i);
   };
 
@@ -174,7 +176,7 @@ export function SupplementsPage() {
                 <div key={n.id} className="list-item" style={{ alignItems: 'flex-start' }}>
                   <span className="grow"><span className="title" dir="auto" style={{ fontWeight: 500 }}>{n.text}</span>
                     <span className="sub" style={{ display: 'block' }}>{new Date(n.at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}{n.tags.includes('side-effect') ? ' · side effect' : ''}</span></span>
-                  <button className="icon-btn sm" aria-label="Delete note" onClick={() => remove('notes', n.id)}><Icon name="close" size={16} /></button>
+                  <button className="icon-btn sm" aria-label="Delete note" onClick={() => run(notesDelete, { id: n.id })}><Icon name="close" size={16} /></button>
                 </div>
               ))}
             </div>
@@ -220,7 +222,8 @@ function TakeSheet({ t, date, onClose }: { t: { sup: Supplement; slot: string | 
   const at = () => { const d = keyToDate(date); const [h, m] = time.split(':').map(Number); d.setHours(h || 0, m || 0, 0, 0); return d.getTime(); };
   const amt = parseFloat(amount.replace(',', '.'));
   const go = async (status: 'taken' | 'skipped') => {
-    await logTake(t.sup, date, t.slot, Number.isFinite(amt) ? amt : doseOn(t.sup, date), { site: inj ? site : null, takenAt: at(), status, existing: t.log });
+    await run(suppTake, { supplementId: t.sup.id, date, time: t.slot, status, amount: amt > 0 ? amt : undefined,
+      site: inj && site ? site : undefined, takenAt: new Date(at()).toISOString(), logId: t.log?.id });
     onClose();
   };
   return (
@@ -238,7 +241,7 @@ function TakeSheet({ t, date, onClose }: { t: { sup: Supplement; slot: string | 
         <button className="btn primary lg block" onClick={() => go('taken')}><Icon name="check" size={20} stroke={2.6} /> Taken</button>
         <div className="row">
           <button className="btn grow" onClick={() => go('skipped')}><Icon name="close" size={16} /> Skipped</button>
-          {t.log && <button className="btn danger grow" onClick={async () => { await undoTake(t.log!, t.sup); onClose(); }}><Icon name="trash" size={16} /> Clear</button>}
+          {t.log && <button className="btn danger grow" onClick={async () => { await run(suppUnlog, { logId: t.log!.id }); onClose(); }}><Icon name="trash" size={16} /> Clear</button>}
         </div>
       </div>
     </Sheet>
@@ -277,19 +280,20 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
   }
   const s = sched;
   const setS = (p: Partial<Schedule>) => setSched({ ...s, ...p });
-  const route = form === 'injection' ? 'subq' : form === 'other' ? 'other' : 'oral';
   const currentDose = doses.length ? [...doses].sort((a, b) => a.from.localeCompare(b.from)).reverse().find((d) => d.from <= today)?.amount ?? doses[0].amount : null;
-  const valid = name.trim() && (doses.length || parseFloat(amount) > 0) && (s.kind === 'asNeeded' || s.times.length) && (s.kind !== 'weekdays' || (s.days ?? []).length);
+  const valid = name.trim() && (doses.length || parseFloat(amount) > 0) && (s.kind === 'asNeeded' || s.times.some(Boolean)) && (s.kind !== 'weekdays' || (s.days ?? []).length);
 
   const go = async () => {
-    const steps = doses.length ? doses : [{ from: s.startDate <= today ? s.startDate : today, amount: parseFloat(amount) }];
-    const fields = {
-      name: name.trim(), form, route: route as Supplement['route'], unit, doses: steps,
-      schedule: { ...s, times: s.kind === 'asNeeded' ? [] : [...s.times].sort() },
-      stock: stock.trim() === '' ? null : parseFloat(stock), notes: notes.trim() || undefined,
-    };
-    await save('supplements', sup ? { ...sup, ...fields } : newRecord({ ...fields, archived: false }) as Supplement);
-    onClose();
+    // route, time sorting/clearing and the first dose step are worked out by supplements.save
+    const st = parseFloat(stock.replace(',', '.'));
+    try {
+      await run(suppSave, {
+        id: sup?.id, name, form, unit, ...(doses.length ? { doses } : { dose: parseFloat(amount.replace(',', '.')) }),
+        schedule: { kind: s.kind, days: s.days, every: s.every, times: s.times.filter(Boolean), startDate: s.startDate, cycle: s.cycle ?? null },
+        stock: stock.trim() === '' ? null : Number.isFinite(st) && st >= 0 ? st : undefined, notes,
+      });
+      onClose();
+    } catch (err) { await notice('Could not save', (err as Error).message); }
   };
 
   return (
@@ -378,10 +382,10 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
         <button className="btn primary lg block" onClick={go} disabled={!valid}><Icon name="check" size={20} stroke={2.6} /> Save</button>
         {sup && (
           <div className="row">
-            <button className="btn grow" onClick={async () => { await save('supplements', { ...sup, archived: !sup.archived }); onClose(); }}>{sup.archived ? 'Resume' : 'Stop taking'}</button>
+            <button className="btn grow" onClick={async () => { await run(suppSave, { id: sup.id, archived: !sup.archived }); onClose(); }}>{sup.archived ? 'Resume' : 'Stop taking'}</button>
             <button className="btn danger grow" onClick={async () => {
               if (!(await confirmDialog({ title: `Delete ${sup.name}?`, message: 'Its log history is kept for analysis; it just disappears from the list.', confirm: 'Delete', danger: true }))) return;
-              await remove('supplements', sup.id); onClose();
+              await run(suppDelete, { id: sup.id }); onClose();
             }}><Icon name="trash" size={16} /> Delete</button>
           </div>
         )}
@@ -397,7 +401,7 @@ function StackEditor({ open, stack, sups, onClose }: { open: boolean; stack?: St
   const [was, setWas] = useState(false);
   if (open !== was) { setWas(open); if (open) { setName(stack?.name ?? ''); setIds(stack?.supplementIds ?? []); } }
   const go = async () => {
-    await save('stacks', stack ? { ...stack, name: name.trim(), supplementIds: ids } : newRecord({ name: name.trim(), supplementIds: ids }) as Stack);
+    await run(stackSave, { id: stack?.id, name, supplementIds: ids });
     onClose();
   };
   return (
@@ -417,7 +421,7 @@ function StackEditor({ open, stack, sups, onClose }: { open: boolean; stack?: St
           })}
         </div>
         <button className="btn primary lg block" onClick={go} disabled={!name.trim() || ids.length < 2}><Icon name="check" size={20} stroke={2.6} /> Save</button>
-        {stack && <button className="btn danger block" onClick={async () => { await remove('stacks', stack.id); onClose(); }}><Icon name="trash" size={16} /> Delete stack</button>}
+        {stack && <button className="btn danger block" onClick={async () => { await run(stackDelete, { id: stack.id }); onClose(); }}><Icon name="trash" size={16} /> Delete stack</button>}
       </div>
     </Sheet>
   );
@@ -438,7 +442,7 @@ function NoteSheet({ open, sups, onClose }: { open: boolean; sups: Supplement[];
           <button className="chip" aria-pressed={tags.includes('side-effect')} onClick={() => toggle('side-effect')}>Side effect</button>
           {sups.filter((s) => !s.archived).map((s) => <button key={s.id} className="chip" aria-pressed={tags.includes(s.id)} onClick={() => toggle(s.id)} dir="auto">{s.name}</button>)}
         </div>
-        <button className="btn primary lg block" disabled={!text.trim()} onClick={async () => { await save('notes', newRecord({ at: Date.now(), text: text.trim(), tags }) as Note); onClose(); }}>
+        <button className="btn primary lg block" disabled={!text.trim()} onClick={async () => { await run(notesAdd, { text, tags }); onClose(); }}>
           <Icon name="check" size={20} stroke={2.6} /> Save
         </button>
       </div>

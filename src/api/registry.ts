@@ -19,7 +19,8 @@ export interface Command<I extends z.ZodType = z.ZodType, O = unknown> {
 const commands = new Map<string, Command>();
 
 export function defineCommand<I extends z.ZodType, O>(c: Command<I, O>): Command<I, O> {
-  if (commands.has(c.name)) throw new Error(`Duplicate command ${c.name}`);
+  // dev hot reload re-runs modules; a real duplicate (two modules, same name) still throws in production builds
+  if (commands.has(c.name) && !import.meta.hot) throw new Error(`Duplicate command ${c.name}`);
   commands.set(c.name, c as unknown as Command);
   return c;
 }
@@ -33,7 +34,9 @@ export async function call(name: string, input: unknown = {}) {
   if (!parsed.success) throw new Error(`Invalid input for ${name}: ${z.prettifyError(parsed.error)}`);
   const out = await c.run(parsed.data);
   // agent-facing output: drop internal soft-delete markers
-  return out === undefined ? { ok: true } : JSON.parse(JSON.stringify(out, (k, v) => (k === 'deletedAt' ? undefined : v)));
+  if (out === undefined) return { ok: true };
+  if (c.name === 'data.export') return out; // a backup must keep deletion markers, or re-importing it resurrects deleted records
+  return JSON.parse(JSON.stringify(out, (k, v) => (k === 'deletedAt' ? undefined : v)));
 }
 
 /** Typed call for app code: the command object itself carries the types. */

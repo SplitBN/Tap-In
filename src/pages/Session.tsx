@@ -6,19 +6,21 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { createPortal } from 'react-dom';
 import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/ExercisePicker';
 import { Icon } from '../components/Icon';
-import { ItemSettings, normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
+import { ItemSettings } from '../components/ItemSettings';
 import { EffortSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
-import { alive, db, newRecord, remove, save } from '../db/db';
-import { finishSession, lastPerformance, latestBodyweightKg, newItem, sessionDiffersFromPlan, setOrder } from '../db/gym';
+import { alive, db } from '../db/db';
+import { lastPerformance, latestBodyweightKg, sessionDiffersFromPlan, setOrder } from '../db/gym';
+import { run } from '../api/registry';
+import { itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsSuperset, itemsUpdate, sessionsDelete, sessionsFinish, sessionsUpdate, setsLog } from '../api/gym';
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
 import { fmtDuration, fmtNum, fmtWeight, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
-import { defaultRestSec, rirToRpe, rpeToRir, suggestDrop, defaultStepKg } from '../lib/science';
-import { groupPos, useExerciseMap } from './WorkoutEditor';
+import { defaultRestSec, suggestDrop, defaultStepKg } from '../lib/science';
+import { groupPos, itemPatch, useExerciseMap } from './WorkoutEditor';
 
 interface Row { kind: SetKind; setNo: number; dropNo?: number; side: Side }
 const rowId = (r: Row) => `${r.kind}:${r.setNo}:${r.dropNo ?? 0}:${r.side}`;
@@ -56,8 +58,9 @@ export function SessionPage() {
   const current = items.find((i) => i.key === session.currentKey) ?? items[0];
   const curIdx = items.findIndex((i) => i.key === current?.key);
   const ex = current ? exMap[current.exerciseId] : undefined;
-  const update = (patch: Partial<Session>) => save('sessions', { ...session, ...patch, items: normalizeSupersets(patch.items ?? session.items) });
-  const setItems = (next: WorkoutItem[]) => update({ items: next, currentKey: next.some((i) => i.key === session.currentKey) ? session.currentKey : next[0]?.key });
+  const t = { sessionId: session.id };
+  const select = (key: string) => run(sessionsUpdate, { id: session.id, currentItemKey: key });
+  const reorder = (next: WorkoutItem[]) => run(itemsReorder, { ...t, itemKeys: next.map((i) => i.key) });
 
   const isDone = (it: WorkoutItem) => {
     const e = exMap[it.exerciseId];
@@ -83,13 +86,13 @@ export function SessionPage() {
           {live && <button className="round-btn finish" aria-label="Finish workout" onClick={() => setMenu('finish')}><Icon name="flag" size={18} stroke={2.2} /></button>}
         </div>
         <ExerciseStrip items={items} exMap={exMap} currentKey={current?.key} isDone={isDone}
-          onSelect={(k) => update({ currentKey: k })} onReorder={setItems} onAdd={() => setPicking('add')} />
+          onSelect={select} onReorder={reorder} onAdd={() => setPicking('add')} />
       </header>
 
       {current && ex ? (
         <ExercisePanel key={current.key} session={session} item={current} ex={ex} sets={sets.filter((s) => s.itemKey === current.key)}
           settings={settings} onMenu={() => setMenu('item')}
-          onSetDone={(row) => afterSetDone(row, current, curIdx, items, exMap, settings, live, update)} />
+          onSetDone={(row) => afterSetDone(row, current, curIdx, items, exMap, settings, live, select)} />
       ) : (
         <div className="empty">
           <Icon name="dumbbell" size={40} />
@@ -105,19 +108,19 @@ export function SessionPage() {
       <Sheet open={menu === 'item' && !!current} onClose={() => setMenu(null)} title={ex?.name}>
         {current && (
           <>
-            <ItemSettings item={current} exercise={ex} settings={settings} onChange={(n) => setItems(items.map((i) => (i.key === n.key ? n : i)))} />
+            <ItemSettings item={current} exercise={ex} settings={settings} onChange={(n) => run(itemsUpdate, { ...t, itemKey: n.key, patch: itemPatch(current, n) })} />
             <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 4 }}>
               {curIdx < items.length - 1 && (() => {
                 const linked = !!current.supersetId && current.supersetId === items[curIdx + 1]?.supersetId;
-                return <button className="menu-item" onClick={() => setItems(toggleSupersetWithNext(items, curIdx))}>
+                return <button className="menu-item" onClick={() => run(itemsSuperset, { ...t, itemKey: current.key })}>
                   <Icon name={linked ? 'unlink' : 'link'} /><span className="grow ellipsis">{linked ? 'Unlink superset' : `Superset + ${exMap[items[curIdx + 1].exerciseId]?.name ?? 'next'}`}</span>
                 </button>;
               })()}
               <button className="menu-item" onClick={() => { setMenu(null); setPicking('replace'); }}><Icon name="swap" />Replace</button>
               <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How-to</button>
               <button className="menu-item" onClick={() => setMenu('editEx')}><Icon name="edit" />Edit exercise</button>
-              {curIdx > 0 && <button className="menu-item" onClick={() => setItems(moveItem(items, curIdx, -1))}><Icon name="chevronLeft" />Move left</button>}
-              {curIdx < items.length - 1 && <button className="menu-item" onClick={() => setItems(moveItem(items, curIdx, 1))}><Icon name="chevronRight" />Move right</button>}
+              {curIdx > 0 && <button className="menu-item" onClick={() => reorder(moveItem(items, curIdx, -1))}><Icon name="chevronLeft" />Move left</button>}
+              {curIdx < items.length - 1 && <button className="menu-item" onClick={() => reorder(moveItem(items, curIdx, 1))}><Icon name="chevronRight" />Move right</button>}
               <button className="menu-item danger" onClick={async () => {
                 const mine = sets.filter((x) => x.itemKey === current.key);
                 const doneN = mine.filter((x) => x.doneAt).length;
@@ -125,8 +128,7 @@ export function SessionPage() {
                   setMenu(null);
                   if (!(await confirmDialog({ title: `Remove ${ex?.name ?? 'exercise'}?`, message: `Its ${doneN} logged set${doneN === 1 ? '' : 's'} will be deleted.`, confirm: 'Remove exercise', danger: true }))) return;
                 }
-                for (const s of mine) await remove('sets', s.id);
-                setItems(items.filter((i) => i.key !== current.key)); setMenu(null);
+                await run(itemsRemove, { ...t, itemKey: current.key }); setMenu(null);
               }}><Icon name="trash" />Remove</button>
             </div>
           </>
@@ -141,28 +143,25 @@ export function SessionPage() {
       <Sheet open={menu === 'session'} onClose={() => setMenu(null)} title="Workout">
         <button className="menu-item" onClick={() => { setMenu(null); setPicking('add'); }}><Icon name="plus" />Add exercise</button>
         <button className="menu-item" onClick={() => setMenu('details')}><Icon name="edit" />Name, date & time</button>
-        <NotesField value={session.notes} onChange={(notes) => update({ notes })} />
-        {!live && <button className="menu-item" onClick={() => update({ endedAt: null })}><Icon name="play" />Resume this workout</button>}
+        <NotesField value={session.notes} onChange={(notes) => run(sessionsUpdate, { id: session.id, notes: notes ?? null })} />
+        {!live && <button className="menu-item" onClick={() => run(sessionsUpdate, { id: session.id, resume: true })}><Icon name="play" />Resume this workout</button>}
         <button className="menu-item danger" onClick={async () => {
           setMenu(null);
           if (!(await confirmDialog(live ? { title: 'Discard this workout?', message: 'All sets logged in it are deleted.', confirm: 'Discard workout', danger: true } : { title: 'Delete this workout?', message: 'It is removed from your history.', confirm: 'Delete workout', danger: true }))) return;
-          for (const s of sets) await remove('sets', s.id);
-          await remove('sessions', session.id); rest.stop(); nav('/');
+          await run(sessionsDelete, { id: session.id }); rest.stop(); nav('/');
         }}><Icon name="trash" />{live ? 'Discard workout' : 'Delete workout'}</button>
       </Sheet>
 
-      <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => update(p)} />
+      <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => run(sessionsUpdate, { id: session.id, ...p })} />
       <FinishSheet open={menu === 'finish'} onClose={() => setMenu(null)} session={session} doneCount={doneCount}
         onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); }} />
 
       <ExercisePicker open={!!picking} title={picking === 'replace' ? 'Replace exercise' : 'Add exercise'} onClose={() => setPicking(null)}
         onPick={async ([e]) => {
           if (picking === 'replace' && current) {
-            for (const s of sets.filter((x) => x.itemKey === current.key && !x.doneAt)) await remove('sets', s.id);
-            setItems(items.map((i) => (i.key === current.key ? { ...i, exerciseId: e.id, rest: { mode: i.rest.mode } } : i)));
+            await run(itemsReplace, { ...t, itemKey: current.key, exerciseId: e.id });
           } else {
-            const it = newItem(e);
-            update({ items: [...items, it], currentKey: it.key });
+            await run(itemsAdd, { ...t, exerciseIds: [e.id], makeCurrent: true });
           }
         }} />
     </div>
@@ -171,7 +170,7 @@ export function SessionPage() {
 
 /** After a set is checked: start rest and move through supersets. */
 function afterSetDone(row: Row, it: WorkoutItem, idx: number, items: WorkoutItem[], exMap: Record<string, Exercise>, s: Settings, live: boolean,
-  update: (p: Partial<Session>) => void) {
+  select: (key: string) => void) {
   if (!live) return;
   if (row.side === 'left') return; // right side follows straight away
   if (row.kind === 'working' && (it.drops ?? 0) > 0) return; // drops follow immediately, no rest
@@ -179,9 +178,9 @@ function afterSetDone(row: Row, it: WorkoutItem, idx: number, items: WorkoutItem
   // supersets: go to the next exercise in the group, rest only after the round
   if (it.supersetId) {
     const nextInGroup = items[idx + 1]?.supersetId === it.supersetId ? items[idx + 1] : undefined;
-    if (nextInGroup) { update({ currentKey: nextInGroup.key }); return; }
+    if (nextInGroup) { select(nextInGroup.key); return; }
     const first = items.findIndex((x) => x.supersetId === it.supersetId);
-    update({ currentKey: items[first].key });
+    select(items[first].key);
   }
   if (!s.features.restTimer) return;
   const ex = exMap[it.exerciseId];
@@ -264,14 +263,12 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
     return undefined;
   };
 
-  const upsert = async (r: Row, patch: Partial<SetLog>) => {
-    const existing = byId.get(rowId(r));
-    const base = existing ?? newRecord({
-      sessionId: session.id, itemKey: item.key, exerciseId: ex.id, setNo: r.setNo, kind: r.kind, dropNo: r.dropNo, side: r.side,
-      loadType: ex.loadType, inputUnit: unit, loadKg: null, reps: null, doneAt: null,
-    } as Omit<SetLog, 'id' | 'createdAt' | 'updatedAt'>);
-    await save('sets', { ...base, ...patch, loadType: ex.loadType, bodyweightKg: ex.loadType === 'weighted' ? null : bw ?? null });
-  };
+  /** Writes one set row via sets.log (which also snapshots load type, bodyweight and input unit). done defaults to the row's current state. */
+  type SetPatch = { loadKg?: number | null; reps?: number | null; rir?: number | null; rpe?: number | null; done?: boolean };
+  const upsert = (r: Row, patch: SetPatch) => run(setsLog, {
+    sessionId: session.id, itemKey: item.key, setNo: r.setNo, kind: r.kind, dropNo: r.dropNo, side: r.side,
+    ...patch, done: patch.done ?? !!byId.get(rowId(r))?.doneAt,
+  });
 
   // Sets complete strictly in order: the first not-done row is the only live one.
   const flat = groups.flat();
@@ -292,7 +289,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
   const toggleDone = async (r: Row, idx: number) => {
     const cur = byId.get(rowId(r));
     if (cur?.doneAt) {
-      if (idx === lastDoneIdx) await upsert(r, { doneAt: null }); // only the latest set can be un-done
+      if (idx === lastDoneIdx) await upsert(r, { done: false }); // only the latest set can be un-done
       return;
     }
     if (idx !== activeIdx) return;
@@ -302,7 +299,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
       if (v.loadKg == null) setWeightFor(r);
       return;
     }
-    await upsert(r, { ...v, doneAt: Date.now(), inputUnit: unit });
+    await upsert(r, { ...v, done: true });
     onSetDone(r);
   };
 
@@ -333,7 +330,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         </div>
         <button className="icon-btn filled" aria-label="Exercise options" onClick={onMenu}><Icon name="more" /></button>
       </div>
-      <NoteLine value={item.notes} onSave={(notes) => save('sessions', { ...session, items: session.items.map((i) => (i.key === item.key ? { ...i, notes } : i)) })} />
+      <NoteLine value={item.notes} onSave={(notes) => run(itemsUpdate, { sessionId: session.id, itemKey: item.key, patch: { notes: notes ?? null } })} />
 
       {/* set table */}
       <div style={{ marginTop: 14 }}>
@@ -416,23 +413,23 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
       <WeightSheet open={!!weightFor} onClose={() => setWeightFor(null)} unit={unit} exercise={ex}
         label={ex.loadType === 'bodyweight' ? 'Added weight' : ex.loadType === 'assisted' ? 'Assistance' : 'Weight'}
         valueKg={weightFor ? byId.get(rowId(weightFor))?.loadKg ?? suggestion(weightFor)?.loadKg : null}
-        onDone={(kg) => weightFor && upsert(weightFor, { loadKg: kg, inputUnit: unit })} />
+        onDone={(kg) => weightFor && upsert(weightFor, { loadKg: kg })} />
       <EffortSheet open={!!effortFor} onClose={() => setEffortFor(null)} mode={settings.effortMode}
         value={effortFor ? effortVal(byId.get(rowId(effortFor))) : null}
-        onDone={(v, mode) => effortFor && upsert(effortFor, v == null
-          ? { rir: null, rpe: null }
-          : mode === 'rir' ? { rir: v, rpe: rirToRpe(v), effortInput: 'rir' } : { rpe: v, rir: rpeToRir(v), effortInput: 'rpe' })} />
+        onDone={(v, mode) => effortFor && upsert(effortFor, v == null ? { rir: null, rpe: null } : mode === 'rir' ? { rir: v } : { rpe: v })} />
     </div>
   );
 }
 
+const MAX_SETS = 20; // items.update limit
+
 function SetCountButtons({ item, session }: { item: WorkoutItem; session: Session }) {
-  const change = (d: number) => save('sessions', { ...session, items: session.items.map((i) => (i.key === item.key ? { ...i, sets: Math.max(1, i.sets + d) } : i)) });
+  const change = (d: number) => run(itemsUpdate, { sessionId: session.id, itemKey: item.key, patch: { sets: Math.min(MAX_SETS, Math.max(1, item.sets + d)) } });
   return (
     <>
       <button className="icon-btn filled" aria-label="Remove a set" onClick={() => change(-1)} disabled={item.sets <= 1}><Icon name="minus" size={18} /></button>
       <span className="faint num" style={{ fontSize: '0.8125rem', minWidth: 48, textAlign: 'center' }}>{item.sets} sets</span>
-      <button className="icon-btn filled" aria-label="Add a set" onClick={() => change(1)} style={{ color: 'var(--accent)' }}><Icon name="plus" size={18} /></button>
+      <button className="icon-btn filled" aria-label="Add a set" onClick={() => change(1)} disabled={item.sets >= MAX_SETS} style={{ color: 'var(--accent)' }}><Icon name="plus" size={18} /></button>
     </>
   );
 }
@@ -497,7 +494,7 @@ function RestBar() {
 
 function FinishSheet({ open, onClose, session, doneCount, onFinished }: { open: boolean; onClose: () => void; session: Session; doneCount: number; onFinished: () => void }) {
   const differs = useLiveQuery(() => (open ? sessionDiffersFromPlan(session) : Promise.resolve(false)), [open, session]);
-  const go = async (updatePlan: boolean) => { await finishSession(session, updatePlan); onClose(); onFinished(); };
+  const go = async (updatePlan: boolean) => { await run(sessionsFinish, { id: session.id, updatePlan }); onClose(); onFinished(); };
   return (
     <Sheet open={open} onClose={onClose} title="Finish workout?">
       <div className="stack" style={{ gap: 12 }}>
@@ -549,7 +546,8 @@ export function ExerciseInfo({ ex }: { ex: Exercise }) {
 const toLocalInput = (ts: number) => { const d = new Date(ts); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
 /** Everything about a workout stays editable afterwards: name, start, duration. */
-function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClose: () => void; session: Session; onSave: (p: Partial<Session>) => void }) {
+function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClose: () => void; session: Session;
+  onSave: (p: { name: string; startedAt: string; durationMin?: number }) => void }) {
   const [name, setName] = useState(session.name);
   const [start, setStart] = useState(toLocalInput(session.startedAt));
   const [mins, setMins] = useState('');
@@ -561,10 +559,10 @@ function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClo
       setMins(session.endedAt ? String(Math.round((session.endedAt - session.startedAt) / 60000)) : '');
     }
   }
-  const save = () => {
+  const submit = () => {
     const startedAt = new Date(start).getTime() || session.startedAt;
     const m = parseInt(mins, 10);
-    onSave({ name: name.trim() || session.name, startedAt, ...(session.endedAt && m > 0 ? { endedAt: startedAt + m * 60000 } : {}) });
+    onSave({ name: name.trim() || session.name, startedAt: new Date(startedAt).toISOString(), ...(session.endedAt && m > 0 ? { durationMin: m } : {}) });
     onClose();
   };
   return (
@@ -573,7 +571,7 @@ function DetailsSheet({ open, onClose, session, onSave }: { open: boolean; onClo
         <label className="field"><span>Name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="field"><span>Start</span><input className="input" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} /></label>
         {session.endedAt && <label className="field"><span>Duration (min)</span><input className="input num" inputMode="numeric" value={mins} onChange={(e) => setMins(e.target.value)} /></label>}
-        <button className="btn primary lg block" onClick={save}><Icon name="check" size={20} stroke={2.6} /> Save</button>
+        <button className="btn primary lg block" onClick={submit}><Icon name="check" size={20} stroke={2.6} /> Save</button>
       </div>
     </Sheet>
   );

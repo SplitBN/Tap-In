@@ -5,11 +5,11 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
-import { alive, db, remove, save } from '../db/db';
-import { createPlan, createWorkout, startSession, activeSession } from '../db/gym';
+import { alive, db } from '../db/db';
 import { moveItem } from './Session';
-import { updateSettings, useSettings } from '../db/settings';
-import type { Plan } from '../db/types';
+import { useSettings } from '../db/settings';
+import { run } from '../api/registry';
+import { plansCreate, plansDelete, plansRename, plansReorder, plansSetActive, sessionsStart, workoutsCreate } from '../api/gym';
 
 export function PlansPage() {
   const settings = useSettings();
@@ -45,7 +45,7 @@ export function PlansPage() {
         </div>
       )}
       <NameSheet open={naming} title="New plan" placeholder="e.g. Upper / Lower" onClose={() => setNaming(false)}
-        onSubmit={async (name) => { const p = await createPlan(name); nav(`/plans/${p.id}`); }} />
+        onSubmit={async (name) => { const p = await run(plansCreate, { name }); nav(`/plans/${p.id}`); }} />
     </div>
   );
 }
@@ -66,14 +66,9 @@ export function PlanPage() {
 
   if (!plan) return null;
   const items = workouts.map((w) => ({ key: w.id, w }));
-  const reorder = (next: typeof items) => save('plans', { ...plan, workoutIds: next.map((x) => x.key) });
-  const start = async (wid: string) => {
-    const cur = await activeSession();
-    if (cur) return nav(`/session/${cur.id}`);
-    const w = await db.workouts.get(wid);
-    const s = await startSession(w);
-    nav(`/session/${s.id}`);
-  };
+  const reorder = (next: typeof items) => run(plansReorder, { id: plan.id, workoutIds: next.map((x) => x.key) });
+  // sessions.start returns the running workout instead if one is already live
+  const start = async (wid: string) => { const { session } = await run(sessionsStart, { workoutId: wid }); nav(`/session/${session.id}`); };
 
   return (
     <div className="page">
@@ -85,7 +80,7 @@ export function PlanPage() {
       </header>
 
       {settings.activePlanId !== plan.id ? (
-        <button className="btn block" style={{ marginBottom: 12 }} onClick={() => updateSettings({ activePlanId: plan.id })}><Icon name="flag" size={16} /> Set active</button>
+        <button className="btn block" style={{ marginBottom: 12 }} onClick={() => run(plansSetActive, { id: plan.id })}><Icon name="flag" size={16} /> Set active</button>
       ) : <div style={{ margin: '0 4px 12px' }}><span className="badge accent"><Icon name="flag" size={12} /> Active</span></div>}
 
       <SortableList items={items} onReorder={reorder}>
@@ -118,15 +113,14 @@ export function PlanPage() {
       <button className="btn block" style={{ marginTop: 12 }} onClick={() => setNaming('workout')}><Icon name="plus" size={18} /> Workout</button>
       <button className="btn danger block" style={{ marginTop: 32 }} onClick={async () => {
         if (!(await confirmDialog({ title: `Delete “${plan.name}”?`, message: "Past workouts stay in your history.", confirm: "Delete plan", danger: true }))) return;
-        await remove('plans', plan.id);
-        if (settings.activePlanId === plan.id) await updateSettings({ activePlanId: undefined });
+        await run(plansDelete, { id: plan.id }); // also clears the active plan if it was this one
         nav('/plans');
       }}><Icon name="trash" size={18} /> Delete</button>
 
       <NameSheet open={naming === 'workout'} title="New workout" placeholder="e.g. Push A" onClose={() => setNaming(null)}
-        onSubmit={async (name) => { const w = await createWorkout(plan, name); nav(`/workouts/${w.id}`); }} />
+        onSubmit={async (name) => { const w = await run(workoutsCreate, { planId: plan.id, name }); nav(`/workouts/${w.id}`); }} />
       <NameSheet open={naming === 'rename'} title="Rename plan" initial={plan.name} onClose={() => setNaming(null)}
-        onSubmit={(name) => save('plans', { ...plan, name } as Plan)} />
+        onSubmit={(name) => run(plansRename, { id: plan.id, name })} />
     </div>
   );
 }

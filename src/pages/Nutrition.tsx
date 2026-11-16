@@ -6,7 +6,9 @@ import { FoodEditor, useMyFoods } from '../components/FoodSheets';
 import { Icon } from '../components/Icon';
 import { Stepper } from '../components/ItemSettings';
 import { PickerRow, WheelPicker, range, type Option } from '../components/Picker';
-import { alive, db, newRecord, save } from '../db/db';
+import { weightLog } from '../api/body';
+import { goalsSet } from '../api/food';
+import { run } from '../api/registry';
 import { goalFor } from '../db/food';
 import { latestBodyweightKg } from '../db/gym';
 import type { Activity, Food, NutritionGoal, Sex } from '../db/types';
@@ -28,6 +30,15 @@ interface Draft {
 }
 
 function draftFrom(g: NutritionGoal | null, kg: number | undefined): Draft {
+  const d = draftBase(g, kg);
+  // a stored calorie target that isn't what the formula gives (e.g. set by the agent or typed in) is an override: keep it
+  if (g?.kcal != null) { const auto = compute({ ...d, kcalOverride: null }).kcal; if (auto == null || Math.abs(auto - g.kcal) > 1) d.kcalOverride = g.kcal; }
+  // same for protein: only an explicit value differing from the 1.6 g/kg default is an override
+  if (g?.proteinG != null && compute({ ...d, proteinG: null }).protein === g.proteinG) d.proteinG = null;
+  return d;
+}
+
+function draftBase(g: NutritionGoal | null, kg: number | undefined): Draft {
   return g ? {
     sex: g.sex, birthYear: g.birthYear, heightCm: g.heightCm, weightKg: kg ?? 80, activity: g.activity, rate: g.rateKgPerWeek,
     maintOverride: g.maintenanceSource === 'manual' ? g.maintenanceKcal : null,
@@ -45,16 +56,14 @@ function compute(d: Draft) {
 }
 
 async function persist(d: Draft, kgLogged: number | undefined) {
-  const today = dateKey();
-  const { maintenance, kcal, protein } = compute(d);
-  if (kgLogged == null || Math.abs(kgLogged - d.weightKg) >= 0.05) await save('bodyweight', newRecord({ kg: d.weightKg, at: Date.now() }));
-  const fields = {
-    effectiveFrom: today, sex: d.sex, birthYear: d.birthYear, heightCm: d.heightCm, activity: d.activity, rateKgPerWeek: d.rate,
-    maintenanceKcal: maintenance, maintenanceSource: d.maintOverride ? 'manual' as const : 'formula' as const,
-    kcal, proteinG: protein, carbsG: d.carbsG, fatG: d.fatG,
-  };
-  const sameDay = await db.goals.where('effectiveFrom').equals(today).filter(alive).first();
-  await save('goals', sameDay ? { ...sameDay, ...fields } : newRecord(fields) as NutritionGoal);
+  const { kcal, protein } = compute(d);
+  // log the weight first: the goal's formula maintenance uses the latest weigh-in
+  if (kgLogged == null || Math.abs(kgLogged - d.weightKg) >= 0.05) await run(weightLog, { kg: d.weightKg });
+  // effective today; goals.set updates today's goal in place if one exists. maintenanceKcal null = formula estimate
+  await run(goalsSet, {
+    sex: d.sex, birthYear: d.birthYear, heightCm: d.heightCm, activity: d.activity, rateKgPerWeek: d.rate,
+    maintenanceKcal: d.maintOverride || null, kcal, proteinG: protein, carbsG: d.carbsG, fatG: d.fatG,
+  });
 }
 
 /** Goals. First visit runs a short setup; afterwards every answer is an editable row.

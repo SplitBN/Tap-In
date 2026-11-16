@@ -83,7 +83,8 @@ export function newRecord<T extends object>(fields: T): T & Base {
 /** Soft delete so deletions sync. */
 export async function remove(table: SyncedTable, id: string) {
   const rec = await db.table(table).get(id);
-  if (rec) await save(table, { ...rec, deletedAt: Date.now() });
+  if (!rec) throw new Error(`No ${table} record with id "${id}"`); // never report success for an unknown id
+  if (!rec.deletedAt) await save(table, { ...rec, deletedAt: Date.now() }); // deleting twice is a no-op
 }
 
 export const alive = <T extends Base>(r: T | undefined): r is T => !!r && !r.deletedAt;

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { save } from '../db/db';
-import { updateSettings } from '../db/settings';
+import { run } from '../api/registry';
+import { exercisesUpdate } from '../api/gym';
+import { settingsUpdate } from '../api/body';
 import type { EffortMode, Exercise, Unit } from '../db/types';
 import { defaultStepKg, fromKg, toKg } from '../lib/science';
 import { fmtNum, fmtWeight } from '../lib/format';
@@ -31,8 +32,8 @@ export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, la
   const typedNum = typed != null && typed.trim() !== '' ? parseFloat(typed) : NaN;
   const final = Number.isFinite(typedNum) ? typedNum : values[index];
 
-  const setStep = (s: number) => exercise && save('exercises', { ...exercise, stepKg: toKg(s, unit) });
-  const setUnit = (u: Unit) => { if (u === unit) return; setCur(fromKg(toKg(cur, unit), u)); updateSettings({ unit: u }); };
+  const setStep = (s: number) => exercise && run(exercisesUpdate, { id: exercise.id, stepKg: toKg(s, unit) });
+  const setUnit = (u: Unit) => { if (u === unit) return; setCur(fromKg(toKg(cur, unit), u)); run(settingsUpdate, { unit: u }); };
 
   return (
     <Sheet open={open} onClose={onClose} title={label}>
@@ -70,7 +71,7 @@ export function EffortSheet({ open, onClose, mode, value, onDone }: {
     <Sheet open={open} onClose={onClose} title={mode === 'rir' ? 'Reps in reserve' : 'RPE'}>
       <div className="stack" style={{ gap: 14 }}>
         <div className="seg">
-          {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={mode === m} onClick={() => updateSettings({ effortMode: m })}>{m.toUpperCase()}</button>)}
+          {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={mode === m} onClick={() => run(settingsUpdate, { effortMode: m })}>{m.toUpperCase()}</button>)}
         </div>
         <p className="muted" style={{ margin: 0, fontSize: '0.875rem' }}>
           {mode === 'rir' ? 'How many more reps could you have done? 0 = failure.' : 'Effort out of 10. RPE 10 = failure, 9 = one rep left.'}

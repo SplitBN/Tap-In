@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { alive, db, newRecord, remove, save } from '../db/db';
-import { foodToItem, frequentFor, getItem, logEntry, lookupBarcode, quickAdd, recipeNutrition, searchFoods, type FoodItem } from '../db/food';
+import { entriesDelete, entriesLog, entriesQuick, entriesUpdate, foodsCreate, foodsDelete, foodsUpdate, recipesSave } from '../api/food';
+import { run } from '../api/registry';
+import { alive, db } from '../db/db';
+import { foodToItem, frequentFor, getItem, lookupBarcode, recipeNutrition, searchFoods, type FoodItem } from '../db/food';
 import type { Food, FoodEntry, Ingredient, Macros, Meal, Portion } from '../db/types';
 import { scale } from '../lib/nutrition';
 import { MEALS, k } from '../lib/meals';
@@ -62,7 +64,7 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
   const close = () => onClose();
 
   const logSelected = async () => {
-    for (const f of frequent.filter((x) => sel.includes(x.item.key))) await logEntry(f.item, f.grams, f.qty, f.unit, meal, date);
+    for (const f of frequent.filter((x) => sel.includes(x.item.key))) await run(entriesLog, { foodKey: f.item.key, grams: f.grams, qty: f.qty, unit: f.unit, meal, date });
     close();
   };
 
@@ -242,7 +244,9 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
   ];
   const go = async () => {
     if (mode === 'pick') { onDone?.(item, grams); onClose(); return; }
-    await logEntry(item, grams, n, unit, meal, entry?.date ?? date, entry);
+    const amount = { grams, qty: n, unit }; // grams drive nutrition; qty + unit are the portion label shown in the log
+    if (entry) await run(entriesUpdate, { id: entry.id, ...amount, meal });
+    else await run(entriesLog, { foodKey: item.key, name: item.name || undefined, ...amount, meal, date });
     onClose(); onDone?.(item, grams);
   };
 
@@ -316,7 +320,7 @@ export function MacroPie({ m }: { m: Macros }) {
 }
 
 function DeleteEntry({ entry, onDone }: { entry: FoodEntry; onDone: () => void }) {
-  return <button className="btn danger block" onClick={async () => { await remove('entries', entry.id); onDone(); }}><Icon name="trash" size={18} /> Delete</button>;
+  return <button className="btn danger block" onClick={async () => { await run(entriesDelete, { id: entry.id }); onDone(); }}><Icon name="trash" size={18} /> Delete</button>;
 }
 
 /* ================================================================== */
@@ -343,7 +347,12 @@ function QuickForm({ meal, date, entry, onDone }: { meal: Meal; date: string; en
   const p = num(v.p), c = num(v.c), f = num(v.f);
   const fromMacros = Math.round(p * 4 + c * 4 + f * 9); // Atwater general factors
   const kcal = v.kcal ? num(v.kcal) : fromMacros;
-  const go = async () => { await quickAdd({ kcal, p, c, f, fiber: 0 }, v.name.trim(), entry?.meal ?? meal, entry?.date ?? date, entry); onDone(); };
+  const go = async () => {
+    const fields = { name: v.name.trim(), kcal, p, c, f };
+    if (entry) await run(entriesUpdate, { id: entry.id, ...fields });
+    else await run(entriesQuick, { ...fields, meal, date });
+    onDone();
+  };
   const field = (key: keyof typeof v, label: string, cls: string, ph?: string) => (
     <label className="field"><span className={cls}>{label}</span>
       <input className="input num" inputMode="decimal" value={v[key]} placeholder={ph ?? '0'} onChange={(e) => setV({ ...v, [key]: e.target.value })} />
@@ -393,16 +402,14 @@ export function FoodEditor({ open, onClose, onSaved, draft, food }: {
   const basisG = v.basis === '100' ? 100 : portions[v.basis]?.g ?? 100;
   const factor = 100 / basisG;
   const per100: Macros = { kcal: num(v.kcal) * factor, p: (num(v.p) || 0) * factor, c: (num(v.c) || 0) * factor, f: (num(v.f) || 0) * factor, fiber: src?.per100?.fiber ?? 0 };
-  const valid = v.name.trim() && Number.isFinite(per100.kcal);
+  const valid = v.name.trim() && Number.isFinite(per100.kcal) && [per100.kcal, per100.p, per100.c, per100.f].every((x) => x >= 0);
   const basisOptions = [{ value: '100' as '100' | number, label: `100 ${v.base}` }, ...portions.map((p, i) => ({ value: i as '100' | number, label: `${p.label} (${p.g} ${v.base})` }))];
   const go = async () => {
-    const r = (x: number) => Math.round(x * 10) / 10;
-    const base = food ?? newRecord({ source: 'custom' as const, name: '', per100, portions });
-    const saved = await save('foods', {
-      ...base, source: base.source === 'off' ? 'off' : 'custom', name: v.name.trim(), brand: v.brand.trim() || undefined,
-      barcode: v.barcode.trim() || undefined, unitBase: v.base, portions,
-      per100: { kcal: r(per100.kcal), p: r(per100.p), c: r(per100.c), f: r(per100.f), fiber: r(per100.fiber ?? 0) },
-    } as Food);
+    // per100 is rounded to 0.1 by the command; units (portions) and barcode are saved with the food
+    const fields = { name: v.name.trim(), unitBase: v.base, portions, per100 };
+    const saved = food
+      ? await run(foodsUpdate, { id: food.id, ...fields, brand: v.brand.trim() || null, barcode: v.barcode.trim() || null })
+      : await run(foodsCreate, { ...fields, brand: v.brand.trim() || undefined, barcode: v.barcode.trim() || undefined });
     onSaved?.(saved); onClose();
   };
   const field = (key: 'name' | 'brand' | 'barcode' | 'kcal' | 'p' | 'c' | 'f', label: string, decimal = true, ph?: string, cls = '') => (
@@ -440,7 +447,7 @@ export function FoodEditor({ open, onClose, onSaved, draft, food }: {
         <button className="btn primary lg block" onClick={go} disabled={!valid}><Icon name="check" size={20} stroke={2.6} /> Save</button>
         {food && <button className="btn danger block" onClick={async () => {
           if (!(await confirmDialog({ title: `Delete “${food.name}”?`, message: 'Past log entries keep their numbers.', confirm: 'Delete food', danger: true }))) return;
-          await remove('foods', food.id); onClose();
+          await run(foodsDelete, { id: food.id }); onClose();
         }}><Icon name="trash" size={18} /> Delete</button>}
       </div>
     </Sheet>
@@ -465,17 +472,15 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
     setWas(open);
     if (open) { setName(recipe?.name ?? ''); setServings(recipe?.servings ?? 1); setCooked(recipe?.cookedG ? String(recipe.cookedG) : ''); setItems(recipe?.ingredients ?? []); }
   }
-  const cookedG = parseFloat(cooked) || null;
+  const cookedG = Math.max(0, parseFloat(cooked) || 0) || null;
   const r = recipeNutrition(items, servings, cookedG);
   const perServing = scale(r.per100, r.servingG);
   const go = async () => {
-    const rd = (x: number) => Math.round(x * 10) / 10;
-    const fields = {
-      source: 'recipe' as const, name: name.trim(), unitBase: 'g' as const, ingredients: items, servings, cookedG,
-      per100: { kcal: rd(r.per100.kcal), p: rd(r.per100.p), c: rd(r.per100.c), f: rd(r.per100.f), fiber: rd(r.per100.fiber ?? 0) },
-      portions: [{ label: '1 serving', g: Math.round(r.servingG * 10) / 10 }],
-    };
-    const saved = await save('foods', recipe ? { ...recipe, ...fields } : newRecord(fields) as Food);
+    // the command computes per-100 g + the "1 serving" unit; existing ingredients keep their stored snapshot
+    const { food: saved } = await run(recipesSave, {
+      id: recipe?.id, name: name.trim(), servings, cookedG,
+      ingredients: items.map((it) => ({ foodKey: it.foodKey, name: it.name, grams: it.grams })),
+    });
     onSaved?.(saved); onClose();
   };
   const SERV = Array.from({ length: 24 }, (_, i) => ({ value: i + 1, label: `${i + 1} serving${i ? 's' : ''}` }));
@@ -493,7 +498,7 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
               <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis" dir="auto" style={{ display: 'block' }}>{it.name}</span>
                 <span className="sub"><MacroLine m={scale(it.per100, it.grams)} /> · {k(scale(it.per100, it.grams).kcal)} kcal</span></span>
               <input className="input num" style={{ width: 76, textAlign: 'center', minHeight: 40 }} inputMode="decimal" value={it.grams} aria-label={`${it.name} grams`}
-                onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, grams: parseFloat(e.target.value) || 0 } : x)))} />
+                onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, grams: Math.max(0, parseFloat(e.target.value) || 0) } : x)))} />
               <span className="faint">g</span>
               <button className="icon-btn sm" aria-label={`Remove ${it.name}`} onClick={() => setItems(items.filter((_, j) => j !== i))}><Icon name="close" size={16} /></button>
             </div>
@@ -513,7 +518,7 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
         <button className="btn primary lg block" onClick={go} disabled={!name.trim() || !items.length}><Icon name="check" size={20} stroke={2.6} /> Save recipe</button>
         {recipe && <button className="btn danger block" onClick={async () => {
           if (!(await confirmDialog({ title: `Delete “${recipe.name}”?`, message: 'Past log entries keep their numbers.', confirm: 'Delete recipe', danger: true }))) return;
-          await remove('foods', recipe.id); onClose();
+          await run(foodsDelete, { id: recipe.id }); onClose();
         }}><Icon name="trash" size={18} /> Delete</button>}
       </div>
       <AddFoodSheet open={adding} onClose={() => setAdding(false)} meal="lunch" date="" mode="pick"

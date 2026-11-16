@@ -3,7 +3,9 @@ import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { Wheel } from '../components/Wheel';
-import { alive, db, newRecord, remove, save } from '../db/db';
+import { alive, db } from '../db/db';
+import { run } from '../api/registry';
+import { weightDelete, weightLog, weightUpdate } from '../api/body';
 import { useSettings } from '../db/settings';
 import type { BodyweightEntry } from '../db/types';
 import { fmtDate, fmtWeight } from '../lib/format';
@@ -91,9 +93,10 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
   }
   const idx = Math.max(0, values.findIndex((v) => Math.abs(v - cur) < 0.05));
   const submit = async () => {
-    const at = new Date(when).getTime() || Date.now();
+    const at = new Date(new Date(when).getTime() || Date.now()).toISOString();
     const kg = toKg(values[idx], unit);
-    await save('bodyweight', entry ? { ...entry, kg, at } : newRecord({ kg, at }));
+    if (entry) await run(weightUpdate, { id: entry.id, kg, at });
+    else await run(weightLog, { kg, at });
     onClose();
   };
   return (
@@ -104,7 +107,7 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
           <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
         <button className="btn primary lg block" onClick={submit}>Save {values[idx].toFixed(1)} {unit}</button>
-        {entry && <button className="btn danger block" onClick={async () => { await remove('bodyweight', entry.id); onClose(); }}>Delete</button>}
+        {entry && <button className="btn danger block" onClick={async () => { await run(weightDelete, { id: entry.id }); onClose(); }}>Delete</button>}
       </div>
     </Sheet>
   );

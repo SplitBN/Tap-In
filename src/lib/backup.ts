@@ -1,18 +1,43 @@
-import { db } from '../db/db';
+import { changed, db, type SyncedTable } from '../db/db';
 
-const TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const;
+// Every table in a backup is a synced table, so imported rows are queued for sync like any local write.
+export const BACKUP_TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const satisfies readonly SyncedTable[];
 
-/** Full JSON export (custom/edited exercises only; the bundled library is re-seeded on import). */
-export async function exportJson() {
-  const out: Record<string, unknown[]> = {};
-  for (const t of TABLES) {
+export interface Backup { app: 'tap-in'; version: number; exportedAt: string; data: Record<string, { id: string }[]> }
+
+/** Full backup object (custom/edited exercises only; the bundled library is re-seeded). Used by the data.export command. */
+export async function buildBackup(): Promise<Backup> {
+  const out: Backup['data'] = {};
+  for (const t of BACKUP_TABLES) {
     const rows = await db.table(t).toArray();
     out[t] = t === 'exercises' ? rows.filter((r) => r.custom || r.updatedAt > 0) : rows;
   }
-  const blob = new Blob([JSON.stringify({ app: 'tap-in', version: 1, exportedAt: new Date().toISOString(), data: out })], { type: 'application/json' });
-  const name = `tap-in-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  return { app: 'tap-in', version: 1, exportedAt: new Date().toISOString(), data: out };
+}
+
+/** Write records from a backup (replace by id) and queue each for sync. Used by the data.import command. Returns the record count. */
+export async function restoreBackup(data: Record<string, { id: string }[] | undefined>) {
+  let n = 0;
+  const now = Date.now();
+  await db.transaction('rw', [...BACKUP_TABLES.map((t) => db.table(t)), db.outbox], async () => {
+    for (const t of BACKUP_TABLES) {
+      const rows = data[t];
+      if (!Array.isArray(rows) || !rows.length) continue;
+      // stamp as changed now so last-write-wins sync lets the restored copy win over older server copies
+      await db.table(t).bulkPut(rows.map((r) => ({ ...r, updatedAt: now })));
+      await db.outbox.bulkAdd(rows.map((r) => ({ table: t, recordId: r.id, at: now })));
+      n += rows.length;
+    }
+  });
+  changed();
+  return n;
+}
+
+/** Hand a backup to the user: share sheet on iPhone (save to Files/iCloud Drive), plain download on desktop. */
+export async function saveBackupFile(backup: Backup) {
+  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+  const name = `tap-in-backup-${backup.exportedAt.slice(0, 10)}.json`;
   const file = new File([blob], name, { type: 'application/json' });
-  // iPhone: the share sheet lets you save to Files/iCloud Drive. Desktop: plain download.
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: name }); return; } catch { /* cancelled → fall back */ }
   }
@@ -21,15 +46,10 @@ export async function exportJson() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-export async function importJson(file: File) {
-  const parsed = JSON.parse(await file.text());
-  if (parsed?.app !== 'tap-in') throw new Error('Not a Tap In backup');
-  let n = 0;
-  await db.transaction('rw', TABLES.map((t) => db.table(t)), async () => {
-    for (const t of TABLES) {
-      const rows = parsed.data?.[t];
-      if (Array.isArray(rows)) { await db.table(t).bulkPut(rows); n += rows.length; }
-    }
-  });
-  return n;
+/** Read a picked backup file; friendly error for anything that isn't one. */
+export async function readBackupFile(file: File) {
+  let parsed: unknown;
+  try { parsed = JSON.parse(await file.text()); } catch { throw new Error('Not a Tap In backup'); }
+  if ((parsed as { app?: unknown } | null)?.app !== 'tap-in') throw new Error('Not a Tap In backup');
+  return parsed as Backup;
 }

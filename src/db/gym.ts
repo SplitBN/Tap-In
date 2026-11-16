@@ -1,5 +1,5 @@
 import { db, newRecord, save, uuid, alive } from './db';
-import { getSettings } from './settings';
+import { getSettings, updateSettings } from './settings';
 import type { Exercise, Plan, Session, SetLog, Workout, WorkoutItem } from './types';
 
 export function newItem(ex: Exercise): WorkoutItem {
@@ -9,7 +9,7 @@ export function newItem(ex: Exercise): WorkoutItem {
 export async function createPlan(name: string) {
   const plan: Plan = await save('plans', newRecord({ name, workoutIds: [] as string[] }));
   const s = await getSettings();
-  if (!s.activePlanId) await db.settings.put({ ...s, activePlanId: plan.id });
+  if (!s.activePlanId) await updateSettings({ activePlanId: plan.id }); // via outbox so it syncs
   return plan;
 }
 

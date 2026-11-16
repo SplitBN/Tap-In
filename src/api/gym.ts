@@ -39,7 +39,7 @@ export const exercisesSearch = defineCommand({
 
 export const exercisesCreate = defineCommand({
   name: 'exercises.create', kind: 'action',
-  description: 'Create a custom exercise. loadType: weighted (log the weight), bodyweight (log added weight), assisted (log assistance). unilateral = log left/right separately.',
+  description: 'Create a custom exercise. loadType: weighted (log the weight), bodyweight (log added weight), assisted (log assistance). unilateral = log left/right separately. muscles: main muscle first. Returns the saved exercise record (use its id with items.add).',
   input: z.object({ name: z.string().min(1), mechanic: z.enum(['compound', 'isolation']).default('compound'), equipment: z.string().default('other'),
     loadType: zLoadType.default('weighted'), unilateral: z.boolean().default(false), muscles: z.array(z.string()).default([]) }),
   run: async (i) => save('exercises', newRecord({ ...i, secondary: [], images: [], custom: true })),
@@ -47,9 +47,10 @@ export const exercisesCreate = defineCommand({
 
 export const exercisesUpdate = defineCommand({
   name: 'exercises.update', kind: 'action',
-  description: 'Change an exercise (name, type, equipment, load type, one-side flag, main muscles).',
-  input: z.object({ id: zId, name: z.string().optional(), mechanic: z.enum(['compound', 'isolation']).optional(), equipment: z.string().optional(),
-    loadType: zLoadType.optional(), unilateral: z.boolean().optional(), muscles: z.array(z.string()).optional() }),
+  description: 'Change an exercise (name, type, equipment, load type, one-side flag, muscles with the main one first, stepKg = preferred weight-wheel increment in kg). Only given fields change. Returns the updated exercise record.',
+  input: z.object({ id: zId, name: z.string().min(1).optional(), mechanic: z.enum(['compound', 'isolation']).optional(), equipment: z.string().optional(),
+    loadType: zLoadType.optional(), unilateral: z.boolean().optional(), muscles: z.array(z.string()).optional(),
+    stepKg: z.number().positive().optional().describe('Weight step in kg used by the weight picker for this exercise') }),
   run: async ({ id, ...p }) => { const e = await need(db.exercises.get(id), 'Exercise'); return save('exercises', { ...e, ...p } as Exercise); },
 });
 
@@ -71,22 +72,25 @@ export const plansList = defineCommand({
   },
 });
 
-export const plansCreate = defineCommand({ name: 'plans.create', kind: 'action', description: 'Create a workout plan (becomes active if none is).',
+export const plansCreate = defineCommand({ name: 'plans.create', kind: 'action', description: 'Create an empty workout plan (becomes the active plan if none is). Returns the plan record (id, name, workoutIds).',
   input: z.object({ name: z.string().min(1) }), run: async ({ name }) => createPlan(name) });
-export const plansRename = defineCommand({ name: 'plans.rename', kind: 'action', description: 'Rename a plan.',
+export const plansRename = defineCommand({ name: 'plans.rename', kind: 'action', description: 'Rename a plan. Returns the plan record.',
   input: z.object({ id: zId, name: z.string().min(1) }), run: async ({ id, name }) => save('plans', { ...(await need(db.plans.get(id), 'Plan')), name }) });
-export const plansDelete = defineCommand({ name: 'plans.delete', kind: 'action', description: 'Delete a plan (past workouts stay in history).',
-  input: z.object({ id: zId }), run: async ({ id }) => { await remove('plans', id); const s = await getSettings(); if (s.activePlanId === id) await updateSettings({ activePlanId: undefined }); return { ok: true }; } });
+export const plansDelete = defineCommand({ name: 'plans.delete', kind: 'action', description: 'Delete a plan and its workouts (past workout sessions stay in history). If it was the active plan, no plan is active afterwards.',
+  input: z.object({ id: zId }), run: async ({ id }) => {
+    const plan = await need(db.plans.get(id), 'Plan');
+    for (const w of await db.workouts.bulkGet(plan.workoutIds)) if (w && !w.deletedAt) await remove('workouts', w.id);
+    await remove('plans', id); const s = await getSettings(); if (s.activePlanId === id) await updateSettings({ activePlanId: undefined }); return { ok: true }; } });
 export const plansSetActive = defineCommand({ name: 'plans.setActive', kind: 'action', description: 'Make a plan the active one (Home suggests its next workout).',
   input: z.object({ id: zId }), run: async ({ id }) => { await need(db.plans.get(id), 'Plan'); await updateSettings({ activePlanId: id }); return { ok: true }; } });
-export const plansReorder = defineCommand({ name: 'plans.reorderWorkouts', kind: 'action', description: 'Set the rotation order of a plan\'s workouts.',
+export const plansReorder = defineCommand({ name: 'plans.reorderWorkouts', kind: 'action', description: 'Set the rotation order of a plan\'s workouts: pass the full list of workout ids in the new order. Returns the plan record.',
   input: z.object({ id: zId, workoutIds: z.array(zId) }), run: async ({ id, workoutIds }) => save('plans', { ...(await need(db.plans.get(id), 'Plan')), workoutIds }) });
 
-export const workoutsCreate = defineCommand({ name: 'workouts.create', kind: 'action', description: 'Add a workout (e.g. "Push A") to a plan.',
+export const workoutsCreate = defineCommand({ name: 'workouts.create', kind: 'action', description: 'Add an empty workout (e.g. "Push A") to the end of a plan\'s rotation. Returns the workout record (use its id with items.add).',
   input: z.object({ planId: zId, name: z.string().min(1) }), run: async ({ planId, name }) => createWorkout(await need(db.plans.get(planId), 'Plan'), name) });
-export const workoutsRename = defineCommand({ name: 'workouts.rename', kind: 'action', description: 'Rename a workout.',
+export const workoutsRename = defineCommand({ name: 'workouts.rename', kind: 'action', description: 'Rename a plan workout. Returns the workout record.',
   input: z.object({ id: zId, name: z.string().min(1) }), run: async ({ id, name }) => save('workouts', { ...(await need(db.workouts.get(id), 'Workout')), name }) });
-export const workoutsDelete = defineCommand({ name: 'workouts.delete', kind: 'action', description: 'Delete a workout from its plan.',
+export const workoutsDelete = defineCommand({ name: 'workouts.delete', kind: 'action', description: 'Delete a workout and take it out of its plan\'s rotation. Past sessions of it stay in history.',
   input: z.object({ id: zId }), run: async ({ id }) => {
     const w = await need(db.workouts.get(id), 'Workout'); const p = await db.plans.get(w.planId);
     if (p) await save('plans', { ...p, workoutIds: p.workoutIds.filter((x) => x !== id) });
@@ -94,11 +98,14 @@ export const workoutsDelete = defineCommand({ name: 'workouts.delete', kind: 'ac
   } });
 
 /** Structure edits shared by plan workouts and live/finished sessions (same rules everywhere). */
-async function editItems(target: { workoutId?: string; sessionId?: string }, fn: (items: WorkoutItem[]) => WorkoutItem[] | Promise<WorkoutItem[]>) {
+async function editItems(target: { workoutId?: string; sessionId?: string }, fn: (items: WorkoutItem[]) => WorkoutItem[] | Promise<WorkoutItem[]>,
+  pickCurrent?: (before: WorkoutItem[], after: WorkoutItem[]) => string | undefined) {
   if (target.sessionId) {
     const s = await need(db.sessions.get(target.sessionId), 'Session');
+    const before = s.items;
     const items = normalizeSupersets(await fn(s.items));
-    return save('sessions', { ...s, items, currentKey: items.some((i) => i.key === s.currentKey) ? s.currentKey : items[0]?.key } as Session);
+    const picked = pickCurrent?.(before, items);
+    return save('sessions', { ...s, items, currentKey: picked ?? (items.some((i) => i.key === s.currentKey) ? s.currentKey : items[0]?.key) } as Session);
   }
   const w = await need(db.workouts.get(target.workoutId!), 'Workout');
   return save('workouts', { ...w, items: normalizeSupersets(await fn(w.items)) } as Workout);
@@ -111,21 +118,22 @@ const zTarget = {
 const zTargetRefine = <T extends z.ZodObject>(o: T) => o.refine((v: { workoutId?: string; sessionId?: string }) => !!v.workoutId !== !!v.sessionId, 'Give exactly one of workoutId or sessionId');
 
 export const itemsAdd = defineCommand({ name: 'items.add', kind: 'action',
-  description: 'Add exercises to a plan workout or to a workout session (mid-workout too). Default 3 sets.',
-  input: zTargetRefine(z.object({ ...zTarget, exerciseIds: z.array(zId).min(1), sets: z.number().int().min(1).max(20).optional() })),
-  run: async ({ exerciseIds, sets, ...t }) => editItems(t, async (items) => {
+  description: 'Add exercises to the end of a plan workout or a workout session (mid-workout too). Default 3 sets each. In a session, makeCurrent=true also switches the current exercise to the first one added. Returns the updated workout/session record (new slots are at the end of items).',
+  input: zTargetRefine(z.object({ ...zTarget, exerciseIds: z.array(zId).min(1), sets: z.number().int().min(1).max(20).optional(),
+    makeCurrent: z.boolean().optional().describe('Session only: make the first added exercise the current one') })),
+  run: async ({ exerciseIds, sets, makeCurrent, ...t }) => editItems(t, async (items) => {
     const found = await db.exercises.bulkGet(exerciseIds);
     const missing = exerciseIds.filter((_, i) => !found[i] || found[i]!.deletedAt);
     if (missing.length) throw new Error(`Exercise not found: ${missing.join(', ')} (use exercises.search to get ids)`);
     const exs = found as Exercise[];
     return [...items, ...exs.map((e) => ({ ...newItem(e), sets: sets ?? 3 }))];
-  }) });
+  }, makeCurrent ? (before, after) => after[before.length]?.key : undefined) });
 export const itemsUpdate = defineCommand({ name: 'items.update', kind: 'action',
-  description: 'Change an exercise slot: sets, target reps, warm-ups, drop sets, rest, notes. Works on plan workouts and sessions.',
+  description: 'Change an exercise slot: sets, target reps, warm-ups, drop sets, rest, notes. Only fields in patch change; null clears repsMin/repsMax/notes. Works on plan workouts and sessions (in a session it edits the session copy only; sessions.finish with updatePlan=true carries it to the plan). Returns the updated workout/session record.',
   input: zTargetRefine(z.object({ ...zTarget, itemKey: z.string(), patch: zItemPatch })),
   run: async ({ itemKey, patch, ...t }) => editItems(t, (items) => mustHave(items, itemKey).map((i) => (i.key === itemKey ? applyPatch(i, patch) : i))) });
 export const itemsRemove = defineCommand({ name: 'items.remove', kind: 'action',
-  description: 'Remove an exercise slot. In a session this also deletes that exercise\'s logged sets in the session.',
+  description: 'Remove an exercise slot. In a session this also deletes all of that slot\'s sets (done or not) in the session. Returns the updated workout/session record.',
   input: zTargetRefine(z.object({ ...zTarget, itemKey: z.string() })),
   run: async ({ itemKey, ...t }) => {
     if (t.sessionId) for (const s of await db.sets.where('sessionId').equals(t.sessionId).filter((x) => x.itemKey === itemKey).toArray()) await remove('sets', s.id);
@@ -139,7 +147,16 @@ export const itemsReplace = defineCommand({ name: 'items.replace', kind: 'action
     await need(db.exercises.get(exerciseId), 'Exercise');
     return editItems(t, (items) => mustHave(items, itemKey).map((i) => (i.key === itemKey ? { ...i, exerciseId, rest: { mode: i.rest.mode } } : i)));
   } });
-export const itemsMove = defineCommand({ name: 'items.move', kind: 'action', description: 'Move an exercise slot to a new position (0-based).',
+export const itemsReorder = defineCommand({ name: 'items.reorder', kind: 'action',
+  description: 'Put all exercise slots of a plan workout or session in a new order: itemKeys must list every current item key exactly once, in the new order. Supersets that end up split apart are dissolved. Returns the updated workout/session record.',
+  input: zTargetRefine(z.object({ ...zTarget, itemKeys: z.array(z.string()) })),
+  run: async ({ itemKeys, ...t }) => editItems(t, (items) => {
+    const byKey = new Map(items.map((i) => [i.key, i]));
+    if (itemKeys.length !== items.length || new Set(itemKeys).size !== itemKeys.length || itemKeys.some((k) => !byKey.has(k)))
+      throw new Error(`itemKeys must contain each current item key exactly once (current: ${items.map((i) => i.key).join(', ')})`);
+    return itemKeys.map((k) => byKey.get(k)!);
+  }) });
+export const itemsMove = defineCommand({ name: 'items.move', kind: 'action', description: 'Move one exercise slot to a new position (0-based). To apply a whole new order use items.reorder.',
   input: zTargetRefine(z.object({ ...zTarget, itemKey: z.string(), toIndex: z.number().int().min(0) })),
   run: async ({ itemKey, toIndex, ...t }) => editItems(t, (items) => {
     const from = items.findIndex((i) => i.key === itemKey); if (from < 0) throw new Error('Item not found');
@@ -191,11 +208,11 @@ export const sessionsStart = defineCommand({ name: 'sessions.start', kind: 'acti
     return { alreadyRunning: false, session: await sessionView(s) };
   } });
 export const sessionsFinish = defineCommand({ name: 'sessions.finish', kind: 'action',
-  description: 'Finish a workout. Unchecked sets are dropped. updatePlan=true writes structural changes (exercises, order, sets, rest) back to the plan workout.',
+  description: 'Finish a live workout (end time = now). Unchecked sets are deleted. updatePlan=true copies the session structure (exercises, order, sets, reps, rest, supersets, warm-ups, drops, notes) back to the plan workout it came from.',
   input: z.object({ id: zId, updatePlan: z.boolean().default(false) }),
   run: async ({ id, updatePlan }) => { await finishSession(await need(db.sessions.get(id), 'Session'), updatePlan); return { ok: true }; } });
 export const sessionsUpdate = defineCommand({ name: 'sessions.update', kind: 'action',
-  description: 'Edit a session\'s name, notes, start time, duration (finished only), current exercise, or resume a finished one.',
+  description: 'Edit a session\'s name, notes (null clears), start time (ISO), duration in minutes (finished sessions only), current exercise (currentItemKey), or resume=true to reopen a finished one as live. Only given fields change. Returns the session record.',
   input: z.object({ id: zId, name: z.string().optional(), notes: z.string().nullable().optional(), startedAt: z.string().datetime({ offset: true }).optional(),
     durationMin: z.number().positive().optional(), currentItemKey: z.string().optional(), resume: z.boolean().optional() }),
   run: async ({ id, name, notes, startedAt, durationMin, currentItemKey, resume }) => {
@@ -211,12 +228,19 @@ export const sessionsDelete = defineCommand({ name: 'sessions.delete', kind: 'ac
   } });
 
 // ---------------- sets ----------------
+/** Effort fields from rir/rpe input: one given -> both derived; null -> both cleared; undefined -> unchanged. */
+const effortPatch = (rir?: number | null, rpe?: number | null): Partial<SetLog> =>
+  rir != null ? { rir, rpe: rirToRpe(rir), effortInput: 'rir' } : rpe != null ? { rpe, rir: rpeToRir(rpe), effortInput: 'rpe' }
+    : rir === null || rpe === null ? { rir: null, rpe: null } : {};
+/** Load type + bodyweight snapshot at log time (bodyweight only matters for bodyweight/assisted e1RM). */
+const loadSnapshot = async (ex: Exercise): Promise<Partial<SetLog>> =>
+  ({ loadType: ex.loadType, bodyweightKg: ex.loadType === 'weighted' ? null : (await latestBodyweightKg()) ?? null });
 export const setsLog = defineCommand({ name: 'sets.log', kind: 'action',
-  description: 'Record or correct a set in a session (creates it or updates the matching one). itemKey is the exercise slot key from sessions.active / sessions.get (items[].key). setNo is 1-based within its kind; drop steps use kind "drop" with dropNo; one-side exercises use side left/right. loadKg means: the weight (weighted), added weight (bodyweight) or assistance (assisted). Give rir or rpe (RPE = 10 − RIR). done=false leaves it unchecked.',
+  description: 'Record or correct a set in a session (creates it or updates the matching one). itemKey is the exercise slot key from sessions.active / sessions.get (items[].key). setNo is 1-based within its kind; drop steps use kind "drop" with dropNo; one-side exercises use side left/right. loadKg means: the weight (weighted), added weight (bodyweight) or assistance (assisted). Give rir or rpe (RPE = 10 − RIR); null clears effort. Omitted fields keep their value. done: true checks it off, false unchecks; omitted keeps an existing set\'s state and marks a new set done. Also snapshots the exercise load type and (for bodyweight/assisted) the latest bodyweight so e1RM stays right. Returns the set record.',
   input: z.object({ sessionId: zId, itemKey: z.string(), setNo: z.number().int().min(1), kind: z.enum(['warmup', 'working', 'drop']).default('working'),
     dropNo: z.number().int().min(1).optional(), side: z.enum(['both', 'left', 'right']).default('both'),
     loadKg: z.number().min(0).nullable().optional(), reps: z.number().int().min(0).nullable().optional(),
-    rir: z.number().min(0).max(10).nullable().optional(), rpe: z.number().min(1).max(10).nullable().optional(), done: z.boolean().default(true) }),
+    rir: z.number().min(0).max(10).nullable().optional(), rpe: z.number().min(1).max(10).nullable().optional(), done: z.boolean().optional() }),
   run: async (i) => {
     const sess = await need(db.sessions.get(i.sessionId), 'Session');
     const item = sess.items.find((x) => x.key === i.itemKey); if (!item) throw new Error('Exercise slot not found in session');
@@ -224,20 +248,23 @@ export const setsLog = defineCommand({ name: 'sets.log', kind: 'action',
     const existing = await db.sets.where('sessionId').equals(i.sessionId)
       .filter((x) => alive(x) && x.itemKey === i.itemKey && x.kind === i.kind && x.setNo === i.setNo && (x.dropNo ?? 0) === (i.dropNo ?? 0) && x.side === i.side).first();
     const s = await getSettings();
-    const bw = ex.loadType === 'weighted' ? null : (await latestBodyweightKg()) ?? null;
-    const effort = i.rir != null ? { rir: i.rir, rpe: rirToRpe(i.rir), effortInput: 'rir' as const } : i.rpe != null ? { rpe: i.rpe, rir: rpeToRir(i.rpe), effortInput: 'rpe' as const } : {};
     const base = existing ?? newRecord({ sessionId: i.sessionId, itemKey: i.itemKey, exerciseId: ex.id, setNo: i.setNo, kind: i.kind, dropNo: i.dropNo, side: i.side,
       loadType: ex.loadType, inputUnit: s.unit, loadKg: null, reps: null, doneAt: null } as Omit<SetLog, 'id' | 'createdAt' | 'updatedAt'>);
-    return save('sets', { ...base, loadKg: i.loadKg !== undefined ? i.loadKg : base.loadKg, reps: i.reps !== undefined ? i.reps : base.reps, ...effort,
-      bodyweightKg: bw ?? base.bodyweightKg ?? null, doneAt: i.done ? base.doneAt ?? Date.now() : null } as SetLog);
+    const done = i.done ?? (existing ? !!existing.doneAt : true);
+    return save('sets', { ...base, loadKg: i.loadKg !== undefined ? i.loadKg : base.loadKg, reps: i.reps !== undefined ? i.reps : base.reps,
+      ...effortPatch(i.rir, i.rpe), ...(await loadSnapshot(ex)),
+      ...(i.loadKg !== undefined || (done && !base.doneAt) ? { inputUnit: s.unit } : {}),
+      doneAt: done ? base.doneAt ?? Date.now() : null } as SetLog);
   } });
-export const setsUpdate = defineCommand({ name: 'sets.update', kind: 'action', description: 'Correct a logged set by id (weight, reps, effort, done).',
+export const setsUpdate = defineCommand({ name: 'sets.update', kind: 'action', description: 'Correct a logged set by id (loadKg, reps, rir or rpe with null clearing effort, done). Only given fields change. Re-snapshots the exercise load type and latest bodyweight like sets.log. Returns the set record.',
   input: z.object({ id: zId, loadKg: z.number().min(0).nullable().optional(), reps: z.number().int().min(0).nullable().optional(),
     rir: z.number().min(0).max(10).nullable().optional(), rpe: z.number().min(1).max(10).nullable().optional(), done: z.boolean().optional() }),
   run: async ({ id, rir, rpe, done, ...p }) => {
     const x = await need(db.sets.get(id), 'Set');
-    const effort = rir != null ? { rir, rpe: rirToRpe(rir) } : rpe != null ? { rpe, rir: rpeToRir(rpe) } : rir === null || rpe === null ? { rir: null, rpe: null } : {};
-    return save('sets', { ...x, ...p, ...effort, doneAt: done === undefined ? x.doneAt : done ? x.doneAt ?? Date.now() : null });
+    const ex = await db.exercises.get(x.exerciseId);
+    const unit = p.loadKg !== undefined || (done && !x.doneAt) ? { inputUnit: (await getSettings()).unit } : {};
+    return save('sets', { ...x, ...p, ...effortPatch(rir, rpe), ...(ex ? await loadSnapshot(ex) : {}), ...unit,
+      doneAt: done === undefined ? x.doneAt : done ? x.doneAt ?? Date.now() : null });
   } });
 export const setsDelete = defineCommand({ name: 'sets.delete', kind: 'action', description: 'Delete a logged set by id.',
   input: z.object({ id: zId }), run: async ({ id }) => { await remove('sets', id); return { ok: true }; } });

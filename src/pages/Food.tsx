@@ -5,7 +5,9 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { AddFoodSheet, EntrySheet, MacroLine, RecipeEditor } from '../components/FoodSheets';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
-import { alive, db, newRecord, save } from '../db/db';
+import { daysComplete } from '../api/food';
+import { run } from '../api/registry';
+import { alive, db } from '../db/db';
 import { goalFor } from '../db/food';
 import type { FoodEntry, Macros, Meal, NutritionGoal } from '../db/types';
 import { dateKey, keyToDate, shiftDate, sum } from '../lib/nutrition';
@@ -101,7 +103,7 @@ export function FoodPage() {
       <label className="card row" style={{ marginTop: 12, cursor: 'pointer' }}>
         <span className="grow"><b style={{ fontWeight: 650 }}>Day fully logged</b><br /><span className="muted" style={{ fontSize: '0.8125rem' }}>Only complete days tune your maintenance</span></span>
         <span className="switch"><input type="checkbox" checked={!!status?.complete}
-          onChange={(e) => save('days', status ? { ...status, complete: e.target.checked } : { ...newRecord({ complete: e.target.checked }), id: date })} /><span /></span>
+          onChange={(e) => run(daysComplete, { date, complete: e.target.checked })} /><span /></span>
       </label>
 
       {/* floating + (lives in the app frame, above the tab bar) */}

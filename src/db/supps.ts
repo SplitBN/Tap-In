@@ -56,7 +56,7 @@ export function buildDay(date: string, sups: Supplement[], stacks: Stack[], logs
   for (const sup of sups) {
     if (sup.archived || !isDue(sup.schedule, date)) continue;
     for (const slot of sup.schedule.times.length ? sup.schedule.times : ['--:--']) {
-      due.push({ sup, slot, amount: doseOn(sup, date), log: logs.find((l) => l.supplementId === sup.id && l.slot === slot) });
+      due.push({ sup, slot, amount: doseOn(sup, date), log: logs.find((l) => l.supplementId === sup.id && (l.slot ?? '--:--') === slot) }); // untimed doses are logged with slot null
     }
   }
   const slots = [...new Set(due.map((d) => d.slot))].sort();

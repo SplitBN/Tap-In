@@ -4,7 +4,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { Icon } from '../components/Icon';
 import { alive, db } from '../db/db';
-import { activeSession, nextWorkoutId, startSession } from '../db/gym';
+import { activeSession, nextWorkoutId } from '../db/gym';
+import { run } from '../api/registry';
+import { sessionsStart } from '../api/gym';
+import { suppTake } from '../api/body';
 import { useSettings } from '../db/settings';
 import type { BodyweightEntry, Macros, Session } from '../db/types';
 import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
@@ -13,7 +16,6 @@ import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
 import { Ring, Summary, useDay } from './Food';
 import { useSuppDay } from './Supplements';
-import { logTake, nextSite } from '../db/supps';
 import { fmtNum } from '../lib/format';
 import { dateKey, goalHit, sum } from '../lib/nutrition';
 import { exerciseImage } from '../db/seed';
@@ -78,8 +80,8 @@ function GymWidget() {
   const now = useTick(!!active, 1000);
   const start = async (workoutId?: string) => {
     if (active) return nav(`/session/${active.id}`);
-    const s = await startSession(workoutId ? await db.workouts.get(workoutId) : undefined);
-    nav(`/session/${s.id}`);
+    const { session } = await run(sessionsStart, { workoutId });
+    nav(`/session/${session.id}`);
   };
 
   if (active) {
@@ -348,7 +350,7 @@ function SuppWidget() {
               <span className="grow ellipsis" dir="auto" style={{ fontWeight: 600 }}>{d.sup.name}</span>
               <span className="muted num" style={{ fontSize: '0.8125rem' }}>{d.slot === '--:--' ? '' : d.slot} · {fmtNum(d.amount)} {d.sup.unit}</span>
               <button className="check" style={{ width: 40, height: 34 }} aria-label={`Take ${d.sup.name}`}
-                onClick={async () => logTake(d.sup, today, d.slot === '--:--' ? null : d.slot, d.amount, { site: d.sup.route === 'subq' || d.sup.route === 'im' ? await nextSite(d.sup.id) : null })}>
+                onClick={() => run(suppTake, { supplementId: d.sup.id, date: today, time: d.slot === '--:--' ? undefined : d.slot, amount: d.amount })}>
                 <Icon name="check" size={16} stroke={2.8} />
               </button>
             </div>

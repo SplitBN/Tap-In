@@ -1,14 +1,17 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog, notice } from '../components/Dialog';
 import type { ReactNode } from 'react';
+import type { z } from 'zod';
 import { Link } from 'react-router';
 import { Stepper } from '../components/ItemSettings';
 import { Icon } from '../components/Icon';
 import { db } from '../db/db';
-import { updateSettings, useSettings } from '../db/settings';
+import { useSettings } from '../db/settings';
 import type { Settings } from '../db/types';
 import { fmtDuration } from '../lib/format';
-import { exportJson, importJson } from '../lib/backup';
+import { readBackupFile, saveBackupFile } from '../lib/backup';
+import { run } from '../api/registry';
+import { dataExport, dataImport, settingsUpdate } from '../api/body';
 import { viewportInfo } from '../lib/viewport';
 import { AccountSection } from '../components/Account';
 
@@ -27,7 +30,8 @@ function Line({ label, children }: { label: string; children: ReactNode }) {
 export function SettingsPage() {
   const s = useSettings();
   const f = s.features;
-  const feat = (k: keyof Settings['features']) => (v: boolean) => updateSettings({ features: { ...f, [k]: v } });
+  const set = (patch: z.input<typeof settingsUpdate.input>) => run(settingsUpdate, patch);
+  const feat = (k: keyof Settings['features']) => (v: boolean) => set({ features: { [k]: v } });
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
   return (
     <div className="page">
@@ -40,12 +44,12 @@ export function SettingsPage() {
       <div className="list">
         <Line label="Weight">
           <div className="seg" style={{ width: 120 }}>
-            {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={s.unit === u} onClick={() => updateSettings({ unit: u })}>{u}</button>)}
+            {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={s.unit === u} onClick={() => set({ unit: u })}>{u}</button>)}
           </div>
         </Line>
         <Line label="Effort">
           <div className="seg" style={{ width: 120 }}>
-            {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={s.effortMode === m} onClick={() => updateSettings({ effortMode: m })}>{m.toUpperCase()}</button>)}
+            {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={s.effortMode === m} onClick={() => set({ effortMode: m })}>{m.toUpperCase()}</button>)}
           </div>
         </Line>
       </div>
@@ -66,27 +70,27 @@ export function SettingsPage() {
       {f.restTimer && <>
         <div className="section-title">Default rest</div>
         <div className="list">
-          <Line label="Compound"><Stepper value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => updateSettings({ restCompoundSec: v })} /></Line>
-          <Line label="Isolation"><Stepper value={s.restIsolationSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => updateSettings({ restIsolationSec: v })} /></Line>
+          <Line label="Compound"><Stepper value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restCompoundSec: v })} /></Line>
+          <Line label="Isolation"><Stepper value={s.restIsolationSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restIsolationSec: v })} /></Line>
         </div>
       </>}
 
       <div className="section-title">Body</div>
       <div className="list">
         <Link to="/weight" className="list-item pressable"><span className="grow title">Weight log</span><Icon name="chevronRight" className="chev" size={18} /></Link>
-        <Line label="Weigh-in reminder every"><Stepper value={s.weighInEveryDays} min={1} max={30} format={(v) => `${v} d`} onChange={(v) => updateSettings({ weighInEveryDays: v })} /></Line>
+        <Line label="Weigh-in reminder every"><Stepper value={s.weighInEveryDays} min={1} max={30} format={(v) => `${v} d`} onChange={(v) => set({ weighInEveryDays: v })} /></Line>
       </div>
 
       <div className="section-title">Data</div>
       <div className="list">
-        <button className="list-item pressable" onClick={exportJson}><Icon name="download" size={20} /><span className="grow title">Export backup (JSON)</span></button>
+        <button className="list-item pressable" onClick={async () => saveBackupFile(await run(dataExport, {}))}><Icon name="download" size={20} /><span className="grow title">Export backup (JSON)</span></button>
         <label className="list-item pressable" style={{ cursor: 'pointer' }}>
           <Icon name="upload" size={20} /><span className="grow title">Import backup</span>
           <input type="file" accept="application/json,.json" className="sr-only" onChange={async (e) => {
             const file = e.target.files?.[0]; e.target.value = '';
             if (!file) return;
             if (!(await confirmDialog({ title: 'Import this backup?', message: 'Records in it replace matching ones here. Nothing else is deleted.', confirm: 'Import' }))) return;
-            try { const n = await importJson(file); await notice('Backup imported', `${n} records restored.`); }
+            try { const { imported } = await run(dataImport, await readBackupFile(file)); await notice('Backup imported', `${imported} records restored.`); }
             catch (err) { await notice('Could not import', (err as Error).message); }
           }} />
         </label>
