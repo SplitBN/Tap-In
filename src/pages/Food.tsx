@@ -54,14 +54,14 @@ export function FoodPage() {
 
       <div className="date-pill">
         <button className="icon-btn sm" aria-label="Previous day" onClick={() => setDate(shiftDate(date, -1))}><Icon name="chevronLeft" size={18} /></button>
-        <button className="date-pill-label" onClick={() => setDate(today)}><Icon name="calendar" size={16} />{label}</button>
+        <button className="date-pill-label" onClick={() => setDate(today)} aria-label={date === today ? 'Today' : `${label}. Go to today`}><Icon name="calendar" size={16} />{label}</button>
         <button className="icon-btn sm" aria-label="Next day" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= today}><Icon name="chevronRight" size={18} /></button>
       </div>
 
       {goal === undefined ? null : !goal && !entries.length ? (
         <button className="card pressable row setup-cta" onClick={() => nav('/nutrition')}>
           <span className="role-chip" style={{ width: 44, height: 44, borderRadius: 14 }}><Icon name="target" size={22} stroke={2} /></span>
-          <span className="grow"><b style={{ fontSize: '1.0625rem' }}>Set up your goals</b><br /><span className="muted" style={{ fontSize: '0.875rem' }}>7 quick questions · or just start logging</span></span>
+          <span className="grow"><b className="t-17">Set up your goals</b><br /><span className="muted t-15">7 quick questions, or just start logging</span></span>
           <Icon name="chevronRight" className="chev" size={18} />
         </button>
       ) : null}
@@ -78,10 +78,10 @@ export function FoodPage() {
               <div className="row" style={{ minHeight: 40 }}>
                 <span className="role-chip"><Icon name={m.icon} size={16} stroke={2} /></span>
                 <span className="grow">
-                  <span style={{ fontWeight: 700, fontSize: '1.0625rem', display: 'block' }}>{m.label}</span>
+                  <h2 className="w-7 t-17" style={{ margin: 0 }}>{m.label}</h2>
                   {list.length > 0 && <span className="food-row-sub"><MacroLine m={mt} /></span>}
                 </span>
-                {mt.kcal > 0 && <span className="num" style={{ fontWeight: 750 }}>{k(mt.kcal)}</span>}
+                {mt.kcal > 0 && <span className="num" style={{ fontWeight: 750 }}>{k(mt.kcal)}<span className="sr-only"> kcal</span></span>}
                 <button className="round-btn sm-round" aria-label={`Add to ${m.label}`} onClick={() => setAdding({ meal: m.id, tab: 'search' })}><Icon name="plus" size={18} stroke={2.4} /></button>
               </div>
               {list.length > 0 && (
@@ -89,10 +89,10 @@ export function FoodPage() {
                   {list.map((e) => (
                     <button key={e.id} className="entry-row pressable" onClick={() => setEditing(e)}>
                       <span className="grow" style={{ minWidth: 0 }}>
-                        <span className="ellipsis" dir="auto" style={{ display: 'block', fontWeight: 560 }}>{e.name}</span>
-                        <span className="food-row-sub">{e.source === 'quick' ? <><Icon name="bolt" size={11} /> quick · </> : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
+                        <span className="ellipsis bidi-start" dir="auto" style={{ display: 'block', fontWeight: 560 }}>{e.name}</span>
+                        <span className="food-row-sub">{e.source === 'quick' ? <><Icon name="bolt" size={11} /> Quick add · </> : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
                       </span>
-                      <span className="num" style={{ fontWeight: 750, flex: 'none' }}>{k(e.n.kcal)}</span>
+                      <span className="num" style={{ fontWeight: 750, flex: 'none' }}>{k(e.n.kcal)}<span className="sr-only"> kcal</span></span>
                     </button>
                   ))}
                 </div>
@@ -103,7 +103,7 @@ export function FoodPage() {
       </div>
 
       <label className="card row" style={{ marginTop: 12, cursor: 'pointer' }}>
-        <span className="grow"><b style={{ fontWeight: 650 }}>Day fully logged</b><br /><span className="muted" style={{ fontSize: '0.8125rem' }}>Only complete days tune your maintenance</span></span>
+        <span className="grow"><b style={{ fontWeight: 650 }}>Day fully logged</b><br /><span className="muted t-13">Only full days count toward your maintenance estimate</span></span>
         <span className="switch"><input type="checkbox" checked={!!status?.complete}
           onChange={(e) => run(daysComplete, { date, complete: e.target.checked })} /><span /></span>
       </label>
@@ -114,10 +114,11 @@ export function FoodPage() {
 
       <Sheet open={shortcuts} onClose={() => setShortcuts(false)} title="Log">
         <div className="shortcut-grid">
-          <Shortcut icon="search" label="Search" tint="#64d2ff" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'search' }); }} />
-          <Shortcut icon="barcode" label="Barcode" tint="var(--c-food)" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'scan' }); }} />
-          <Shortcut icon="bolt" label="Quick" tint="#ffd60a" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'quick' }); }} />
-          <Shortcut icon="food" label="My foods" tint="#bf8cff" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'mine' }); }} />
+          {/* one food-green tint: per-shortcut colours collided with the macro colours (yellow = fat, purple = protein) */}
+          <Shortcut icon="search" label="Search" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'search' }); }} />
+          <Shortcut icon="barcode" label="Scan" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'scan' }); }} />
+          <Shortcut icon="bolt" label="Quick add" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'quick' }); }} />
+          <Shortcut icon="food" label="Mine" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'mine' }); }} />
         </div>
         <div className="grid-2" style={{ marginTop: 14 }}>
           <button className="shortcut-wide pressable" onClick={() => { setShortcuts(false); setRecipe(true); }}><Icon name="note" size={22} />New recipe</button>
@@ -132,10 +133,10 @@ export function FoodPage() {
   );
 }
 
-function Shortcut({ icon, label, tint, onClick }: { icon: string; label: string; tint: string; onClick: () => void }) {
+function Shortcut({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
   return (
     <button className="shortcut pressable" onClick={onClick}>
-      <span className="shortcut-circle" style={{ color: tint }}><Icon name={icon} size={28} stroke={2} /></span>
+      <span className="shortcut-circle role-text"><Icon name={icon} size={28} stroke={2} /></span>
       <span>{label}</span>
     </button>
   );
@@ -156,23 +157,25 @@ function Dashboard({ total, goal, meals, onMeal }: {
   return (
     <div className="card dash">
       <div className="dash-top">
-        {kcalGoal != null ? <><span className="muted">Budget</span> <b className="num">{k(kcalGoal)}</b></> : <span className="muted">No calorie target</span>}
+        {kcalGoal != null
+          ? <><span className="muted">Eaten</span> <b className="num">{k(total.kcal)}</b> <span className="muted">/ {k(kcalGoal)} kcal goal</span></>
+          : <span className="muted">No calorie goal</span>}
       </div>
       <div className="dash-grid">
         <div className="dash-col">
-          <DashStat label="Protein" value={total.p} goal={goal?.proteinG ?? null} cls="mc-p" />
           <DashStat label="Carbs" value={total.c} goal={goal?.carbsG ?? null} cls="mc-c" />
+          <DashStat label="Protein" value={total.p} goal={goal?.proteinG ?? null} cls="mc-p" />
           <DashStat label="Fat" value={total.f} goal={goal?.fatG ?? null} cls="mc-f" />
         </div>
         <Ring value={total.kcal} max={kcalGoal ?? Math.max(total.kcal, 1)} size={150} track={kcalGoal == null}>
-          <span className="num dash-eaten">{k(total.kcal)}</span>
-          <span className="dash-left num">{left != null ? `${k(Math.abs(left))} ${left >= 0 ? 'left' : 'over'}` : 'kcal'}</span>
+          <span className="num dash-eaten">{k(left != null ? Math.abs(left) : total.kcal)}</span>
+          <span className="dash-left num">{left == null ? 'kcal eaten' : left >= 0 ? 'kcal left' : 'kcal over'}</span>
         </Ring>
         <div className="dash-col right">
           {meals.map((m) => (
             <button key={m.id} className="dash-meal" onClick={() => onMeal(m.id)}>
               <span className="muted">{m.label}</span>
-              <b className="num">{k(m.kcal)}</b>
+              <b className="num">{k(m.kcal)}<span className="sr-only"> kcal</span></b>
             </button>
           ))}
         </div>
@@ -184,8 +187,8 @@ function Dashboard({ total, goal, meals, onMeal }: {
 function DashStat({ label, value, goal, cls }: { label: string; value: number; goal: number | null; cls: string }) {
   return (
     <div className="dash-stat">
-      <span className="muted">{label}</span>
-      <b className={'num ' + cls}>{Math.round(value)}<small>{goal != null ? ` / ${Math.round(goal)}` : ''} g</small></b>
+      <span className={cls + ' w-6'}>{label}</span>
+      <b className="num">{Math.round(value)}<small className="muted">{goal != null ? ` / ${Math.round(goal)}` : ''} g</small></b>
       {goal != null && <span className="bar thin" aria-hidden><i style={{ width: `${Math.min(100, (value / goal) * 100)}%`, background: `var(--${cls})` }} /></span>}
     </div>
   );
@@ -196,12 +199,12 @@ export function Summary({ total, goal, compact }: { total: Macros; goal: Nutriti
   const kcalGoal = goal.kcal;
   const left = kcalGoal != null ? kcalGoal - total.kcal : null;
   return (
-    <div className="row" style={{ gap: compact ? 12 : 18, alignItems: 'center' }}>
+    <div className="row" style={{ gap: compact ? 12 : 18, alignItems: 'center', flexWrap: 'wrap' }}>
       <Ring value={total.kcal} max={kcalGoal ?? Math.max(total.kcal, 1)} size={compact ? 84 : 132} track={kcalGoal == null}>
         <span className="num" style={{ fontSize: compact ? '1.125rem' : '1.75rem', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{k(left != null ? Math.abs(left) : total.kcal)}</span>
-        <span style={{ fontSize: '0.6875rem', color: 'var(--text-2)', fontWeight: 600 }}>{left == null ? 'kcal' : left >= 0 ? 'left' : 'over'}</span>
+        <span className="w-6" style={{ fontSize: '0.6875rem', color: 'var(--text-2)' }}>{left == null ? 'kcal eaten' : left >= 0 ? 'kcal left' : 'kcal over'}</span>
       </Ring>
-      <div className="grow stack" style={{ gap: 6 }}>
+      <div className="grow stack" style={{ gap: 6, minWidth: '9rem' }}>
         {goal.proteinG != null ? (
           <div>
             <div className="row" style={{ justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 650, marginBottom: 4 }}>
@@ -210,7 +213,7 @@ export function Summary({ total, goal, compact }: { total: Macros; goal: Nutriti
             <div className="bar" aria-hidden><i style={{ width: `${Math.min(100, (total.p / goal.proteinG) * 100)}%`, background: 'var(--mc-p)' }} /></div>
           </div>
         ) : <MacroLine m={total} />}
-        <div className="muted num" style={{ fontSize: '0.8125rem' }}>{k(total.kcal)}{kcalGoal != null ? ` / ${k(kcalGoal)}` : ''} kcal</div>
+        <div className="muted num t-13">{k(total.kcal)}{kcalGoal != null ? ` / ${k(kcalGoal)}` : ''} kcal eaten</div>
       </div>
     </div>
   );
@@ -223,8 +226,9 @@ export function Ring({ value, max, size, children, track }: { value: number; max
   const pct = track ? 0 : max > 0 ? Math.min(1, value / max) : 0;
   const over = !track && value > max * 1.1;
   return (
-    <div style={{ position: 'relative', width: size, height: size, flex: 'none' }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden style={{ rotate: '-90deg' }}>
+    // sized in rem so the ring grows with the user's text size and its number always fits inside
+    <div style={{ position: 'relative', width: `${size / 16}rem`, height: `${size / 16}rem`, flex: 'none' }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} aria-hidden style={{ rotate: '-90deg', display: 'block' }}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--card-2)" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={over ? 'var(--warn)' : 'var(--c-food)'} strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct)} style={{ transition: 'stroke-dashoffset 600ms var(--ease-out)' }} />

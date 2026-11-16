@@ -181,11 +181,23 @@ export async function setsBeyond(sessionId: string, it: WorkoutItem) {
   return db.sets.where('sessionId').equals(sessionId).filter((x) => alive(x) && setBeyond(x, it)).toArray();
 }
 export const itemsRemove = defineCommand({ name: 'items.remove', kind: 'action',
-  description: 'Remove an exercise slot. In a session this also deletes all of that slot\'s sets (done or not) in the session. Returns the updated workout/session record.',
+  description: 'Remove an exercise slot. In a session this also deletes all of that slot’s sets (done or not) in the session. Returns the updated workout/session record.',
   input: zTargetRefine(z.object({ ...zTarget, itemKey: z.string() })),
   run: async ({ itemKey, ...t }) => {
     if (t.sessionId) for (const s of await db.sets.where('sessionId').equals(t.sessionId).filter((x) => x.itemKey === itemKey).toArray()) await remove('sets', s.id);
     return editItems(t, (items) => mustHave(items, itemKey).filter((i) => i.key !== itemKey));
+  } });
+export const itemsRestore = defineCommand({ name: 'items.restore', kind: 'action',
+  description: 'Put back an exercise slot removed from a plan workout with items.remove (undo): pass the removed item exactly as it was and the position it had. Plan workouts only (a session slot’s sets are deleted with it). No-op if the item key is already there. supersetWith: keys of the slots that were in the same superset as the removed one (removing it may have dissolved that superset), so the group comes back too. Returns the updated workout.',
+  input: z.object({ workoutId: zId, index: z.number().int().min(0), item: z.looseObject({ key: z.string(), exerciseId: zId, sets: z.number().int().min(1).max(20), supersetId: z.string().optional() }),
+    supersetWith: z.array(z.string()).optional() }),
+  run: async ({ workoutId, index, item, supersetWith }) => {
+    await need(db.exercises.get(item.exerciseId), 'Exercise');
+    return editItems({ workoutId }, (items) => {
+      if (items.some((i) => i.key === item.key)) return items;
+      const back = items.map((i) => (item.supersetId && supersetWith?.includes(i.key) ? { ...i, supersetId: item.supersetId } : i));
+      return [...back.slice(0, index), item as unknown as WorkoutItem, ...back.slice(index)];
+    });
   } });
 export const itemsReplace = defineCommand({ name: 'items.replace', kind: 'action',
   description: 'Swap the exercise in a slot for another (keeps sets/reps/supersets/notes). The new exercise gets a NEW item key. In a plan workout, or in a session where the old exercise has no done sets, it simply takes over that position. In a session where the old exercise already has done sets, those stay as that exercise: the old slot is kept (trimmed to its done sets, out of any superset, marked replacedBy=<new key>, never copied to the plan by sessions.finish updatePlan) and placed just before the new one (before the superset, which the new exercise stays in). Unfinished sets of the old exercise are cleared. If the old slot was current, the new one becomes current. Returns the updated workout/session record.',

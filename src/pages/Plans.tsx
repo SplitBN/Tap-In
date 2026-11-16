@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog } from '../components/Dialog';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
@@ -8,6 +8,7 @@ import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { moveItem } from './Session';
 import { equipmentTag } from '../lib/equipment';
+import { plural } from '../lib/format';
 import { useSettings } from '../db/settings';
 import { run } from '../api/registry';
 import { plansCreate, plansDelete, plansRename, plansReorder, plansSetActive, sessionsStart, workoutsCreate } from '../api/gym';
@@ -18,7 +19,7 @@ export function PlansPage() {
   const [naming, setNaming] = useState(false);
   const nav = useNavigate();
   return (
-    <div className="page">
+    <div className="page" data-role="gym">
       <header className="page-head">
         <h1>Gym</h1>
         <button className="icon-btn filled" aria-label="Stats" onClick={() => nav('/stats')}><Icon name="chart" /></button>
@@ -32,7 +33,7 @@ export function PlansPage() {
             <Link key={p.id} to={`/plans/${p.id}`} className="list-item pressable">
               <span className="grow">
                 <span className="title">{p.name}</span>
-                <span className="sub" style={{ display: 'block' }}>{p.workoutIds.length} workout{p.workoutIds.length === 1 ? '' : 's'}</span>
+                <span className="sub" style={{ display: 'block' }}>{plural(p.workoutIds.length, 'workout', 'workouts')}</span>
               </span>
               {settings.activePlanId === p.id && <span className="badge accent">Active</span>}
               <Icon name="chevronRight" className="chev" size={18} />
@@ -44,7 +45,7 @@ export function PlansPage() {
           <Icon name="dumbbell" size={40} />
           <h3>No plans yet</h3>
           <p>Workouts you rotate through.</p>
-          <button className="btn primary" onClick={() => setNaming(true)}><Icon name="plus" size={18} /> Plan</button>
+          <button className="btn primary" onClick={() => setNaming(true)}><Icon name="plus" size={18} /> New plan</button>
         </div>
       )}
       <NameSheet open={naming} title="New plan" placeholder="e.g. Upper / Lower" onClose={() => setNaming(false)}
@@ -75,11 +76,11 @@ export function PlanPage() {
   const start = async (wid: string) => { const { session } = await run(sessionsStart, { workoutId: wid }); nav(`/session/${session.id}`); };
 
   return (
-    <div className="page">
+    <div className="page" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav('/plans')}><Icon name="chevronLeft" /></button>
         <h1 className="small ellipsis">{plan.name}</h1>
-        {items.length > 1 && <button className="icon-btn" aria-label={ordering ? 'Done reordering' : 'Reorder workouts'} aria-pressed={ordering} onClick={() => setOrdering(!ordering)} style={ordering ? { color: 'var(--accent)' } : undefined}><Icon name={ordering ? 'check' : 'swap'} size={20} style={{ rotate: ordering ? '0deg' : '90deg' }} /></button>}
+        {items.length > 1 && <button aria-label={ordering ? "Done reordering" : "Reorder workouts"} aria-pressed={ordering} onClick={() => setOrdering(!ordering)} className={'icon-btn' + (ordering ? ' tint' : '')}><Icon name={ordering ? 'check' : 'swap'} size={20} style={{ rotate: ordering ? '0deg' : '90deg' }} /></button>}
         <button className="icon-btn" aria-label="Rename" onClick={() => setNaming('rename')}><Icon name="edit" size={20} /></button>
       </header>
 
@@ -114,7 +115,7 @@ export function PlanPage() {
         </div>
       </SortableList>
 
-      <button className="btn block" style={{ marginTop: 12 }} onClick={() => setNaming('workout')}><Icon name="plus" size={18} /> Workout</button>
+      <button className="btn block" style={{ marginTop: 12 }} onClick={() => setNaming('workout')}><Icon name="plus" size={18} /> New workout</button>
       <button className="btn danger block" style={{ marginTop: 32 }} onClick={async () => {
         if (!(await confirmDialog({ title: `Delete “${plan.name}”?`, message: "Past workouts stay in your history.", confirm: "Delete plan", danger: true }))) return;
         await run(plansDelete, { id: plan.id }); // also clears the active plan if it was this one
@@ -133,14 +134,21 @@ export function NameSheet({ open, onClose, onSubmit, title, placeholder, initial
   open: boolean; onClose: () => void; onSubmit: (name: string) => void; title: string; placeholder?: string; initial?: string;
 }) {
   const [v, setV] = useState(initial);
+  const [err, setErr] = useState('');
+  const inputId = useId(), errId = useId();
   const [was, setWas] = useState(false);
-  if (open !== was) { setWas(open); if (open) setV(initial); }
-  const go = () => { if (!v.trim()) return; onSubmit(v.trim()); onClose(); };
+  if (open !== was) { setWas(open); if (open) { setV(initial); setErr(''); } }
+  const go = () => {
+    if (!v.trim()) { setErr('Enter a name.'); document.getElementById(inputId)?.focus(); return; }
+    onSubmit(v.trim()); onClose();
+  };
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       <form className="stack" style={{ gap: 12 }} onSubmit={(e) => { e.preventDefault(); go(); }}>
-        <input className="input" value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={title} autoFocus enterKeyHint="done" />
-        <button className="btn primary lg block" disabled={!v.trim()}>Save</button>
+        <input id={inputId} className="input" value={v} onChange={(e) => { setV(e.target.value); setErr(''); }} placeholder={placeholder} aria-label={`${title}: name`} autoFocus enterKeyHint="done"
+          aria-invalid={!!err} aria-describedby={err ? errId : undefined} />
+        <p id={errId} className="field-err" role="status">{err}</p>
+        <button className="btn primary lg block">Save</button>
       </form>
     </Sheet>
   );

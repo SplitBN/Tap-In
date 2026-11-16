@@ -14,13 +14,14 @@ import { latestBodyweightKg } from '../db/gym';
 import type { Activity, Food, NutritionGoal, Sex } from '../db/types';
 import { ACTIVITY_LABEL, KCAL_PER_KG, PROTEIN_G_PER_KG, estimateMaintenance, targetKcal } from '../lib/nutrition';
 import { useToday } from '../lib/today';
+import { fmtNum } from '../lib/format';
 
 const ACTIVITY_SUB: Record<Activity, string> = {
   sedentary: 'Desk job, little walking', light: 'Some walking, training 2–4×/wk', active: 'On your feet, training most days', very: 'Physical job or hard daily training',
 };
 const YEAR: NumberSpec = { min: 1930, max: 2012, step: 1, decimals: 0, format: String, keyMin: 1900, keyMax: 2020 };
 const HEIGHT: NumberSpec = { min: 130, max: 220, step: 1, decimals: 1, unit: 'cm', keyMin: 100, keyMax: 250 };
-const WEIGHT: NumberSpec = { min: 35, max: 250, step: 0.5, decimals: 1, unit: 'kg', format: (w) => `${w.toFixed(1)} kg`, keyMin: 30, keyMax: 350 };
+const WEIGHT: NumberSpec = { min: 35, max: 250, step: 0.5, decimals: 1, unit: 'kg', format: (w) => `${fmtNum(w)} kg`, keyMin: 30, keyMax: 350 };
 const MAINT: NumberSpec = { min: 1000, max: 6000, step: 50, decimals: 0, format: (v) => `${v.toLocaleString()} kcal` };
 const RATES: Option<number>[] = range(-1.5, 1.5, 0.25).map((r) => ({ value: r, label: r === 0 ? 'Maintain' : `${r > 0 ? '+' : '−'}${Math.abs(r)} kg / week` }));
 const ACTIVITIES: Option<Activity>[] = (Object.keys(ACTIVITY_LABEL) as Activity[]).map((a) => ({ value: a, label: ACTIVITY_LABEL[a], sub: ACTIVITY_SUB[a] }));
@@ -104,7 +105,7 @@ function Setup({ d, setD, onDone, onBack }: { d: Draft; setD: (d: Draft) => void
     { q: 'How active are you?', body: <OptionList options={ACTIVITIES} value={d.activity} onPick={(activity) => set({ activity })} ariaLabel="Activity" /> },
     { q: 'Your goal', sub: d.rate === 0 ? 'Keep your weight steady' : `${Math.round(Math.abs(d.rate * KCAL_PER_KG / 7))} kcal/day ${d.rate < 0 ? 'deficit' : 'surplus'}`,
       body: <OptionList options={RATES} value={d.rate} onPick={(rate) => set({ rate })} ariaLabel="Weekly change" /> },
-    { q: 'Daily targets', sub: 'Both optional — you can log without targets', body: (
+    { q: 'Daily goals', sub: 'Both optional. You can log without goals.', body: (
       <div className="stack" style={{ gap: 10 }}>
         <TargetToggle label="Calories" value={c.kcal} unit="kcal" on={d.useKcal} onToggle={(useKcal) => set({ useKcal })} note={`maintenance ≈ ${c.maintenance.toLocaleString()}`} />
         <TargetToggle label="Protein" value={c.protein} unit="g" on={d.useProtein} onToggle={(useProtein) => set({ useProtein })} note={`${PROTEIN_G_PER_KG} g per kg`} />
@@ -176,7 +177,7 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
         <NumberRow label="Height" spec={HEIGHT} value={d.heightCm} onChange={(heightCm) => set({ heightCm })} />
         <NumberRow label="Weight" sub={kg == null ? 'Saved as a weigh-in' : undefined} spec={WEIGHT} value={d.weightKg} onChange={(weightKg) => set({ weightKg })} />
         <PickerRow label="Activity" sub={ACTIVITY_SUB[d.activity]} options={ACTIVITIES} value={d.activity} onChange={(activity) => set({ activity })} />
-        <PickerRow label="Goal" options={RATES} value={d.rate} onChange={(rate) => set({ rate, kcalOverride: null })} title="Weekly change" />
+        <PickerRow label="Weekly change" options={RATES} value={d.rate} onChange={(rate) => set({ rate, kcalOverride: null })} />
       </div>
 
       <div className="section-title">Maintenance</div>
@@ -189,7 +190,7 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
       </div>
       {d.maintOverride && <button className="link" onClick={() => set({ maintOverride: null })}>Use estimate ({c.formula.toLocaleString()})</button>}
 
-      <div className="section-title">Daily targets</div>
+      <div className="section-title">Daily goals</div>
       <div className="list">
         <OptRow label="Calories" unit="kcal" on={d.useKcal} value={c.kcal} step={50} min={800} max={6000}
           onToggle={(useKcal) => set({ useKcal })} onChange={(kcalOverride) => set({ kcalOverride })} />
@@ -211,9 +212,9 @@ function GoalsEditor({ d, setD, kg, onDone }: { d: Draft; setD: (d: Draft) => vo
         <div className="list">
           {myFoods.map((f) => (
             <button key={f.id} className="list-item pressable" onClick={() => setEditFood(f)}>
-              <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis" dir="auto" style={{ display: 'block' }}>{f.name}</span>
-                <span className="sub">{[f.brand, f.source === 'off' ? 'scanned' : f.source === 'recipe' ? 'recipe' : null].filter(Boolean).join(' · ') || 'mine'}</span></span>
-              <span className="num muted" style={{ fontSize: '0.8125rem' }}>{Math.round(f.per100.kcal)}/100{f.unitBase === 'ml' ? 'ml' : 'g'}</span>
+              <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis bidi-start" dir="auto" style={{ display: 'block' }}>{f.name}</span>
+                <span className="sub">{[f.brand, f.source === 'off' ? 'Scanned' : f.source === 'recipe' ? 'Recipe' : null].filter(Boolean).join(' · ') || 'My food'}</span></span>
+              <span className="num muted t-13">{Math.round(f.per100.kcal)} kcal / 100 {f.unitBase === 'ml' ? 'ml' : 'g'}</span>
             </button>
           ))}
         </div>
@@ -230,8 +231,8 @@ function OptRow({ label, unit, on, value, step, min, max, sub, onToggle, onChang
   return (
     <div className="list-item" style={{ flexWrap: 'wrap' }}>
       <span className="grow"><span className="title">{label}</span>{sub && on && <span className="sub" style={{ display: 'block' }}>{sub}</span>}</span>
-      {on && value != null && <ValueButton label={label} value={value} spec={{ min, max, step, decimals: 0, format: (x) => `${x.toLocaleString()} ${unit}`, keyMin: min, keyMax: max }} onChange={onChange} />}
-      <span className="switch" style={{ marginLeft: 6 }}><input type="checkbox" aria-label={`${label} target`} checked={on} onChange={(e) => onToggle(e.target.checked)} /><span /></span>
+      {on && value != null && <ValueButton label={`${label} goal`} value={value} spec={{ min, max, step, decimals: 0, format: (x) => `${x.toLocaleString()} ${unit}`, keyMin: min, keyMax: max }} onChange={onChange} />}
+      <span className="switch" style={{ marginLeft: 6 }}><input type="checkbox" aria-label={`${label} goal`} checked={on} onChange={(e) => onToggle(e.target.checked)} /><span /></span>
     </div>
   );
 }
@@ -241,7 +242,7 @@ function ValueButton({ label, value, spec, onChange, icon }: { label: string; va
   const [open, setOpen] = useState(false);
   return (
     <>
-      {icon ? <button type="button" className="icon-btn filled" aria-haspopup="dialog" aria-label={`Set ${label.toLowerCase()}`} onClick={() => setOpen(true)}><Icon name="pencil" size={18} /></button> : <button type="button" className="btn num" style={{ minWidth: 96, fontWeight: 700 }} aria-haspopup="dialog" aria-label={`${label}: ${spec.format?.(value) ?? value}`} onClick={() => setOpen(true)}>
+      {icon ? <button type="button" className="icon-btn filled" aria-haspopup="dialog" aria-label={`Set ${label.toLowerCase()}`} onClick={() => setOpen(true)}><Icon name="pencil" size={18} /></button> : <button type="button" className="btn num" style={{ minWidth: 116, fontWeight: 700, justifyContent: 'flex-end' }} aria-haspopup="dialog" aria-label={`${label}: ${spec.format?.(value) ?? value}`} onClick={() => setOpen(true)}>
         {spec.format?.(value) ?? value}
       </button>}
       <NumberSheet open={open} onClose={() => setOpen(false)} title={label} value={value} onPick={onChange} spec={spec} />

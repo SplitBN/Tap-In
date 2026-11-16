@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router';
 import { ExName, ExerciseThumb } from '../components/ExercisePicker';
 import { Icon } from '../components/Icon';
 import type { Exercise } from '../db/types';
-import { titleCase } from '../lib/format';
+import { titleCase, plural } from '../lib/format';
 import { keyToDate } from '../lib/nutrition';
 import { run } from '../api/registry';
 import { progressExercises } from '../api/progress';
@@ -26,7 +26,7 @@ export function ExercisesPage() {
   const anyDone = useLiveQuery(async () => (await run(progressExercises, { onlyDone: true, limit: 1 })).length > 0, []);
   if (anyDone === false && scope === 'done' && !touched) setScope('all');
   return (
-    <div className="page">
+    <div className="page" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" /></button>
         <h1 className="small">Exercises</h1>
@@ -57,7 +57,7 @@ export function ExercisesPage() {
                 <span className="grow">
                   <span className="title" style={{ display: 'block' }}><ExName ex={ex} /></span>
                   <span className="sub num">
-                    {e.sessions ? `${e.sessions} session${e.sessions === 1 ? '' : 's'} · last ${keyToDate(e.lastDate!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: e.lastDate!.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}` : titleCase(e.muscles.join(', ')) || 'Not done yet'}
+                    {e.sessions ? `${plural(e.sessions, 'session', 'sessions')} · last ${keyToDate(e.lastDate!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: e.lastDate!.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}` : titleCase(e.muscles.join(', ')) || 'Not done yet'}
                   </span>
                 </span>
                 <Icon name="chevronRight" className="chev" size={18} />

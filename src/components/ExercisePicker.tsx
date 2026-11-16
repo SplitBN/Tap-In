@@ -58,8 +58,8 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
 
   const createRow = (
     <button className="list-item pressable" onClick={() => setCreating(true)} style={{ paddingLeft: 4 }}>
-      <span className="thumb" style={{ display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><Icon name="plus" /></span>
-      <span className="title" style={{ color: 'var(--accent)' }}>{q.trim() ? `Create “${q.trim()}”` : 'Create custom exercise'}</span>
+      <span className="thumb" style={{ display: 'grid', placeItems: 'center', color: 'var(--role, var(--accent))' }}><Icon name="plus" /></span>
+      <span className="title role-text">{q.trim() ? `Create “${q.trim()}”` : 'Create custom exercise'}</span>
     </button>
   );
 
@@ -92,7 +92,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
               </span>
               {multi && (
                 <span aria-hidden style={{ width: 24, height: 24, borderRadius: 12, display: 'grid', placeItems: 'center', flex: 'none',
-                  background: on ? 'var(--accent)' : 'transparent', border: on ? 0 : '2px solid var(--line)', color: '#fff' }}>
+                  background: on ? 'var(--role-solid, var(--accent-solid))' : 'transparent', border: on ? 0 : '2px solid var(--line)', color: 'var(--on-role, #fff)' }}>
                   {on && <Icon name="check" size={16} stroke={2.6} />}
                 </span>
               )}

@@ -36,8 +36,9 @@ export function WeightSheet({ open, onClose, valueKg, onDone, unit, exercise, la
           <div className="seg" role="group" aria-label="Unit" style={{ width: 112, flex: 'none' }}>
             {(['kg', 'lb'] as const).map((u) => <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>{u}</button>)}
           </div>
-          <div className="chips grow" role="group" aria-label="Step" style={{ justifyContent: 'flex-end' }}>
-            <span className="faint" aria-hidden style={{ fontSize: '0.8125rem', fontWeight: 600 }}>±</span>
+          {/* scrolls from its start (a flex-end scroller clips the first chips); auto margin right-aligns it when it fits */}
+          <div className="chips grow" role="group" aria-label="Step">
+            <span className="faint w-6 t-13" aria-hidden style={{ marginLeft: 'auto', alignSelf: 'center', paddingRight: 2 }}>±</span>
             {STEPS[unit].map((s) => <button key={s} className="chip" aria-pressed={s === stepU} aria-label={`Step ${fmtNum(s)} ${unit}`} onClick={() => setStep(s)}>{fmtNum(s)}</button>)}
           </div>
         </div>
@@ -71,22 +72,32 @@ export function EffortSheet({ open, onClose, mode, value, onDone }: {
   return (
     <Sheet open={open} onClose={onClose} title={mode === 'rir' ? 'Reps in reserve' : 'RPE'}>
       <div className="stack" style={{ gap: 14 }}>
-        <div className="seg">
-          {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={mode === m} onClick={() => run(settingsUpdate, { effortMode: m })}>{m.toUpperCase()}</button>)}
-        </div>
-        <p className="muted" style={{ margin: 0, fontSize: '0.875rem' }}>
-          {mode === 'rir' ? 'How many more reps could you have done? 0 = failure.' : 'Effort out of 10. RPE 10 = failure, 9 = one rep left.'}
-        </p>
+        <EffortExplainer mode={mode} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {opts.map((v) => (
-            <button key={v} className="btn num" aria-pressed={value === v}
-              style={value === v ? { background: 'var(--accent)', color: 'var(--accent-text)' } : undefined}
+            <button key={v} className={'btn num' + (value === v ? ' primary' : '')} aria-pressed={value === v}
               onClick={() => { onDone(v, mode); onClose(); }}>{fmtNum(v)}{mode === 'rir' && v === 5 ? '+' : ''}</button>
           ))}
           <button className="btn" onClick={() => { onDone(null, mode); onClose(); }}>Clear</button>
         </div>
       </div>
     </Sheet>
+  );
+}
+
+/** What RIR / RPE mean, with the switch between them (the set table's column header opens this too). */
+export function EffortExplainer({ mode }: { mode: EffortMode }) {
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <div className="seg" role="group" aria-label="Effort scale">
+        {(['rir', 'rpe'] as const).map((m) => <button key={m} aria-pressed={mode === m} onClick={() => run(settingsUpdate, { effortMode: m })}>{m.toUpperCase()}</button>)}
+      </div>
+      <p className="muted t-15" style={{ margin: 0, lineHeight: 1.45 }}>
+        {mode === 'rir'
+          ? 'Reps in reserve: how many more reps you could have done. 0 = failure, 2 = two left in the tank.'
+          : 'Rate of perceived exertion: effort out of 10. 10 = failure, 9 = one rep left, 8 = two left.'}
+      </p>
+    </div>
   );
 }
 

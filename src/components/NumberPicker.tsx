@@ -1,7 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fmtNum } from '../lib/format';
 import { Icon } from './Icon';
-import { Sheet } from './Sheet';
+import { Sheet, type SheetRole } from './Sheet';
 
 /**
  * Number selection, Alpha-Progression style: a list of big value buttons stepping by `step`,
@@ -69,7 +69,35 @@ export function NumberPicker({ value, onPick, spec, ariaLabel, inline }: {
   const values = useMemo(() => (showList ? buildValues(spec, anchor, value) : []),
     [showList, spec.min, spec.max, spec.step, anchor, value]); // rebuilt on a pick or a grid change, never on scroll
   const listRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const selIdx = value == null ? -1 : values.findIndex((v) => Math.abs(v - value) < 1e-6);
+  const nearIdx = (() => {
+    if (selIdx >= 0 || value == null || !values.length) return Math.max(0, selIdx);
+    let i = 0; for (let j = 1; j < values.length; j++) if (Math.abs(values[j] - value) < Math.abs(values[i] - value)) i = j;
+    return i;
+  })();
+  // roving tabindex: the list is one tab stop; arrows move, Enter / Space pick
+  const [focusIdx, setFocusIdx] = useState(nearIdx);
+  const fIdx = Math.min(focusIdx, Math.max(0, values.length - 1));
+  const moveTo = (i: number) => {
+    const j = Math.max(0, Math.min(values.length - 1, i));
+    setFocusIdx(j);
+    (listRef.current?.children[j] as HTMLElement | undefined)?.focus();
+  };
+  const onListKey = (e: React.KeyboardEvent) => {
+    const page = Math.max(1, Math.floor((listRef.current?.clientHeight ?? 300) / 64));
+    const map: Record<string, number> = { ArrowDown: fIdx + 1, ArrowUp: fIdx - 1, PageDown: fIdx + page, PageUp: fIdx - page, Home: 0, End: values.length - 1 };
+    if (!(e.key in map)) return;
+    e.preventDefault();
+    moveTo(map[e.key]);
+  };
+  // in a sheet, the current value's row takes focus first (after the sheet's own focus handling)
+  useEffect(() => {
+    if (inline || !showList) return;
+    const raf = requestAnimationFrame(() => (listRef.current?.children[nearIdx] as HTMLElement | undefined)?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Centre the current value once the list is laid out (the sheet's slide-in is a transform, so
   // layout is final on mount). Again only when the grid changes (step/unit switch, new window),
@@ -87,29 +115,33 @@ export function NumberPicker({ value, onPick, spec, ariaLabel, inline }: {
   });
 
   return (
-    <div className={'np' + (inline ? ' np-inline' : '') + (showList ? '' : ' np-padonly')}>
+    <div ref={rootRef} className={'np' + (inline ? ' np-inline' : '') + (showList ? '' : ' np-padonly')}>
       {showList && (
-        <div ref={listRef} className="np-list" role="group" aria-label={ariaLabel}>
+        <div ref={listRef} className="np-list" role="listbox" aria-label={ariaLabel} onKeyDown={onListKey}>
           {values.map((v, i) => (
-            <button key={v} type="button" className={'np-row num' + (i === selIdx ? ' on' : '')} aria-pressed={i === selIdx} onClick={() => onPick(v)}>
+            <button key={v} type="button" role="option" tabIndex={i === fIdx ? 0 : -1} className={'np-row num' + (i === selIdx ? ' on' : '')}
+              aria-selected={i === selIdx} onFocus={() => setFocusIdx(i)} onClick={() => onPick(v)}>
               {fmt(v)}
             </button>
           ))}
         </div>
       )}
-      {showPad && <Keypad spec={spec} fmt={fmt} value={value} onPick={onPick} ariaLabel={ariaLabel} />}
+      {showPad && <Keypad spec={spec} fmt={fmt} value={value} onPick={onPick} ariaLabel={ariaLabel} scope={() => (inline ? rootRef.current : rootRef.current?.closest('.sheet') ?? rootRef.current)} />}
     </div>
   );
 }
 
-function Keypad({ spec, fmt, value, onPick, ariaLabel }: {
+function Keypad({ spec, fmt, value, onPick, ariaLabel, scope }: {
   spec: NumberSpec; fmt: (v: number) => string; value: number | null | undefined; onPick: (v: number) => void; ariaLabel: string;
+  /** element whose keyboard input feeds the keypad (the whole sheet, so typing works the moment it opens) */
+  scope: () => Element | null;
 }) {
   const [typed, setTyped] = useState('');
   const dec = spec.decimals ?? decimalsOf(spec.step);
   const lo = spec.keyMin ?? spec.min, hi = spec.keyMax ?? spec.max;
   const n = typed === '' || typed === '.' ? NaN : parseFloat(typed);
-  const err = !Number.isFinite(n) ? null : n < lo ? `Min ${fmtNum(lo)}` : n > hi ? `Max ${fmtNum(hi)}` : null;
+  const lim = (x: number) => `${x.toLocaleString(undefined, { maximumFractionDigits: 3 })}${spec.unit ? ` ${spec.unit}` : ''}`;
+  const err = !Number.isFinite(n) ? null : n < lo ? `Min ${lim(lo)}` : n > hi ? `Max ${lim(hi)}` : null;
   const ok = Number.isFinite(n) && !err;
 
   const press = (k: string) => {
@@ -127,20 +159,30 @@ function Keypad({ spec, fmt, value, onPick, ariaLabel }: {
   const keep = typed === '' && value != null && Number.isFinite(value);
   const commit = () => { if (ok) { onPick(round(n, dec)); setTyped(''); } else if (keep) onPick(value!); };
 
-  // hardware keyboard (desktop / iPad keyboard): digits, dot/comma, Backspace, Enter
-  const onKey = (e: React.KeyboardEvent) => {
-    const k = e.key;
-    if (/^[0-9]$/.test(k)) press(k);
-    else if (k === '.' || k === ',') press('.');
-    else if (k === 'Backspace') press('del');
-    else if (k === 'Enter' && (typed || keep)) commit();
-    else return;
-    e.preventDefault();
-  };
+  // hardware keyboard (desktop / iPad keyboard): digits, dot/comma, Backspace anywhere in the sheet; Enter commits
+  // only what was typed (with nothing typed, Enter belongs to the focused row or button)
+  const live = useRef({ press, commit, typed, scope });
+  live.current = { press, commit, typed, scope };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const root = live.current.scope();
+      const t = e.target as HTMLElement | null;
+      if (!root || !t || !root.contains(t) || t.closest('[inert]') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key, L = live.current;
+      if (/^[0-9]$/.test(k)) L.press(k);
+      else if (k === '.' || k === ',') L.press('.');
+      else if (k === 'Backspace') L.press('del');
+      else if (k === 'Enter' && L.typed) L.commit();
+      else return;
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'];
   return (
-    <div className="np-pad" onKeyDown={onKey}>
+    <div className="np-pad">
       <div className="np-entry">
         <output className={'np-display num' + (typed ? '' : ' empty') + (err ? ' bad' : '')} aria-live="polite" aria-label={`Typed ${ariaLabel.toLowerCase()}`}>
           {typed ? `${typed}${spec.unit ? ` ${spec.unit}` : ''}` : value != null ? fmt(value) : '–'}
@@ -169,12 +211,12 @@ const BackspaceGlyph = () => (
 );
 
 /** Sheet version: tap a value (or ✓ a typed one) → onPick, then the sheet closes. */
-export function NumberSheet({ open, onClose, title, value, onPick, spec, extra, footer }: {
+export function NumberSheet({ open, onClose, title, value, onPick, spec, extra, footer, role }: {
   open: boolean; onClose: () => void; title: string; value: number | null | undefined; onPick: (v: number) => void;
-  spec: NumberSpec; extra?: ReactNode; footer?: ReactNode;
+  spec: NumberSpec; extra?: ReactNode; footer?: ReactNode; role?: SheetRole;
 }) {
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
+    <Sheet open={open} onClose={onClose} title={title} role={role}>
       {/* the list shrinks by what extra/footer take, so the sheet never needs its own scroll */}
       <div className="stack" style={{ gap: 12, ['--np-reserve' as string]: `${(extra ? 92 : 0) + (footer ? 62 : 0)}px` }}>
         {extra}
@@ -206,9 +248,10 @@ export function NumberRow({ label, sub, value, onChange, spec, title, icon, empt
 }
 
 /** Form-field version (looks like an input): label above, tap opens the sheet. */
-export function NumberField({ label, value, onChange, spec, title, placeholder, style, compact }: {
+export function NumberField({ label, value, onChange, spec, title, placeholder, style, compact, invalid }: {
   label: string; value: number | null | undefined; onChange: (v: number) => void; spec: NumberSpec;
   title?: string; placeholder?: string; style?: React.CSSProperties; /** no visible label (still named) */ compact?: boolean;
+  /** id of the error text when this field failed validation */ invalid?: string;
 }) {
   const [open, setOpen] = useState(false);
   const fmt = spec.format ?? ((v: number) => `${fmtNum(v)}${spec.unit ? ` ${spec.unit}` : ''}`);
@@ -216,7 +259,7 @@ export function NumberField({ label, value, onChange, spec, title, placeholder, 
     <div className={compact ? undefined : 'field'} style={style}>
       {!compact && <span aria-hidden>{label}</span>}
       <button type="button" className={'input num np-field' + (value == null ? ' empty' : '')} aria-haspopup="dialog"
-        aria-label={`${label}: ${value == null ? 'not set' : fmt(value)}`} onClick={() => setOpen(true)}>
+        aria-label={`${label}: ${value == null ? 'not set' : fmt(value)}`} aria-invalid={invalid ? true : undefined} aria-describedby={invalid} onClick={() => setOpen(true)}>
         {value == null ? placeholder ?? '–' : fmt(value)}
       </button>
       <NumberSheet open={open} onClose={() => setOpen(false)} title={title ?? label} value={value} onPick={onChange} spec={spec} />

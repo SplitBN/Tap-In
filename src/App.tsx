@@ -1,7 +1,8 @@
 import { MotionConfig, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router';
 import { DialogHost } from './components/Dialog';
+import { ToastHost } from './components/Toast';
 import { Icon } from './components/Icon';
 import { seedIfNeeded } from './db/seed';
 import { startSync } from './lib/sync';
@@ -32,7 +33,7 @@ function TabBar() {
     ...(s.features.food ? [{ to: '/food', icon: 'food', label: 'Food' }] : []),
   ];
   const right: Tab[] = [
-    s.features.supplements ? { to: '/supps', icon: 'pill', label: 'Supplements' } : { to: '/weight', icon: 'scale', label: 'Weight' },
+    s.features.supplements ? { to: '/supps', icon: 'pill', label: 'Supps' } : { to: '/weight', icon: 'scale', label: 'Weight' },
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ];
   const tabs: Tab[] = [...left, { to: '/', icon: 'home', label: 'Home', home: true }, ...right];
@@ -55,10 +56,27 @@ function TabBar() {
   );
 }
 
-/** .app is the scroll container (see index.css), so reset it to the top on every route change. */
+const TITLES: [string, string][] = [ // longest prefix first
+  ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
+  ['/exercises', 'Exercises'], ['/exercise/', 'Exercise'], ['/stats', 'Stats'], ['/weight', 'Weight'], ['/settings', 'Settings'],
+  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'],
+];
+
+/** .app is the scroll container (see index.css), so reset it to the top on every route change.
+ *  Client-side routes also reset nothing for assistive tech: set the tab title and move focus to the new page's heading. */
 function ScrollReset() {
   const { pathname } = useLocation();
-  useEffect(() => { document.querySelector('.app')?.scrollTo(0, 0); }, [pathname]);
+  const first = useRef(true);
+  useEffect(() => {
+    document.querySelector('.app')?.scrollTo(0, 0);
+    document.title = `${TITLES.find(([p]) => pathname.startsWith(p))?.[1] ?? 'Today'} · Tap In`;
+    if (first.current) { first.current = false; return; }
+    const raf = requestAnimationFrame(() => {
+      const h = document.querySelector<HTMLElement>('main h1');
+      if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pathname]);
   return null;
 }
 
@@ -99,6 +117,7 @@ export default function App() {
       </div>
       <TabBar />
       <DialogHost />
+      <ToastHost />
       </div>
     </HashRouter>
     </MotionConfig>

@@ -7,7 +7,7 @@ import { run } from '../api/registry';
 import { sessionsRate, sessionsSummary, type WorkoutSummaryData } from '../api/gym';
 import { useSettings } from '../db/settings';
 import type { LoadType, SurveyBody, SurveySleep, Unit } from '../db/types';
-import { fmtWeight, relDay, titleCase } from '../lib/format';
+import { fmtWeight, plural, relDay, titleCase } from '../lib/format';
 import { fromKg } from '../lib/science';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
@@ -33,7 +33,7 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
   const data = useLiveQuery(() => (open ? run(sessionsSummary, { id: sessionId }) : undefined), [open, sessionId]);
   const unit = settings.unit;
   return (
-    <Sheet open={open} onClose={onClose} full title={data ? data.name : 'Summary'}>
+    <Sheet open={open} onClose={onClose} full role="gym" title={data ? data.name : 'Summary'}>
       {data && (
         <div className="sum">
           <p className="faint sum-when">{relDay(Date.parse(data.startedAt))}{data.live ? ' · in progress' : ''}</p>
@@ -47,7 +47,7 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
             <Stat label="Sets" v={String(data.totals.workingSets)} u=""
               delta={data.vsLastWorkout && data.vsLastWorkout.setsDelta ? { text: signed(data.vsLastWorkout.setsDelta, String) } : undefined} />
           </div>
-          {data.vsLastWorkout && <p className="faint sum-caption">vs last {data.name} · {relDay(Date.parse(data.vsLastWorkout.date + 'T12:00'))}</p>}
+          <p className="faint sum-caption">Volume = weight × reps{data.vsLastWorkout ? ` · vs last ${data.name}, ${relDay(Date.parse(data.vsLastWorkout.date + 'T12:00')).toLowerCase()}` : ''}</p>
 
           <Highlights data={data} unit={unit} />
 
@@ -84,18 +84,18 @@ function Stat({ label, v, u, delta }: { label: string; v: string; u: string; del
 function Highlights({ data, unit }: { data: WorkoutSummaryData; unit: Unit }) {
   const rows = data.exercises.map((e) => {
     const parts: { pr: boolean; text: string }[] = [];
-    if (e.prs.e1rm) parts.push({ pr: true, text: `e1RM PR ${fmtWeight(half(e.prs.e1rm.kg), unit)}` });
+    if (e.prs.e1rm) parts.push({ pr: true, text: `Best est. 1RM ${fmtWeight(half(e.prs.e1rm.kg), unit)}` });
     if (e.prs.weight) parts.push({ pr: true, text: `Heaviest ${loadText(e.loadType, e.prs.weight.loadKg, unit)}` });
     if (e.prs.reps) parts.push({ pr: true, text: `Rep PR ${e.prs.reps.reps} × ${loadText(e.loadType, e.prs.reps.loadKg, unit)}` });
     if (!parts.length && e.trend === 'up')
-      parts.push({ pr: false, text: e.beatByE1rm && e.e1rmDeltaKg ? `Beat last time · e1RM +${fmtWeight(half(e.e1rmDeltaKg), unit)}` : 'Beat last time · more reps' });
+      parts.push({ pr: false, text: e.beatByE1rm && e.e1rmDeltaKg ? `Beat last time · est. 1RM +${fmtWeight(half(e.e1rmDeltaKg), unit)}` : 'Beat last time · more reps' });
     return { e, parts };
   }).filter((r) => r.parts.length).sort((a, b) => Number(b.parts[0].pr) - Number(a.parts[0].pr));
   if (!rows.length) return null;
   const prCount = rows.filter((r) => r.parts[0].pr).length;
   return (
     <>
-      <div className="section-title">{prCount ? `${prCount} PR${prCount === 1 ? '' : 's'}` : 'Progress'}</div>
+      <div className="section-title">{prCount ? plural(prCount, 'record', 'records') : 'Progress'}</div>
       <div className="sum-hl sum-in" style={{ '--i': 1 } as CSSProperties}>
         {rows.map(({ e, parts }) => (
           <div key={e.exerciseId} className="sum-hl-row">
@@ -126,12 +126,12 @@ function ExerciseRow({ e, unit }: { e: Ex; unit: Unit }) {
       <span className="grow">
         <span className="title ellipsis" style={{ display: 'block' }}>{e.exercise}</span>
         <span className="sub num" style={{ display: 'block' }}>
-          {e.sets} set{e.sets === 1 ? '' : 's'}
-          {b && ` · ${loadText(e.loadType, b.loadKg, unit)} × ${b.reps}`}{b?.e1rmKg != null && ` · e1RM ${b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}
+          {plural(e.sets, 'set', 'sets')}
+          {b && ` · ${loadText(e.loadType, b.loadKg, unit)} × ${b.reps}`}{b?.e1rmKg != null && ` · est. 1RM ${b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}
           {e.bodyweight === 'missing' && ' · no weigh-in'}
         </span>
       </span>
-      <span className={'sum-trend ' + t.cls} aria-label={t.label} title={t.label}>{t.sym}</span>
+      <span className={'sum-trend ' + t.cls} role="img" aria-label={t.label} title={t.label}>{t.sym}</span>
     </div>
   );
 }
@@ -171,10 +171,11 @@ function Survey({ data }: { data: WorkoutSummaryData }) {
       <div className="section-title">How was it?</div>
       <div className="card stack sum-survey" style={{ gap: 18 }}>
         <Q label="Effort" hint={s.sessionRpe != null ? (CR10[s.sessionRpe] ? `${s.sessionRpe} · ${CR10[s.sessionRpe]}` : String(s.sessionRpe)) : 'Whole session, 0–10'}>
+          {/* CR-10 keeps its 0–10 values: 1–10 in a balanced 5 × 2 grid, 0 ("Rest") as a full-width row under it */}
           <div className="sum-rpe" role="group" aria-label="Session effort, 0 to 10">
-            {Array.from({ length: 11 }, (_, v) => (
-              <button key={v} className="sum-opt num" aria-pressed={s.sessionRpe === v} aria-label={`${v}${CR10[v] ? `, ${CR10[v]}` : ''}`}
-                onClick={() => rate({ sessionRpe: s.sessionRpe === v ? null : v })}>{v}</button>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0].map((v) => (
+              <button key={v} className={'sum-opt num' + (v === 0 ? ' zero' : '')} aria-pressed={s.sessionRpe === v} aria-label={`${v}${CR10[v] ? `, ${CR10[v]}` : ''}`}
+                onClick={() => rate({ sessionRpe: s.sessionRpe === v ? null : v })}>{v === 0 ? '0 · Rest' : v}</button>
             ))}
           </div>
         </Q>

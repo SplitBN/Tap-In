@@ -10,7 +10,7 @@ import { sessionsStart } from '../api/gym';
 import { suppTake } from '../api/body';
 import { useSettings } from '../db/settings';
 import type { BodyweightEntry, Macros, Session } from '../db/types';
-import { fmtDate, fmtDuration, fmtWeight, relDay } from '../lib/format';
+import { fmtDate, fmtDuration, fmtWeight, plural, relDay } from '../lib/format';
 import { useTick } from '../lib/rest';
 import { fromKg } from '../lib/science';
 import { WeighInSheet } from './Weight';
@@ -23,6 +23,8 @@ import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
 
 const DAY = 86400000;
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const longDate = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 const dayKey = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 const weekStart = (ts = Date.now()) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
 
@@ -35,7 +37,7 @@ export function HomePage() {
     <div className="page">
       <header className="page-head">
         <div className="grow">
-          <div className="muted" style={{ fontSize: '0.875rem', fontWeight: 560 }}>{fmtDate(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+          <div className="muted t-15" style={{ fontWeight: 560 }}>{fmtDate(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' })}</div>
           <h1>Today</h1>
         </div>
       </header>
@@ -90,34 +92,34 @@ function GymWidget() {
   if (active) {
     return (
       <Widget role="gym" icon="dumbbell" title="Live" wide onOpen={() => nav(`/session/${active.id}`)}>
-        <button className="row pressable plain" onClick={() => nav(`/session/${active.id}`)}>
+        <div className="row">
           <span className="grow" style={{ minWidth: 0 }}>
             <span className="big-label ellipsis" style={{ display: 'block', marginBottom: 8 }}>{active.name}</span>
             <ImageStack ids={active.items.map((i) => i.exerciseId)} />
           </span>
-          <span className="num big-value">{fmtDuration(now - active.startedAt)}</span>
-          <span className="round-btn"><Icon name="chevronRight" /></span>
-        </button>
+          <span className="num big-value" aria-label={`Running for ${fmtDuration(now - active.startedAt)}`}>{fmtDuration(now - active.startedAt)}</span>
+          <button className="round-btn lg" aria-label={`Resume ${active.name}`} onClick={() => nav(`/session/${active.id}`)}><Icon name="play" size={22} /></button>
+        </div>
       </Widget>
     );
   }
   return (
     <Widget role="gym" icon="dumbbell" title={plan && alive(plan) ? plan.name : 'Gym'} wide onOpen={() => nav(plan ? `/plans/${plan.id}` : '/plans')}
-      action={<button className="icon-btn sm" aria-label="Empty workout" onClick={() => start()}><Icon name="plus" size={18} /></button>}>
+      action={<button className="icon-btn sm tint" aria-label="Start empty workout" onClick={() => start()}><Icon name="plus" size={18} /></button>}>
       {next ? (
         <div className="row">
           <div className="grow">
-            <div className="faint" style={{ fontSize: '0.75rem', fontWeight: 600 }}>NEXT</div>
+            <div className="faint w-6" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Next</div>
             <div className="big-label ellipsis">{next.name}</div>
-            <div className="muted" style={{ fontSize: '0.8125rem', marginBottom: 10 }}>{next.items.length} ex · {next.items.reduce((a, i) => a + i.sets, 0)} sets</div>
+            <div className="muted t-13" style={{ marginBottom: 10 }}>{plural(next.items.length, 'exercise', 'exercises')} · {plural(next.items.reduce((a, i) => a + i.sets, 0), 'set', 'sets')}</div>
             <ImageStack ids={next.items.map((i) => i.exerciseId)} />
           </div>
           <button className="round-btn lg" aria-label={`Start ${next.name}`} onClick={() => start(next.id)}><Icon name="play" size={22} /></button>
         </div>
       ) : (
-        <button className="row pressable plain" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')}>
-          <span className="grow muted">{plan ? 'Add a workout to this plan' : 'Create a plan'}</span>
-          <span className="round-btn"><Icon name="plus" /></span>
+        <button className="row pressable plain widget-cta" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')}>
+          <span className="grow">{plan ? 'Add a workout to this plan' : 'Create a plan'}</span>
+          <Icon name="chevronRight" size={18} className="chev" />
         </button>
       )}
     </Widget>
@@ -133,21 +135,21 @@ function WeightWidget({ onLog }: { onLog: () => void }) {
   const delta = last && recent[1] ? fromKg(last.kg - recent[1].kg, settings.unit) : null;
   return (
     <Widget role="weight" icon="scale" title="Weight" onOpen={() => nav('/weight')}
-      action={<button className="icon-btn sm" aria-label="Log weight" onClick={onLog}><Icon name="plus" size={18} /></button>}>
+      action={<button className="icon-btn sm tint" aria-label="Log weight" onClick={onLog}><Icon name="plus" size={18} /></button>}>
       {last ? (
         <>
           <div className="row" style={{ alignItems: 'baseline', gap: 4 }}>
             <span className="num big-value">{fmtWeight(last.kg, settings.unit, false)}</span>
             <span className="muted" style={{ fontSize: '0.8125rem' }}>{settings.unit}</span>
-            {delta != null && Math.abs(delta) >= 0.05 && <span className="num delta">{delta > 0 ? '▲' : '▼'}{Math.abs(delta).toFixed(1)}</span>}
+            {delta != null && Math.abs(delta) >= 0.05 && <span className="num delta"><span aria-hidden>{delta > 0 ? '▲' : '▼'}</span><span className="sr-only">{delta > 0 ? 'up' : 'down'} </span>{Math.abs(delta).toFixed(1)} {settings.unit}</span>}
           </div>
           <MiniLine entries={recent} />
-          <div className={due ? 'due' : 'faint'} style={{ fontSize: '0.75rem', fontWeight: 600 }}>{due ? '● Due' : relDay(last.at)}</div>
+          <div className={'w-6 ' + (due ? 'due' : 'faint')} style={{ fontSize: '0.75rem' }}>{due ? <><span aria-hidden>● </span>Weigh-in due</> : relDay(last.at)}</div>
         </>
       ) : (
-        <button className="plain pressable" onClick={onLog} style={{ textAlign: 'left' }}>
-          <div className="big-value faint">–</div>
-          <div className="due" style={{ fontSize: '0.75rem', fontWeight: 600 }}>● Due</div>
+        <button className="plain pressable weight-empty" onClick={onLog}>
+          <span className="weight-empty-glyph" aria-hidden><Icon name="scale" size={20} stroke={2} /></span>
+          <span><b>Log</b><span className="muted t-13" style={{ display: 'block' }}>your first weigh-in</span></span>
         </button>
       )}
     </Widget>
@@ -185,11 +187,11 @@ function WeekWidget() {
     <Widget role="gym" icon="chart" title="Week" onOpen={() => nav('/stats')}>
       <div className="row" style={{ alignItems: 'baseline', gap: 4 }}>
         <span className="num big-value">{data?.sessions.length ?? 0}</span>
-        <span className="muted" style={{ fontSize: '0.8125rem' }}>workouts · {data?.sets ?? 0} sets</span>
+        <span className="muted t-13">{(data?.sessions.length ?? 0) === 1 ? 'workout' : 'workouts'} · {plural(data?.sets ?? 0, 'set', 'sets')}</span>
       </div>
-      <div className="week-dots" aria-label="Days trained this week">
+      <div className="week-dots" role="img" aria-label={days.size ? `Trained this week: ${[...days].sort().map((i) => DAY_NAMES[i]).join(', ')}` : 'No training days yet this week'}>
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((l, i) => (
-          <span key={i} className={(days.has(i) ? 'on' : '') + (i === today ? ' today' : '')}>{l}</span>
+          <span key={i} aria-hidden className={(days.has(i) ? 'on' : '') + (i === today ? ' today' : '')}>{days.has(i) ? <Icon name="check" size={13} stroke={3} /> : l}</span>
         ))}
       </div>
     </Widget>
@@ -259,10 +261,10 @@ function CalendarWidget() {
           const e = byDay.get(k);
           return (
             <button key={k} className={'cal-day' + (expanded && d.getMonth() !== month.getMonth() ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '')}
-              onClick={() => setSel(k === sel ? undefined : k)}
-              aria-label={d.toDateString() + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '') + (data?.hits.has(dateKey(d)) ? ', food goals hit' : '')}>
+              onClick={() => setSel(k === sel ? undefined : k)} aria-pressed={k === sel} aria-current={k === today ? 'date' : undefined}
+              aria-label={(k === today ? 'Today, ' : '') + longDate.format(d) + (e?.sessions.length ? ', workout' : '') + (e?.weights.length ? ', weigh-in' : '') + (data?.hits.has(dateKey(d)) ? ', food goals hit' : '')}>
               <span className="num">{d.getDate()}</span>
-              <span className="cal-dots">
+              <span className="cal-dots" aria-hidden>
                 {e?.sessions.length ? <i className="dot-workout" /> : null}
                 {e?.weights.length ? <i className="dot-weight" /> : null}
                 {data?.hits.has(dateKey(d)) ? <i className="dot-food" /> : null}
@@ -290,7 +292,7 @@ function CalendarWidget() {
                   <span className="muted">{new Date(w.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
                 </button>
               ))}
-              {!selData && <p className="faint" style={{ textAlign: 'center', margin: 4, fontSize: '0.875rem' }}>—</p>}
+              {!selData && <p className="faint t-15" style={{ textAlign: 'center', margin: 4 }}>Nothing logged</p>}
             </div>
           </motion.div>
         )}
@@ -320,11 +322,11 @@ function FoodWidget() {
   const { goal, total, entries } = useDay(today);
   return (
     <Widget role="food" icon="food" title="Food" wide onOpen={() => nav('/food')}
-      action={<button className="icon-btn sm" aria-label="Log food" onClick={() => nav('/food')}><Icon name="plus" size={18} /></button>}>
+      action={<button className="icon-btn sm tint" aria-label="Log food" onClick={() => nav('/food')}><Icon name="plus" size={18} /></button>}>
       {goal ? <Summary total={total} goal={goal} compact /> : (
-        <button className="row pressable plain" onClick={() => nav('/nutrition')}>
-          <span className="grow muted">{entries.length ? `${Math.round(total.kcal)} kcal logged` : 'Set goals to start'}</span>
-          <span className="round-btn"><Icon name="target" /></span>
+        <button className="row pressable plain widget-cta" onClick={() => nav('/nutrition')}>
+          <span className="grow">{entries.length ? `${Math.round(total.kcal).toLocaleString()} kcal logged · set a goal` : 'Set your goals'}</span>
+          <Icon name="chevronRight" size={18} className="chev" />
         </button>
       )}
     </Widget>
@@ -338,29 +340,31 @@ function SuppWidget() {
   const pending = day.flatMap((g) => g.stacks.flatMap((st) => st.items)).filter((i) => !i.log).slice(0, 3);
   if (!sups.length) {
     return (
-      <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}>
-        <button className="row pressable plain" onClick={() => nav('/supps')}>
-          <span className="grow muted">Track supplements, meds and peptides</span>
-          <span className="round-btn"><Icon name="plus" /></span>
+      <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}
+        action={<button className="icon-btn sm tint" aria-label="Add supplement" onClick={() => nav('/supps?new=1')}><Icon name="plus" size={18} /></button>}>
+        <button className="row pressable plain widget-cta" onClick={() => nav('/supps')}>
+          <span className="grow">Track supplements, meds and peptides</span>
+          <Icon name="chevronRight" size={18} className="chev" />
         </button>
       </Widget>
     );
   }
   return (
-    <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}>
+    <Widget role="supp" icon="pill" title="Supps" wide onOpen={() => nav('/supps')}
+      action={<button className="icon-btn sm tint" aria-label="Add supplement" onClick={() => nav('/supps?new=1')}><Icon name="plus" size={18} /></button>}>
       <div className="row" style={{ gap: 14, alignItems: 'center' }}>
-        <Ring value={done} max={Math.max(1, total)} size={64} track={!total}><span className="num" style={{ fontWeight: 800 }}>{total ? `${done}/${total}` : '–'}</span></Ring>
+        <Ring value={done} max={Math.max(1, total)} size={64} track={!total}><span className="num w-8" aria-label={total ? `${done} of ${total} taken` : 'Nothing scheduled'}>{total ? `${done}/${total}` : '–'}</span></Ring>
         <div className="grow stack" style={{ gap: 6, minWidth: 0 }}>
           {pending.length ? pending.map((d) => (
             <div key={d.sup.id + d.slot} className="row" style={{ gap: 8 }}>
               <span className="grow ellipsis" dir="auto" style={{ fontWeight: 600 }}>{d.sup.name}</span>
-              <span className="muted num" style={{ fontSize: '0.8125rem' }}>{d.slot === '--:--' ? '' : d.slot} · {fmtNum(d.amount)} {d.sup.unit}</span>
-              <button className="check" style={{ width: 40, height: 34 }} aria-label={`Take ${d.sup.name}`}
+              <span className="muted num t-13">{d.slot === '--:--' ? '' : `${d.slot} · `}{fmtNum(d.amount)} {d.sup.unit}</span>
+              <button className="check compact" aria-label={`Take ${d.sup.name}`}
                 onClick={() => run(suppTake, { supplementId: d.sup.id, date: today, time: d.slot === '--:--' ? undefined : d.slot, amount: d.amount })}>
                 <Icon name="check" size={16} stroke={2.8} />
               </button>
             </div>
-          )) : <span className="muted">{total ? 'All taken today ✓' : 'Nothing scheduled today'}</span>}
+          )) : <span className="muted">{total ? <>All taken today <span aria-hidden>✓</span></> : 'Nothing scheduled today'}</span>}
         </div>
       </div>
     </Widget>

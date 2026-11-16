@@ -5,14 +5,18 @@ import { fmtDuration } from '../lib/format';
 import { Icon } from './Icon';
 import { NumberField, type NumberSpec } from './NumberPicker';
 
-export function Stepper({ value, onChange, min = 0, max = 99, step = 1, format, label = "" }: {
-  value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; format?: (v: number) => ReactNode; label?: string;
+/** − value + control. `label` names what it changes ("Compound rest"); the buttons say "Decrease compound rest" /
+ *  "Increase compound rest" unless `less` / `more` give better words ("Remove set" / "Add set"). The value is announced. */
+export function Stepper({ value, onChange, min = 0, max = 99, step = 1, format, label, less, more }: {
+  value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; format?: (v: number) => ReactNode;
+  label: string; less?: string; more?: string;
 }) {
+  const lower = label.charAt(0).toLowerCase() + label.slice(1);
   return (
-    <div className="row" style={{ gap: 4 }}>
-      <button className="icon-btn filled" aria-label={`Less ${label}`.trim()} onClick={() => onChange(Math.max(min, value - step))} disabled={value <= min}><Icon name="minus" size={18} /></button>
-      <span className="num" style={{ minWidth: 56, textAlign: 'center', fontWeight: 650, fontSize: '1.0625rem' }}>{format ? format(value) : value}</span>
-      <button className="icon-btn filled" aria-label={`More ${label}`.trim()} onClick={() => onChange(Math.min(max, value + step))} disabled={value >= max}><Icon name="plus" size={18} /></button>
+    <div className="row" style={{ gap: 4 }} role="group" aria-label={label}>
+      <button className="icon-btn filled" aria-label={less ?? `Decrease ${lower}`} onClick={() => onChange(Math.max(min, value - step))} disabled={value <= min}><Icon name="minus" size={18} /></button>
+      <span className="num t-17" style={{ minWidth: 56, textAlign: 'center', fontWeight: 650 }} aria-live="polite">{format ? format(value) : value}</span>
+      <button className="icon-btn filled" aria-label={more ?? `Increase ${lower}`} onClick={() => onChange(Math.min(max, value + step))} disabled={value >= max}><Icon name="plus" size={18} /></button>
     </div>
   );
 }
@@ -35,9 +39,9 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
   const hasRange = item.repsMin != null;
   return (
     <div className="stack" style={{ gap: 0 }}>
-      <Line label="Sets"><Stepper label="Sets" value={item.sets} min={1} max={20} onChange={(sets) => onChange({ ...item, sets })} /></Line>
+      <Line label="Sets"><Stepper label="Sets" less="Remove set" more="Add set" value={item.sets} min={1} max={20} onChange={(sets) => onChange({ ...item, sets })} /></Line>
       {settings.features.warmups && (
-        <Line label="Warm-up"><Stepper label="Warm-up" value={item.warmups ?? 0} max={6} onChange={(warmups) => onChange({ ...item, warmups })} /></Line>
+        <Line label="Warm-up sets"><Stepper label="Warm-up sets" less="Remove warm-up set" more="Add warm-up set" value={item.warmups ?? 0} max={6} onChange={(warmups) => onChange({ ...item, warmups })} /></Line>
       )}
       <Line label="Reps">
         {hasRange ? (
@@ -49,20 +53,20 @@ export function ItemSettings({ item, exercise, settings, onChange }: {
               onChange={(v) => onChange({ ...item, repsMax: v, repsMin: item.repsMin != null && item.repsMin > v ? v : item.repsMin })} />
             <button className="icon-btn" aria-label="Remove target" onClick={() => onChange({ ...item, repsMin: undefined, repsMax: undefined })}><Icon name="close" size={18} /></button>
           </div>
-        ) : <button className="btn" onClick={() => onChange({ ...item, repsMin: 8, repsMax: 12 })} aria-label="Set target reps"><Icon name="plus" size={16} /></button>}
+        ) : <button className="btn" onClick={() => onChange({ ...item, repsMin: 8, repsMax: 12 })}><Icon name="plus" size={16} /> Target</button>}
       </Line>
-      <Line label="Drops" sub="−20% each"><Stepper label="Drops" value={item.drops ?? 0} max={4} onChange={(drops) => onChange({ ...item, drops })} /></Line>
+      <Line label="Drop sets" sub="−20% weight each"><Stepper label="Drop sets" less="Remove drop set" more="Add drop set" value={item.drops ?? 0} max={4} onChange={(drops) => onChange({ ...item, drops })} /></Line>
       {settings.features.restTimer && (
         <>
           <Line label="Rest">
-            <div className="seg" style={{ width: 170 }}>
+            <div className="seg" style={{ width: 190 }} role="group" aria-label="Rest">
               <button aria-pressed={item.rest.mode === 'timer'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'timer' } })}>Timer</button>
-              <button aria-pressed={item.rest.mode === 'countup'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'countup' } })}>↑ Up</button>
+              <button aria-pressed={item.rest.mode === 'countup'} onClick={() => onChange({ ...item, rest: { ...item.rest, mode: 'countup' } })}>Count up</button>
             </div>
           </Line>
           {item.rest.mode === 'timer' && (
-            <Line label="Time" sub={item.rest.sec == null ? "default" : undefined}>
-              <Stepper value={restSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(sec) => onChange({ ...item, rest: { ...item.rest, sec } })} />
+            <Line label="Rest time" sub={item.rest.sec == null ? "Default" : undefined}>
+              <Stepper label="Rest time" value={restSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(sec) => onChange({ ...item, rest: { ...item.rest, sec } })} />
             </Line>
           )}
         </>

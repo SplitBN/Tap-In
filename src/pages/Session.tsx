@@ -8,7 +8,7 @@ import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/Exe
 import { equipmentLabel, equipmentTag, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ItemSettings } from '../components/ItemSettings';
-import { EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
+import { EffortExplainer, EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
 import { WorkoutSummary } from '../components/WorkoutSummary';
 import { SortableItem, SortableList } from '../components/Sortable';
@@ -19,7 +19,7 @@ import { exercisesNextTarget, itemsAdd, itemsRemove, itemsReorder, itemsReplace,
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
-import { fmtDuration, fmtNum, fmtWeight, relDay, titleCase } from '../lib/format';
+import { fmtDuration, fmtNum, fmtWeight, plural, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
 import { defaultRestSec, suggestDrop, defaultStepKg, fromKg, rirToRpe, snappedStepKg } from '../lib/science';
 import { workingSetCount } from '../lib/workoutStats';
@@ -52,7 +52,7 @@ async function updateItemChecked(sessionId: string, before: WorkoutItem, patch: 
   const lost = sets.filter((x) => x.doneAt && setBeyond(x, next));
   if (lost.length) {
     beforeConfirm?.();
-    if (!(await confirmDialog({ title: `Delete ${lost.length} done set${lost.length === 1 ? '' : 's'}?`, message: 'Removing sets also deletes what was logged in them.', confirm: 'Delete', danger: true }))) return;
+    if (!(await confirmDialog({ title: `Delete ${plural(lost.length, 'done set', 'done sets')}?`, message: `What you logged in ${lost.length === 1 ? 'it' : 'them'} is deleted. This can’t be undone.`, confirm: lost.length === 1 ? 'Delete set' : 'Delete sets', danger: true }))) return;
   }
   await run(itemsUpdate, { sessionId, itemKey: before.key, patch });
 }
@@ -96,15 +96,15 @@ export function SessionPage() {
   if (session === undefined) return null; // loading (a frame)
   if (!session || !alive(session)) {
     return (
-      <div className="page no-tabs">
+      <div className="page no-tabs" data-role="gym">
         <header className="row" style={{ paddingTop: 'calc(var(--safe-t) + 6px)' }}>
           <button className="icon-btn" aria-label="Back" onClick={back}><Icon name="chevronLeft" /></button>
         </header>
         <div className="empty">
           <Icon name="dumbbell" size={40} />
           <h3>{session ? 'Workout deleted' : 'Workout not found'}</h3>
-          <p>{session ? 'This workout was deleted.' : 'It may have been deleted on another device.'}</p>
-          <Link className="btn primary" to="/history">History</Link>
+          <p>{session ? 'It’s no longer in your history.' : 'It may have been deleted on another device.'}</p>
+          <Link className="btn primary" to="/history"><Icon name="history" size={18} /> Open history</Link>
         </div>
       </div>
     );
@@ -123,20 +123,20 @@ export function SessionPage() {
   const doneCount = workingSetCount(sets.filter((s) => s.doneAt)); // same counting as the summary
 
   return (
-    <div className="page no-tabs" style={{ paddingTop: 0, paddingBottom: "calc(var(--safe-b) + 110px)" }}>
+    <div className="page no-tabs" data-role="gym" style={{ paddingTop: 0, paddingBottom: "calc(var(--safe-b) + 110px)" }}>
       {/* header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 10, margin: '0 -16px', padding: 'calc(var(--safe-t) + 6px) 8px 8px',
         background: 'var(--chrome)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }}>
         <div className="row">
           <button className="icon-btn" aria-label="Back" onClick={back}><Icon name="chevronLeft" /></button>
           <div className="grow" style={{ textAlign: 'center' }}>
-            <div className="ellipsis" style={{ fontWeight: 650 }}>{session.name}</div>
+            <h1 className="ellipsis sess-title">{session.name}</h1>
             <div className="num muted live-stats" style={{ fontSize: '0.8125rem' }}>
               {live ? <>
                 <span>{fmtDuration(now - session.startedAt)}</span>
                 {progress && <>
-                  <span aria-label={`${progress.totals.workingSetsDone} of ${progress.totals.workingSetsPlanned} sets done`}>{progress.totals.workingSetsDone}/{progress.totals.workingSetsPlanned}</span>
-                  <span aria-label="Volume">{Math.round(fromKg(progress.totals.volumeKg, settings.unit)).toLocaleString()} {settings.unit}</span>
+                  <span><span aria-hidden>{progress.totals.workingSetsDone}/{progress.totals.workingSetsPlanned}</span><span className="sr-only">{progress.totals.workingSetsDone} of {plural(progress.totals.workingSetsPlanned, 'set', 'sets')} done</span></span>
+                  <span><span className="sr-only">Volume </span>{Math.round(fromKg(progress.totals.volumeKg, settings.unit)).toLocaleString()} {settings.unit}</span>
                 </>}
               </> : `${relDay(session.startedAt)} · ${fmtDuration((session.endedAt ?? now) - session.startedAt)}`}
             </div>
@@ -154,7 +154,7 @@ export function SessionPage() {
           replaced={current.replacedBy ? exMap[items.find((i) => i.key === current.replacedBy)?.exerciseId ?? ''] ?? null : undefined}
           settings={settings} onMenu={() => setMenu('item')} progress={progress ?? undefined}
           onSetDone={(row) => afterSetDone(row, current, session.id, items, exMap, settings, live, select)} />
-      ) : (
+      ) : items.length ? null /* exercises still loading: no "Empty workout" flash */ : (
         <div className="empty">
           <Icon name="dumbbell" size={40} />
           <h3>Empty workout</h3>
@@ -182,7 +182,7 @@ export function SessionPage() {
                 setMenu(null);
                 const doneN = workingSetCount(sets.filter((x) => x.itemKey === current.key && x.doneAt));
                 if (doneN && !(await confirmDialog({ title: `Replace ${exerciseLabel(ex, 'exercise')}?`,
-                  message: `Its ${doneN} done set${doneN === 1 ? '' : 's'} stay${doneN === 1 ? 's' : ''} in this workout as ${exerciseLabel(ex, 'this exercise')}. The new exercise starts fresh.`, confirm: 'Replace' }))) return;
+                  message: `${doneN === 1 ? 'Its done set stays' : `Its ${doneN} done sets stay`} in this workout as ${exerciseLabel(ex, 'this exercise')}. The new exercise starts fresh.`, confirm: 'Replace exercise' }))) return;
                 setPicking('replace');
               }}><Icon name="swap" />Replace</button>
               <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How-to</button>
@@ -194,7 +194,7 @@ export function SessionPage() {
                 const doneN = mine.filter((x) => x.doneAt).length;
                 if (doneN) {
                   setMenu(null);
-                  if (!(await confirmDialog({ title: `Remove ${exerciseLabel(ex, 'exercise')}?`, message: `Its ${doneN} logged set${doneN === 1 ? '' : 's'} will be deleted.`, confirm: 'Remove exercise', danger: true }))) return;
+                  if (!(await confirmDialog({ title: `Remove ${exerciseLabel(ex, 'exercise')}?`, message: `Its ${plural(doneN, 'logged set', 'logged sets')} will be deleted. This can’t be undone.`, confirm: 'Remove exercise', danger: true }))) return;
                 }
                 await run(itemsRemove, { ...t, itemKey: current.key }); setMenu(null);
               }}><Icon name="trash" />Remove</button>
@@ -216,7 +216,10 @@ export function SessionPage() {
         {!live && <button className="menu-item" onClick={() => run(sessionsUpdate, { id: session.id, resume: true })}><Icon name="play" />Resume this workout</button>}
         <button className="menu-item danger" onClick={async () => {
           setMenu(null);
-          if (!(await confirmDialog(live ? { title: 'Discard this workout?', message: 'All sets logged in it are deleted.', confirm: 'Discard workout', danger: true } : { title: 'Delete this workout?', message: 'It is removed from your history.', confirm: 'Delete workout', danger: true }))) return;
+          const logged = workingSetCount(sets.filter((x) => x.doneAt));
+          if (!(await confirmDialog(live
+            ? { title: 'Discard workout?', message: logged ? `Your ${plural(logged, 'logged set', 'logged sets')} will be deleted. This can’t be undone.` : 'Nothing is logged yet. This can’t be undone.', confirm: 'Discard workout', danger: true }
+            : { title: `Delete “${session.name}”?`, message: `It’s removed from your history${logged ? `, with its ${plural(logged, 'set', 'sets')}` : ''}. This can’t be undone.`, confirm: 'Delete workout', danger: true }))) return;
           await run(sessionsDelete, { id: session.id }); rest.stop(); nav('/');
         }}><Icon name="trash" />{live ? 'Discard workout' : 'Delete workout'}</button>
       </Sheet>
@@ -290,7 +293,7 @@ function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, 
           const ex = exMap[it.exerciseId];
           return (
             <SortableItem key={it.key} id={it.key} className={'strip-slot tube-' + g}>
-              <button data-current={cur} onClick={() => onSelect(it.key)} aria-current={cur ? 'step' : undefined}
+              <button type="button" data-current={cur} onClick={() => onSelect(it.key)} aria-current={cur ? 'step' : undefined}
                 aria-label={exerciseLabel(ex) + (isDone(it) ? ', done' : '')}
                 className={'avatar pressable' + (cur ? ' current' : '') + (isDone(it) ? ' done' : '')}>
                 <Avatar ex={ex} />
@@ -335,6 +338,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
     { loadKg: t.loadKg, reps: t.reps, ...(t.rir != null ? { rir: t.rir, rpe: rirToRpe(t.rir) } : {}) }]) : []), [target]);
   const badgeById = useMemo(() => new Map<string, SetBadge>((progress?.sets ?? []).filter((x) => x.itemKey === item.key).map((x) => [`working:${x.setNo}:0:${x.side}`, x.badge])), [progress, item.key]);
   const [whyOpen, setWhyOpen] = useState(false);
+  const [effortInfo, setEffortInfo] = useState(false);
   const reduceMotion = useReducedMotion();
   const unit = settings.unit;
   const loadLabel = ex.loadType === 'bodyweight' ? `+${unit}` : ex.loadType === 'assisted' ? `assist` : unit;
@@ -435,18 +439,18 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
           </button>
         ) : <ExerciseThumb ex={ex} size={96} />}
         <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
-          <h2 className="ex-title" title={ex.name} style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.12, letterSpacing: '-0.025em', fontWeight: 800, color: 'var(--accent)' }}>{ex.name}</h2>
+          <h2 className="ex-title" title={ex.name} style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.12, letterSpacing: '-0.025em', fontWeight: 800, color: 'var(--text)' }}>{ex.name}</h2>
           <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{equipmentTag(ex) && <>{equipmentTag(ex)} · </>}{titleCase(ex.muscles.join(', '))}</div>
           <div className="tags">
-            {item.repsMin != null && <span className="tag"><Icon name="flag" size={12} stroke={2.2} />{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
+            {item.repsMin != null && <span className="tag" title="Target reps"><Icon name="flag" size={12} stroke={2.2} /><span className="sr-only">Target reps </span>{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
             {target?.decision && <TargetTag t={target} unit={unit} onClick={() => setWhyOpen(true)} />}
-            {ex.unilateral && <span className="tag">L | R</span>}
-            {item.supersetId && <span className="tag role"><Icon name="link" size={12} stroke={2.2} />SS</span>}
-            {(item.drops ?? 0) > 0 && <span className="tag drop">↓ {item.drops}</span>}
-            {ex.loadType !== 'weighted' && bw == null && <span className="tag warn"><Icon name="scale" size={12} stroke={2.2} />BW?</span>}
+            {ex.unilateral && <span className="tag" title="Each side logged separately"><span aria-hidden>L | R</span><span className="sr-only">Each side logged separately</span></span>}
+            {item.supersetId && <span className="tag role" title="Superset"><Icon name="link" size={12} stroke={2.2} /><span aria-hidden>SS</span><span className="sr-only">Superset</span></span>}
+            {(item.drops ?? 0) > 0 && <span className="tag drop" title={plural(item.drops!, 'drop set', 'drop sets')}><span aria-hidden>↓ {item.drops}</span><span className="sr-only">{plural(item.drops!, 'drop set', 'drop sets')}</span></span>}
+            {ex.loadType !== 'weighted' && bw == null && <span className="tag warn" title="No bodyweight logged: log a weigh-in for accurate volume"><Icon name="scale" size={12} stroke={2.2} /><span aria-hidden>BW?</span><span className="sr-only">No bodyweight logged</span></span>}
           </div>
         </div>
-        <button className="icon-btn filled" aria-label="Exercise options" onClick={onMenu}><Icon name="more" /></button>
+        <button className="icon-btn" aria-label="Exercise options" onClick={onMenu}><Icon name="more" /></button>
       </div>
       {replaced !== undefined && <p className="muted" style={{ margin: '10px 2px 0', fontSize: '0.875rem' }}>Replaced{replaced ? ` by ${exerciseLabel(replaced)}` : ''}. Its done sets stay here.</p>}
       <NoteLine value={item.notes} onSave={(notes) => run(itemsUpdate, { sessionId: session.id, itemKey: item.key, patch: { notes: notes ?? null } })} />
@@ -454,7 +458,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
       {/* set table */}
       <div style={{ marginTop: 14 }}>
         <div className="set-grid set-head" data-effort={effortOn}>
-          <span>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <span>{settings.effortMode}</span>}<span />
+          <span aria-hidden>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <button type="button" className="set-head-btn" onClick={() => setEffortInfo(true)} aria-label={`${settings.effortMode === 'rir' ? 'Reps in reserve' : 'RPE'}: what is this?`}>{settings.effortMode.toUpperCase()}<Icon name="info" size={12} stroke={2.2} /></button>}<span />
         </div>
         {groups.map((g) => {
           const head = g[0];
@@ -471,6 +475,13 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                 const v = resolved(r);
                 const ready = !done && v.loadKg != null && v.reps != null;
                 const repsPh = sug?.reps != null ? String(sug.reps) : item.repsMin != null ? String(item.repsMax ?? item.repsMin) : '–';
+                // spoken names carry the value or suggestion: "Weight, set 1: 60 kg (target)", "Complete warm-up 1"
+                const name = (r.kind === 'warmup' ? `warm-up ${r.setNo}` : r.kind === 'drop' ? `drop set ${r.dropNo} of set ${r.setNo}` : `set ${r.setNo}`)
+                  + (r.side === 'both' ? '' : `, ${r.side}`);
+                const hint = r.kind === 'working' && targetById.has(rowId(r)) ? 'target' : 'suggested';
+                const wSpoken = l?.loadKg != null ? fmtWeight(l.loadKg, unit) : sug?.loadKg != null ? `${fmtWeight(sug.loadKg, unit)} (${hint})` : 'empty';
+                const rSpoken = l?.reps != null ? String(l.reps) : repsPh !== '–' ? `${repsPh} (${hint})` : 'empty';
+                const eSpoken = effortVal(l) != null ? fmtNum(effortVal(l)!) : effortVal(sug) != null ? `${fmtNum(effortVal(sug)!)} (${hint})` : 'empty';
                 return (
                   <motion.div key={rowId(r)} layout="position" data-effort={effortOn}
                     className={`set-grid set-row ${state} ${r.kind}` + (shakeId === rowId(r) ? ' shake' : '')}>
@@ -478,14 +489,14 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                       {r.side === 'right' && g.length > 1 ? '' : label}
                       {r.side !== 'both' && <small>{r.side === 'left' ? 'L' : 'R'}</small>}
                     </span>
-                    <button className="cell num" onClick={() => setWeightFor(r)} aria-label={`Weight, set ${label}`}>
+                    <button className="cell num" onClick={() => setWeightFor(r)} aria-label={`${loadLabel === unit ? 'Weight' : ex.loadType === 'assisted' ? 'Assistance' : 'Added weight'}, ${name}: ${wSpoken}`}>
                       {l?.loadKg != null ? fmtWeight(l.loadKg, unit, false) : <span className="ph">{sug?.loadKg != null ? fmtWeight(sug.loadKg, unit, false) : '–'}</span>}
                     </button>
-                    <button className="cell num" onClick={() => setRepsFor(r)} aria-label={`Reps, set ${label}`}>
+                    <button className="cell num" onClick={() => setRepsFor(r)} aria-label={`Reps, ${name}: ${rSpoken}`}>
                       {l?.reps != null ? l.reps : <span className="ph">{repsPh}</span>}
                     </button>
                     {effortOn && (
-                      <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`Effort, set ${label}`}>
+                      <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`${settings.effortMode.toUpperCase()}, ${name}: ${eSpoken}`}>
                         {effortVal(l) != null ? fmtNum(effortVal(l)!) : <span className="ph">{effortVal(sug) != null ? fmtNum(effortVal(sug)!) : '–'}</span>}
                       </button>
                     )}
@@ -503,7 +514,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                     </AnimatePresence>}
                     <button className={'check' + (done ? ' on' : state === 'active' && ready ? ' ready' : '') + (state === 'future' ? ' later' : '')}
                       onClick={() => toggleDone(r)} aria-pressed={done}
-                      aria-label={done ? `Undo set ${label}` : `Complete set ${label}`}>
+                      aria-label={done ? `Undo ${name}` : `Complete ${name}`}>
                       <Icon name="check" size={20} stroke={2.8} />
                     </button>
                   </motion.div>
@@ -539,6 +550,9 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
         })}
       </Link>
 
+      <Sheet open={effortInfo} onClose={() => setEffortInfo(false)} title={settings.effortMode === 'rir' ? 'Reps in reserve (RIR)' : 'Rate of perceived exertion (RPE)'}>
+        <EffortExplainer mode={settings.effortMode} />
+      </Sheet>
       <Sheet open={whyOpen} onClose={() => setWhyOpen(false)} title="Today's target">
         {target && <TargetWhy t={target} unit={unit} />}
       </Sheet>
@@ -600,9 +614,9 @@ function SetCountButtons({ item, session, sets }: { item: WorkoutItem; session: 
   const change = (d: number) => updateItemChecked(session.id, item, { sets: Math.min(MAX_SETS, Math.max(1, item.sets + d)) }, sets);
   return (
     <>
-      <button className="icon-btn filled" aria-label="Remove a set" onClick={() => change(-1)} disabled={item.sets <= 1}><Icon name="minus" size={18} /></button>
-      <span className="faint num" style={{ fontSize: '0.8125rem', minWidth: 48, textAlign: 'center' }}>{item.sets} sets</span>
-      <button className="icon-btn filled" aria-label="Add a set" onClick={() => change(1)} disabled={item.sets >= MAX_SETS} style={{ color: 'var(--accent)' }}><Icon name="plus" size={18} /></button>
+      <button className="icon-btn filled" aria-label="Remove set" onClick={() => change(-1)} disabled={item.sets <= 1}><Icon name="minus" size={18} /></button>
+      <span className="faint num t-13" style={{ minWidth: 56, textAlign: 'center' }} aria-live="polite">{plural(item.sets, 'set', 'sets')}</span>
+      <button className="icon-btn filled" aria-label="Add set" onClick={() => change(1)} disabled={item.sets >= MAX_SETS}><Icon name="plus" size={18} /></button>
     </>
   );
 }
@@ -663,23 +677,25 @@ function RestBar() {
   const left = countdown ? st.targetSec! - elapsed : 0;
   const over = countdown && left <= 0;
   const pct = countdown ? Math.min(1, elapsed / Math.max(1, st.targetSec!)) : 0;
+  const ann = <div className="sr-only" role="status">{over ? 'Rest over' : ''}</div>; // announced once, when it flips
   const bar = (
     <AnimatePresence>
       <motion.div className="restbar" initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
         transition={{ type: 'spring', bounce: 0, duration: 0.35 }} role="timer" aria-live="off">
-        <div className="restbar-fill" style={{ transform: `scaleX(${pct})`, background: over ? 'var(--good)' : 'var(--accent)' }} />
+        {ann}
+        <div className={'restbar-fill' + (over ? ' over' : '')} style={{ transform: `scaleX(${pct})` }} aria-hidden />
         <div className="row" style={{ position: 'relative' }}>
           <div className="grow">
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)' }}>{over ? 'Go' : 'Rest'}</div>
+            <div className="w-6" style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{over ? 'Go' : 'Rest'}</div>
             <div className="num" style={{ fontSize: '1.5rem', fontWeight: 750, letterSpacing: '-0.02em', color: over ? 'var(--good)' : 'var(--text)' }}>
               {countdown ? (over ? '+' : '') + fmtDuration(Math.abs(left) * 1000) : fmtDuration(elapsed * 1000)}
             </div>
           </div>
           {countdown && <>
-            <button className="btn" style={{ minHeight: 38 }} onClick={() => rest.adjust(-15)}>−15</button>
-            <button className="btn" style={{ minHeight: 38 }} onClick={() => rest.adjust(15)}>+15</button>
+            <button className="btn" onClick={() => rest.adjust(-15)} aria-label="15 seconds less">−15</button>
+            <button className="btn" onClick={() => rest.adjust(15)} aria-label="15 seconds more">+15</button>
           </>}
-          <button className="btn" style={{ minHeight: 38 }} onClick={rest.stop}>Skip</button>
+          <button className="btn" onClick={rest.stop} aria-label="Skip rest">Skip</button>
         </div>
       </motion.div>
     </AnimatePresence>
@@ -715,7 +731,7 @@ function FinishSheet({ open, onClose, session, doneCount, sets, onFinished }: {
         </div>
         {asking ? (
           <>
-            <p className="muted" style={{ margin: '4px 2px' }}>{unticked.length} set{unticked.length === 1 ? '' : 's'} not ticked.</p>
+            <p className="muted" style={{ margin: '4px 2px' }}>{plural(unticked.length, 'set has', 'sets have')} values but {unticked.length === 1 ? 'isn’t' : 'aren’t'} ticked.</p>
             <button className="btn primary lg block" onClick={tickAll}><Icon name="check" size={18} /> Tick all</button>
             <button className="btn lg block" onClick={() => setAck(true)}>Drop</button>
           </>
@@ -727,7 +743,7 @@ function FinishSheet({ open, onClose, session, doneCount, sets, onFinished }: {
           </>
         ) : <button className="btn good lg block" onClick={() => go(false)}>Finish workout</button>}
         {!asking && <p className="faint" style={{ margin: 0, fontSize: '0.8125rem', textAlign: 'center' }}>
-          {partial ? `${partial} half-filled set${partial === 1 ? '' : 's'} will be dropped.` : 'Unchecked sets are dropped.'}
+          {partial ? `${plural(partial, 'half-filled set', 'half-filled sets')} will be dropped.` : 'Unchecked sets are dropped.'}
         </p>}
       </div>
     </Sheet>

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useId, useSyncExternalStore } from 'react';
 import { Sheet } from './Sheet';
 
 // In-app confirm/notice. Browser confirm()/alert() can be suppressed (embedded views, some
@@ -16,17 +16,21 @@ export const notice = (title: string, message?: string) => confirmDialog({ title
 export function DialogHost() {
   const r = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => req);
   const done = (ok: boolean) => { r?.resolve(ok); set(null); };
+  const titleId = useId();
+  const msgId = useId();
+  // destructive: focus lands on Cancel, so a stray Enter never deletes anything
+  const safeFirst = !!r?.danger && r.cancel !== null;
   return (
-    <Sheet open={!!r} onClose={() => done(false)}>
+    <Sheet open={!!r} onClose={() => done(false)} labelledBy={titleId}>
       {r && (
         <div className="stack" style={{ gap: 16, paddingTop: 4 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.1875rem', letterSpacing: '-0.01em' }}>{r.title}</h2>
-            {r.message && <p className="muted" style={{ margin: '6px 0 0', lineHeight: 1.5 }}>{r.message}</p>}
+            <h2 id={titleId} className="t-20" style={{ margin: 0, letterSpacing: '-0.01em' }}>{r.title}</h2>
+            {r.message && <p id={msgId} className="muted" style={{ margin: '6px 0 0', lineHeight: 1.5 }}>{r.message}</p>}
           </div>
           <div className="stack">
-            <button className={'btn lg block ' + (r.danger ? 'danger-solid' : 'primary')} onClick={() => done(true)} autoFocus>{r.confirm ?? 'Confirm'}</button>
-            {r.cancel !== null && <button className="btn lg block" onClick={() => done(false)}>{r.cancel ?? 'Cancel'}</button>}
+            <button className={'btn lg block ' + (r.danger ? 'danger-solid' : 'primary')} onClick={() => done(true)} autoFocus={!safeFirst}>{r.confirm ?? 'Confirm'}</button>
+            {r.cancel !== null && <button className="btn lg block" onClick={() => done(false)} autoFocus={safeFirst}>{r.cancel ?? 'Cancel'}</button>}
           </div>
         </div>
       )}

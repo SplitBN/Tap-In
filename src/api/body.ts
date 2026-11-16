@@ -17,6 +17,16 @@ export const weightUpdate = defineCommand({ name: 'bodyweight.update', kind: 'ac
     return save('bodyweight', { ...e, kg: kg ?? e.kg, at: at ? Date.parse(at) : e.at, note: note === undefined ? e.note : note.trim() || undefined }); } });
 export const weightDelete = defineCommand({ name: 'bodyweight.delete', kind: 'action', description: 'Delete a weigh-in.',
   input: z.object({ id: zId }), run: async ({ id }) => { await remove('bodyweight', id); return { ok: true }; } });
+// undo for deletes: records are soft-deleted (they sync), so undo clears the marker on the same id
+const RESTORABLE = ['bodyweight', 'entries', 'stacks', 'notes', 'supplements', 'foods'] as const;
+export const recordsRestore = defineCommand({ name: 'records.restore', kind: 'action',
+  description: 'Undo a delete: bring back a deleted weigh-in (bodyweight), food log entry (entries), stack, journal note, supplement or own food by its id. Returns the restored record.',
+  input: z.object({ table: z.enum(RESTORABLE), id: zId }),
+  run: async ({ table, id }) => {
+    const rec = await db.table(table).get(id);
+    if (!rec) throw new Error(`No ${table} record with id "${id}"`);
+    return rec.deletedAt ? save(table, { ...rec, deletedAt: null }) : rec;
+  } });
 export const weightList = defineCommand({ name: 'bodyweight.list', kind: 'query', description: 'Weigh-ins between dates (inclusive), oldest first.',
   input: z.object({ from: zDate.optional(), to: zDate.optional() }),
   run: async ({ from, to }) => (await db.bodyweight.where('at').between(from ? keyToDate(from).getTime() : 0, to ? keyToDate(to).getTime() + 86400000 : Date.now() + 86400000).filter(alive).sortBy('at'))

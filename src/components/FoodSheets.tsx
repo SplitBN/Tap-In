@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { entriesDelete, entriesLog, entriesQuick, entriesUpdate, foodsCreate, foodsDelete, foodsUpdate, recipesSave } from '../api/food';
 import { run } from '../api/registry';
 import { alive, db } from '../db/db';
@@ -8,11 +8,14 @@ import type { Food, FoodEntry, Ingredient, Macros, Meal, Portion } from '../db/t
 import { scale } from '../lib/nutrition';
 import { MEALS, k } from '../lib/meals';
 import { confirmDialog } from './Dialog';
+import { toast } from './Toast';
+import { recordsRestore } from '../api/body';
 import { Icon } from './Icon';
 import { NumberRow, NumberSheet, type NumberSpec } from './NumberPicker';
 import { OptionSheet, PickerRow } from './Picker';
 import { Sheet } from './Sheet';
 import { unitLabel } from "../lib/units";
+import { plural } from '../lib/format';
 
 const baseUnit = (it: { unitBase?: 'g' | 'ml' }) => it.unitBase ?? 'g';
 
@@ -78,10 +81,20 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
           <MealPill meal={meal} onChange={setMeal} />
         </div>
       )}
-      <div className="tabs-row" role="tablist">
+      <div className="seg tabs" role="tablist" aria-label="Add from">
         {TABS.filter((t) => mode === 'log' || t.id !== 'quick').map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className={'tab-btn' + (tab === t.id ? ' on' : '')} onClick={() => setTab(t.id)}>
-            <Icon name={t.icon} size={22} /><span>{t.label}</span>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} onClick={() => setTab(t.id)}
+            onKeyDown={(e) => {
+              const list = TABS.filter((x) => mode === 'log' || x.id !== 'quick');
+              const i = list.findIndex((x) => x.id === t.id);
+              const j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -9;
+              if (j === -9) return;
+              e.preventDefault();
+              const next = list[(j + list.length) % list.length];
+              setTab(next.id);
+              (e.currentTarget.parentElement?.children[(j + list.length) % list.length] as HTMLElement | undefined)?.focus();
+            }}>
+            <Icon name={t.icon} size={16} stroke={2} /><span>{t.label}</span>
           </button>
         ))}
       </div>
@@ -111,12 +124,12 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
                 onOpen={() => setPicked({ item: f.item, qty: f.qty, unit: f.unit })} />
             ))}
             {results && !results.length && (
-              <div className="empty" style={{ padding: 28 }}>
-                <p style={{ margin: 0 }}>No match for “{q}”.</p>
-                <button className="btn" style={{ marginTop: 12 }} onClick={() => setEditor({ kind: 'food', draft: { name: q } })}><Icon name="plus" size={16} /> Create it</button>
+              <div className="empty compact">
+                <p>No match for “{q}”.</p>
+                <button className="btn" onClick={() => setEditor({ kind: 'food', draft: { name: q } })}><Icon name="plus" size={16} /> Create “{q}”</button>
               </div>
             )}
-            {!results && !frequent.length && <p className="empty" style={{ padding: 28 }}>Search in Hebrew or English — typos are fine.</p>}
+            {!results && !frequent.length && <div className="empty compact"><Icon name="search" size={32} /><h3>Find a food</h3><p>Search in Hebrew or English. Typos are fine.</p></div>}
           </div>
         </>
       )}
@@ -128,14 +141,24 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
 
       {tab === 'mine' && (
         <>
-          <div className="row" style={{ margin: '12px 0' }}>
-            <button className="btn grow" onClick={() => setEditor({ kind: 'food' })}><Icon name="plus" size={16} /> Food</button>
-            {mode === 'log' && <button className="btn grow" onClick={() => setEditor({ kind: 'recipe' })}><Icon name="plus" size={16} /> Recipe</button>}
-          </div>
+          {mine.length > 0 && <div className="row" style={{ margin: '12px 0' }}>
+            <button className="btn grow" onClick={() => setEditor({ kind: 'food' })}><Icon name="plus" size={16} /> New food</button>
+            {mode === 'log' && <button className="btn grow" onClick={() => setEditor({ kind: 'recipe' })}><Icon name="plus" size={16} /> New recipe</button>}
+          </div>}
           {mine.length ? mine.map((f) => {
             const it = foodToItem(f); const p = it.portions[0];
             return <FoodRow key={f.id} item={it} m={scale(it.per100, p ? p.g : 100)} amount={p ? p.label.replace(/^1 /, '') : `100 ${baseUnit(it)}`} onOpen={() => setPicked({ item: it })} />;
-          }) : <p className="empty" style={{ padding: 28 }}>Your own foods, scanned products and recipes live here.</p>}
+          }) : (
+            <div className="empty compact">
+              <Icon name="food" size={32} />
+              <h3>No foods of your own yet</h3>
+              <p>Foods you create, products you scan and recipes live here.</p>
+              <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="btn primary" onClick={() => setEditor({ kind: 'food' })}><Icon name="plus" size={16} /> New food</button>
+                {mode === 'log' && <button className="btn" onClick={() => setEditor({ kind: 'recipe' })}><Icon name="plus" size={16} /> New recipe</button>}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -157,14 +180,14 @@ function FoodRow({ item, m, amount, onOpen, selected, onToggle }: {
       <button className="food-row-main pressable" onClick={onOpen}>
         <span className="grow" style={{ minWidth: 0 }}>
           <span className="food-row-name" dir="auto">{item.name}</span>
-          {(item.brand || item.alt) && <bdi className="food-row-alt">{item.brand || item.alt}</bdi>}
+          {(item.brand || item.alt) && <span className="food-row-alt" dir="auto">{item.brand || item.alt}</span>}
           <span className="food-row-sub" dir="ltr">
-            {item.israeli && <span className="il-tag" aria-label="Israeli">IL</span>}
-            {item.source === 'recipe' && <span className="il-tag" style={{ background: 'color-mix(in srgb, var(--c-food) 18%, transparent)', color: 'var(--c-food)' }}>R</span>}
+            {item.israeli && <span className="il-tag" title="Israeli product"><span aria-hidden>IL</span><span className="sr-only">Israeli product</span></span>}
+            {item.source === 'recipe' && <span className="il-tag" title="Recipe"><span aria-hidden>R</span><span className="sr-only">Recipe</span></span>}
             <MacroLine m={m} />
           </span>
         </span>
-        <span className="food-row-kcal num"><b>{k(m.kcal)}</b><span>{amount}</span></span>
+        <span className="food-row-kcal num"><b>{k(m.kcal)}<span className="sr-only"> kcal</span></b><span>{amount}</span></span>
       </button>
       {onToggle && (
         <button className={'sel-circle' + (selected ? ' on' : '')} onClick={onToggle} aria-pressed={selected} aria-label={`Select ${item.name}`}>
@@ -176,7 +199,7 @@ function FoodRow({ item, m, amount, onOpen, selected, onToggle }: {
 }
 
 const MEAL_OPTS = MEALS.map((m) => ({ value: m.id, label: m.label }));
-const SERV: NumberSpec = { min: 1, max: 24, step: 1, decimals: 0, format: (n) => `${n} serving${n > 1 ? 's' : ''}`, keyMax: 200 };
+const SERV: NumberSpec = { min: 1, max: 24, step: 1, decimals: 0, format: (n) => `${plural(n, 'serving', 'servings')}`, keyMax: 200 };
 const BASE_QTY: NumberSpec = { min: 5, max: 1000, step: 5, decimals: 1, keyMin: 0.1, keyMax: 5000 };
 const PORTION_QTY: NumberSpec = { min: 0.25, max: 10, step: 0.25, decimals: 2, keyMin: 0.01, keyMax: 100 };
 function MealPill({ meal, onChange }: { meal: Meal; onChange: (m: Meal) => void }) {
@@ -204,10 +227,13 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
   const [unit, setUnit] = useState('g');
   const [meal, setMeal] = useState<Meal>(meal0);
   const [qtyOpen, setQtyOpen] = useState(false);
+  const [err, setErr] = useState('');
+  const errId = useId();
+  const amountRef = useRef<HTMLButtonElement>(null);
   const [key, setKey] = useState<string | null>(null);
   const curKey = item ? `${item.key}:${entry?.id ?? ''}` : null;
   if (curKey !== key) {
-    setKey(curKey);
+    setKey(curKey); setErr('');
     if (item) {
       const b = baseUnit(item);
       if (entry) { setUnit(entry.unit ?? b); setQty(String(+(entry.qty ?? entry.grams ?? 100).toFixed(2))); setMeal(entry.meal); }
@@ -227,6 +253,7 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
     { label: `100 ${b}`, qty: '100', unit: b },
   ];
   const go = async () => {
+    if (!grams) { setErr('Enter an amount above 0.'); amountRef.current?.focus(); return; }
     if (mode === 'pick') { onDone?.(item, grams); onClose(); return; }
     const amount = { grams, qty: n, unit }; // grams drive nutrition; qty + unit are the portion label shown in the log
     if (entry) await run(entriesUpdate, { id: entry.id, ...amount, meal });
@@ -239,19 +266,21 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
       <div className="stack" style={{ gap: 16 }}>
         <div>
           <div dir="auto" className="amount-title">{item.name}</div>
-          {(item.alt || item.brand) && <div className="muted" dir="auto" style={{ fontSize: '0.875rem' }}>{[item.brand, item.alt].filter(Boolean).join(' · ')}</div>}
+          {(item.alt || item.brand) && <div className="muted bidi-start t-15" dir="auto">{[item.brand, item.alt].filter(Boolean).join(' · ')}</div>}
         </div>
         <div className="amount-top">
           <div>
             <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
-              <button type="button" className="amount-input num" aria-haspopup="dialog" aria-label={`Amount: ${qty}`} onClick={() => setQtyOpen(true)}>{qty || '0'}</button>
+              <button ref={amountRef} type="button" className="amount-input num" aria-haspopup="dialog" aria-label={`Amount: ${qty || 0} ${portion ? unitLabel(portion.label, english).replace(/^1 /, '') : b}`}
+                aria-invalid={!!err} aria-describedby={err ? errId : undefined} onClick={() => setQtyOpen(true)}>{qty || '0'}</button>
               <span className="amount-unit" dir="auto">{portion ? unitLabel(portion.label, english).replace(/^1 /, '') : b}</span>
             </div>
-            <div className="muted num" style={{ fontSize: '0.8125rem' }}>{portion ? `= ${Math.round(grams)} ${b}` : ' '}</div>
+            <p id={errId} className="field-err">{err}</p>
+            <div className="muted num t-13">{portion ? `= ${Math.round(grams)} ${b}` :' '}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div className="amount-kcal num">{k(m.kcal)}<span> kcal</span></div>
-            <div className="muted num" style={{ fontSize: '0.875rem' }}><b className="mc-p">{Math.round(m.p)} g</b> protein</div>
+            <div className="muted num t-15"><b className="mc-p">{Math.round(m.p)} g</b> <span className="mc-p">protein</span></div>
           </div>
         </div>
         <div className="preset-grid">
@@ -259,15 +288,16 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
             <button key={p.unit + p.qty} className={'preset' + (unit === p.unit && (p.unit !== b || qty === p.qty) ? ' on' : '')}
               onClick={() => { setUnit(p.unit); setQty(p.qty); }}>{p.label}</button>
           ))}
-          <button className={'preset' + (unit === b ? ' on' : '')} onClick={() => { if (portion) setQty(String(Math.round(grams))); setUnit(b); }}>{b}</button>
+          <button className={'preset' + (unit === b && qty !== '100' ? ' on' : '')} onClick={() => { if (portion) setQty(String(Math.round(grams))); setUnit(b); setQtyOpen(true); }}>Custom {b}</button>
         </div>
-        {mode === 'log' && <div><MealPill meal={meal} onChange={setMeal} /></div>}
+        {/* new entries take the meal from the add sheet's pill; only an existing entry can move meals here */}
+        {mode === 'log' && entry && <div className="row"><span className="muted grow">Meal</span><MealPill meal={meal} onChange={setMeal} /></div>}
         <MacroPie m={m} />
-        <button className="btn primary lg block" onClick={go} disabled={!grams}><Icon name="check" size={20} stroke={2.6} /> {mode === 'pick' ? 'Add to recipe' : entry ? 'Save' : 'Add'}</button>
+        <button className="btn primary lg block" onClick={go}><Icon name="check" size={20} stroke={2.6} /> {mode === 'pick' ? 'Add to recipe' : entry ? 'Save' : 'Add'}</button>
         {entry && <DeleteEntry entry={entry} onDone={onClose} />}
       </div>
       <NumberSheet open={qtyOpen} onClose={() => setQtyOpen(false)} title="Amount" value={Number.isFinite(n) ? n : null}
-        onPick={(v) => setQty(String(v))} spec={portion ? { ...PORTION_QTY, unit: unitLabel(portion.label, english).replace(/^1 /, '') } : { ...BASE_QTY, unit: b }} />
+        onPick={(v) => { setQty(String(v)); setErr(''); }} spec={portion ? { ...PORTION_QTY, unit: unitLabel(portion.label, english).replace(/^1 /, '') } : { ...BASE_QTY, unit: b }} />
     </Sheet>
   );
 }
@@ -306,7 +336,10 @@ export function MacroPie({ m }: { m: Macros }) {
 }
 
 function DeleteEntry({ entry, onDone }: { entry: FoodEntry; onDone: () => void }) {
-  return <button className="btn danger block" onClick={async () => { await run(entriesDelete, { id: entry.id }); onDone(); }}><Icon name="trash" size={18} /> Delete</button>;
+  return <button className="btn danger block" onClick={async () => {
+    await run(entriesDelete, { id: entry.id }); onDone();
+    toast(`${entry.name || 'Entry'} deleted`, () => run(recordsRestore, { table: 'entries', id: entry.id }));
+  }}><Icon name="trash" size={18} /> Delete</button>;
 }
 
 /* ================================================================== */
@@ -333,7 +366,10 @@ function QuickForm({ meal, date, entry, onDone }: { meal: Meal; date: string; en
   const p = num(v.p), c = num(v.c), f = num(v.f);
   const fromMacros = Math.round(p * 4 + c * 4 + f * 9); // Atwater general factors
   const kcal = v.kcal ? num(v.kcal) : fromMacros;
+  const [err, setErr] = useState('');
+  const kcalId = useId(), errId = useId();
   const go = async () => {
+    if (!kcal) { setErr('Enter calories, or the macros to work them out.'); document.getElementById(kcalId)?.focus(); return; }
     const fields = { name: v.name.trim(), kcal, p, c, f };
     if (entry) await run(entriesUpdate, { id: entry.id, ...fields });
     else await run(entriesQuick, { ...fields, meal, date });
@@ -341,15 +377,18 @@ function QuickForm({ meal, date, entry, onDone }: { meal: Meal; date: string; en
   };
   const field = (key: keyof typeof v, label: string, cls: string, ph?: string) => (
     <label className="field"><span className={cls}>{label}</span>
-      <input className="input num" inputMode="decimal" value={v[key]} placeholder={ph ?? '0'} onChange={(e) => setV({ ...v, [key]: e.target.value })} />
+      <input id={key === 'kcal' ? kcalId : undefined} className="input num" inputMode="decimal" value={v[key]} placeholder={ph ?? '0'}
+        aria-invalid={key === 'kcal' && !!err} aria-describedby={key === 'kcal' && err ? errId : undefined}
+        onChange={(e) => { setV({ ...v, [key]: e.target.value }); setErr(''); }} />
     </label>
   );
   return (
     <div className="stack" style={{ gap: 12, marginTop: 12 }}>
       <label className="field"><span>Name</span><input className="input" dir="auto" value={v.name} placeholder="Shawarma in pita (estimate)" onChange={(e) => setV({ ...v, name: e.target.value })} /></label>
-      <div className="grid-4">{field('p', 'Protein', 'mc-p')}{field('c', 'Carbs', 'mc-c')}{field('f', 'Fat', 'mc-f')}{field('kcal', 'kcal', '', fromMacros ? String(fromMacros) : '0')}</div>
-      <p className="faint" style={{ margin: 0, fontSize: '0.75rem' }}>Leave kcal empty to calculate it from the macros (4 / 4 / 9 kcal per gram).</p>
-      <button className="btn primary lg block" onClick={go} disabled={!kcal}><Icon name="check" size={20} stroke={2.6} /> {entry ? 'Save' : `Add · ${k(kcal)} kcal`}</button>
+      <div className="grid-4">{field('kcal', 'kcal', '', fromMacros ? String(fromMacros) : '0')}{field('c', 'Carbs', 'mc-c')}{field('p', 'Protein', 'mc-p')}{field('f', 'Fat', 'mc-f')}</div>
+      <p id={errId} className="field-err">{err}</p>
+      <p className="faint" style={{ margin: 0, fontSize: '0.75rem' }}>Leave kcal empty to work it out from the macros (4 / 4 / 9 kcal per gram).</p>
+      <button className="btn primary lg block" onClick={go}><Icon name="check" size={20} stroke={2.6} /> {entry ? 'Save' : kcal ? `Add · ${k(kcal)} kcal` : 'Add'}</button>
     </div>
   );
 }
@@ -425,11 +464,11 @@ export function FoodEditor({ open, onClose, onSaved, draft, food }: {
                 <button className="icon-btn sm" aria-label="Remove unit" onClick={() => { setUnits(units.filter((_, j) => j !== i)); if (v.basis === i) setV({ ...v, basis: '100' }); }}><Icon name="close" size={16} /></button>
               </div>
             ))}
-            <button className="btn" onClick={() => setUnits([...units, { label: '', g: '' }])}><Icon name="plus" size={16} /> Unit</button>
+            <button className="btn" onClick={() => setUnits([...units, { label: '', g: '' }])}><Icon name="plus" size={16} /> Add unit</button>
           </div>
         </div>
         <PickerRowInline label="Nutrition per" options={basisOptions} value={v.basis} onChange={(basis) => setV({ ...v, basis })} />
-        <div className="grid-4">{field('kcal', 'kcal')}{field('p', 'Protein', true, '', 'mc-p')}{field('c', 'Carbs', true, '', 'mc-c')}{field('f', 'Fat', true, '', 'mc-f')}</div>
+        <div className="grid-4">{field('kcal', 'kcal')}{field('c', 'Carbs', true, '', 'mc-c')}{field('p', 'Protein', true, '', 'mc-p')}{field('f', 'Fat', true, '', 'mc-f')}</div>
         <button className="btn primary lg block" onClick={go} disabled={!valid}><Icon name="check" size={20} stroke={2.6} /> Save</button>
         {food && <button className="btn danger block" onClick={async () => {
           if (!(await confirmDialog({ title: `Delete “${food.name}”?`, message: 'Past log entries keep their numbers.', confirm: 'Delete food', danger: true }))) return;
@@ -480,15 +519,15 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
         <div className="list" style={{ background: 'var(--card-2)' }}>
           {items.map((it, i) => (
             <div key={i} className="list-item">
-              <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis" dir="auto" style={{ display: 'block' }}>{it.name}</span>
-                <span className="sub"><MacroLine m={scale(it.per100, it.grams)} /> · {k(scale(it.per100, it.grams).kcal)} kcal</span></span>
+              <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis bidi-start" dir="auto" style={{ display: 'block' }}>{it.name}</span>
+                <span className="sub">{k(scale(it.per100, it.grams).kcal)} kcal · <MacroLine m={scale(it.per100, it.grams)} /></span></span>
               <input className="input num" style={{ width: 76, textAlign: 'center', minHeight: 40 }} inputMode="decimal" value={it.grams} aria-label={`${it.name} grams`}
                 onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, grams: Math.max(0, parseFloat(e.target.value) || 0) } : x)))} />
               <span className="faint">g</span>
               <button className="icon-btn sm" aria-label={`Remove ${it.name}`} onClick={() => setItems(items.filter((_, j) => j !== i))}><Icon name="close" size={16} /></button>
             </div>
           ))}
-          <button className="list-item pressable" onClick={() => setAdding(true)} style={{ color: 'var(--accent)' }}><Icon name="plus" size={18} /><span className="title">Ingredient</span></button>
+          <button className="list-item pressable role-text" onClick={() => setAdding(true)}><Icon name="plus" size={18} /><span className="title">Add ingredient</span></button>
         </div>
         <label className="field"><span>Cooked weight (optional)</span>
           <input className="input num" inputMode="decimal" value={cooked} placeholder={`${Math.round(r.weight)} g raw`} onChange={(e) => setCooked(e.target.value)} />

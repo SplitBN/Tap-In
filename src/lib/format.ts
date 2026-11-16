@@ -34,6 +34,10 @@ export function relDay(ts: number) {
 
 export const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
+const PR = new Intl.PluralRules('en');
+/** "1 set", "3 sets", "1,200 kcal": one whole message per count, chosen by the locale's plural rules. */
+export const plural = (n: number, one: string, other: string) => `${n.toLocaleString()} ${PR.select(n) === 'one' ? one : other}`;
+
 export const fmtNum = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
 
 export function setText(l: SetLog, unit: Settings['unit'], mode: Settings['effortMode']) {

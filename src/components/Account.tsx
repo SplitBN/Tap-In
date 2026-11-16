@@ -3,6 +3,7 @@ import { confirmDialog, notice } from './Dialog';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { DEFAULT_API, disablePush, enablePush, pushEnabled, testPush, createInvite, createPairCode, signInWithPairCode, signInWithRecovery, signOut, signUp, syncNow, useSync } from '../lib/sync';
+import { plural } from '../lib/format';
 
 const ago = (ts: number | null) => {
   if (!ts) return 'never';
@@ -38,7 +39,7 @@ export function AccountSection() {
         <div className="list-item">
           <span className="role-chip" data-role="gym"><Icon name={s.status === 'error' ? 'info' : 'check'} size={16} stroke={2.2} /></span>
           <span className="grow"><span className="title">{s.account.user.name}</span>
-            <span className="sub" style={{ display: 'block' }}>{statusText} · {s.pending ? `${s.pending} change${s.pending === 1 ? '' : 's'} waiting` : 'nothing waiting'} · last {ago(s.lastSync)}</span></span>
+            <span className="sub" style={{ display: 'block' }}>{statusText} · {s.pending ? `${plural(s.pending, 'change', 'changes')} waiting` : 'nothing waiting'} · last {ago(s.lastSync)}</span></span>
           <button className="icon-btn filled" aria-label="Sync now" onClick={() => syncNow()} disabled={s.status === 'syncing'}><Icon name="history" size={18} /></button>
         </div>
         <RemindersRow />

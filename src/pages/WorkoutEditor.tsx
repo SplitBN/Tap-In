@@ -12,8 +12,9 @@ import { alive, db } from '../db/db';
 import { useSettings } from '../db/settings';
 import type { Exercise, WorkoutItem } from '../db/types';
 import { run } from '../api/registry';
-import { itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsSuperset, itemsUpdate, workoutsDelete, workoutsRename } from '../api/gym';
-import { fmtDuration } from '../lib/format';
+import { itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsRestore, itemsSuperset, itemsUpdate, workoutsDelete, workoutsRename } from '../api/gym';
+import { fmtDuration, plural } from '../lib/format';
+import { toast } from '../components/Toast';
 import { defaultRestSec } from '../lib/science';
 import { NameSheet } from './Plans';
 import { moveItem } from './Session';
@@ -35,7 +36,7 @@ export function WorkoutEditorPage() {
   const editIdx = workout.items.findIndex((i) => i.key === editKey);
 
   return (
-    <div className="page">
+    <div className="page" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(`/plans/${workout.planId}`)}><Icon name="chevronLeft" /></button>
         <h1 className="small ellipsis">{workout.name}</h1>
@@ -67,9 +68,9 @@ export function WorkoutEditorPage() {
       </SortableList>
 
       {!workout.items.length && (
-        <div className="empty"><Icon name="dumbbell" size={40} /><h3>No exercises</h3></div>
+        <div className="empty compact"><Icon name="dumbbell" size={40} /><h3>No exercises yet</h3><p>Add the exercises you do in this workout.</p></div>
       )}
-      <button className="btn primary block lg" style={{ marginTop: 16 }} onClick={() => setPicking({})}><Icon name="plus" size={18} /> Exercise</button>
+      <button className="btn primary block lg" style={{ marginTop: 16 }} onClick={() => setPicking({})}><Icon name="plus" size={18} /> Add exercises</button>
       <button className="btn danger block" style={{ marginTop: 32 }} onClick={async () => {
         if (!(await confirmDialog({ title: `Delete “${workout.name}”?`, message: "It is removed from this plan. Past sessions stay in your history.", confirm: "Delete workout", danger: true }))) return;
         await run(workoutsDelete, { id: workout.id });
@@ -98,7 +99,13 @@ export function WorkoutEditorPage() {
               {editIdx > 0 && <button className="menu-item" onClick={() => reorder(moveItem(workout.items, editIdx, -1))}><Icon name="chevronUp" />Move up</button>}
               {editIdx < workout.items.length - 1 && <button className="menu-item" onClick={() => reorder(moveItem(workout.items, editIdx, 1))}><Icon name="chevronDown" />Move down</button>}
               <button className="menu-item" onClick={() => { setPicking({ replaceKey: editing.key }); setEditKey(undefined); }}><Icon name="swap" />Replace</button>
-              <button className="menu-item danger" onClick={() => { run(itemsRemove, { ...t, itemKey: editing.key }); setEditKey(undefined); }}><Icon name="trash" />Remove</button>
+              <button className="menu-item danger" onClick={async () => {
+                const removed = editing, index = editIdx, ex = exMap[editing.exerciseId];
+                const supersetWith = removed.supersetId ? workout.items.filter((i) => i.key !== removed.key && i.supersetId === removed.supersetId).map((i) => i.key) : undefined;
+                setEditKey(undefined);
+                await run(itemsRemove, { ...t, itemKey: removed.key });
+                toast(`${exerciseLabel(ex, 'Exercise')} removed`, () => run(itemsRestore, { workoutId: workout.id, index, item: { ...removed }, supersetWith }));
+              }}><Icon name="trash" />Remove</button>
             </div>
           </>
         )}
@@ -139,7 +146,7 @@ export function groupPos(items: WorkoutItem[], i: number): GroupPos {
 }
 function groupStyle(g: GroupPos) {
   if (g === 'solo') return {};
-  const rail = { boxShadow: 'inset 3px 0 0 var(--accent)' };
+  const rail = { boxShadow: 'inset 3px 0 0 var(--role, var(--accent))' };
   if (g === 'first') return { ...rail, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 };
   if (g === 'last') return { ...rail, borderTopLeftRadius: 4, borderTopRightRadius: 4 };
   return { ...rail, borderRadius: 4 };
@@ -147,8 +154,8 @@ function groupStyle(g: GroupPos) {
 
 function summary(it: WorkoutItem, ex: Exercise | undefined, s: ReturnType<typeof useSettings>) {
   const parts = [`${it.sets} × ${it.repsMin != null ? (it.repsMax && it.repsMax !== it.repsMin ? `${it.repsMin}–${it.repsMax}` : it.repsMin) : '—'}`];
-  if (it.warmups) parts.push(`${it.warmups} warm-up`);
-  if (it.drops) parts.push(`${it.drops} drop${it.drops > 1 ? 's' : ''}`);
-  if (s.features.restTimer && ex) parts.push(it.rest.mode === 'countup' ? 'rest ↑' : `rest ${fmtDuration((it.rest.sec ?? defaultRestSec(ex.mechanic, s.restCompoundSec, s.restIsolationSec)) * 1000)}`);
+  if (it.warmups) parts.push(plural(it.warmups, 'warm-up', 'warm-ups'));
+  if (it.drops) parts.push(plural(it.drops, 'drop set', 'drop sets'));
+  if (s.features.restTimer && ex) parts.push(it.rest.mode === 'countup' ? 'rest counts up' : `rest ${fmtDuration((it.rest.sec ?? defaultRestSec(ex.mechanic, s.restCompoundSec, s.restIsolationSec)) * 1000)}`);
   return parts.join(' · ');
 }

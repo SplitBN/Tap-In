@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog, notice } from '../components/Dialog';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { z } from 'zod';
 import { Link } from 'react-router';
 import { Stepper } from '../components/ItemSettings';
@@ -8,7 +8,7 @@ import { Icon } from '../components/Icon';
 import { db } from '../db/db';
 import { useSettings } from '../db/settings';
 import type { Settings } from '../db/types';
-import { fmtDuration } from '../lib/format';
+import { fmtDuration, plural } from '../lib/format';
 import { readBackupFile, saveBackupFile } from '../lib/backup';
 import { run } from '../api/registry';
 import { dataExport, dataImport, settingsUpdate } from '../api/body';
@@ -33,6 +33,7 @@ export function SettingsPage() {
   const set = (patch: z.input<typeof settingsUpdate.input>) => run(settingsUpdate, patch);
   const feat = (k: keyof Settings['features']) => (v: boolean) => set({ features: { [k]: v } });
   const pending = useLiveQuery(() => db.outbox.count(), []) ?? 0;
+  const [taps, setTaps] = useState(0); // 5 taps on the footer reveal the display diagnostics
   return (
     <div className="page">
       <header className="page-head"><h1>Settings</h1></header>
@@ -64,21 +65,21 @@ export function SettingsPage() {
         <Toggle label="Progression suggestions" sub="Today's target from your rep range. Off: last time's numbers" on={f.progression !== false} onChange={feat('progression')} />
         <Toggle label="Post-workout survey" sub="Effort, sleep, body: 3 taps after a workout" on={f.survey} onChange={feat('survey')} />
         <Toggle label="Food" on={f.food} onChange={feat('food')} />
-        <Toggle label="Supplements" on={f.supplements} onChange={feat('supplements')} />
+        <Toggle label="Supps" sub="Supplements, medications and peptides" on={f.supplements} onChange={feat('supplements')} />
       </div>
 
       {f.restTimer && <>
         <div className="section-title">Default rest</div>
         <div className="list">
-          <Line label="Compound"><Stepper value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restCompoundSec: v })} /></Line>
-          <Line label="Isolation"><Stepper value={s.restIsolationSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restIsolationSec: v })} /></Line>
+          <Line label="Compound"><Stepper label="Compound rest" value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restCompoundSec: v })} /></Line>
+          <Line label="Isolation"><Stepper label="Isolation rest" value={s.restIsolationSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restIsolationSec: v })} /></Line>
         </div>
       </>}
 
       <div className="section-title">Body</div>
       <div className="list">
         <Link to="/weight" className="list-item pressable"><span className="grow title">Weight log</span><Icon name="chevronRight" className="chev" size={18} /></Link>
-        <Line label="Weigh-in reminder every"><Stepper value={s.weighInEveryDays} min={1} max={30} format={(v) => `${v} d`} onChange={(v) => set({ weighInEveryDays: v })} /></Line>
+        <Line label="Weigh-in reminder every"><Stepper label="Weigh-in interval" value={s.weighInEveryDays} min={1} max={30} format={(v) => plural(v, 'day', 'days')} onChange={(v) => set({ weighInEveryDays: v })} /></Line>
       </div>
 
       <div className="section-title">Data</div>
@@ -90,14 +91,22 @@ export function SettingsPage() {
             const file = e.target.files?.[0]; e.target.value = '';
             if (!file) return;
             if (!(await confirmDialog({ title: 'Import this backup?', message: 'Records in it replace matching ones here. Nothing else is deleted.', confirm: 'Import' }))) return;
-            try { const { imported } = await run(dataImport, await readBackupFile(file)); await notice('Backup imported', `${imported} records restored.`); }
-            catch (err) { await notice('Could not import', (err as Error).message); }
+            let backup;
+            try { backup = await readBackupFile(file); }
+            catch { await notice('Couldn’t import', 'This file isn’t a Tap In backup. Choose a file exported from Settings → Export backup.'); return; }
+            try { const { imported } = await run(dataImport, backup); await notice('Backup imported', `${plural(imported, 'record', 'records')} restored.`); }
+            catch (err) {
+              const notOurs = /tap in backup|invalid input/i.test((err as Error).message);
+              await notice('Couldn’t import', notOurs ? 'This file isn’t a Tap In backup. Choose a file exported from Settings → Export backup.' : 'Couldn’t import the backup. Try again.');
+            }
           }} />
         </label>
-        <ViewportRow />
-        <div className="list-item"><span className="grow title">Waiting to sync</span><span className="muted num">{pending ? `${pending} changes` : 'Nothing'}</span></div>
+        {taps >= 5 && <ViewportRow />}
+        <div className="list-item"><span className="grow title">Sync</span><span className="muted num">{pending ? `${plural(pending, 'change', 'changes')} waiting` : 'Up to date'}</span></div>
       </div>
-      <p className="faint" style={{ fontSize: '0.8125rem', margin: '8px 4px' }}>Everything is saved on this device right away and synced in the background when you're signed in. Export a backup now and then anyway.</p>
+      <p className="faint t-13" style={{ margin: '8px 4px' }}>Everything is saved on this device right away and synced in the background when you’re signed in. Export a backup now and then anyway.</p>
+      {/* app footer; tapping it 5 times shows the display diagnostics row (debugging the iOS Home Screen layout) */}
+      <p className="faint t-13" style={{ textAlign: 'center', margin: '24px 0 0', userSelect: 'none', WebkitUserSelect: 'none' }} onClick={() => setTaps((n) => n + 1)}>Tap In</p>
     </div>
   );
 }

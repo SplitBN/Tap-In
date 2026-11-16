@@ -9,7 +9,7 @@ import { LineChart, type LinePoint } from '../components/Charts';
 import { db } from '../db/db';
 import { useSettings } from '../db/settings';
 import type { LoadType, SetLog, Unit } from '../db/types';
-import { fmtWeight, relDay, setText } from '../lib/format';
+import { fmtWeight, plural, relDay, setText } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { fromKg } from '../lib/science';
 import { run } from '../api/registry';
@@ -24,7 +24,7 @@ export function HistoryPage() {
   const nav = useNavigate();
   const rows = useLiveQuery(() => run(progressSessions, { limit: 200 }), []);
   return (
-    <div className="page">
+    <div className="page" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav('/plans')}><Icon name="chevronLeft" /></button>
         <h1 className="small">History</h1>
@@ -37,15 +37,15 @@ export function HistoryPage() {
               <span className="grow">
                 <span className="title">{s.name}</span>
                 <span className="sub num" style={{ display: 'block' }}>
-                  {relDay(keyToDate(s.date).getTime())} · {s.minutes} min · {s.workingSets} sets{s.volumeKg > 0 ? ` · ${fmtVolume(s.volumeKg, settings.unit)}` : ''}
+                  {relDay(keyToDate(s.date).getTime())} · {s.minutes} min · {plural(s.workingSets, 'set', 'sets')}{s.volumeKg > 0 ? ` · ${fmtVolume(s.volumeKg, settings.unit)}` : ''}
                 </span>
               </span>
-              {s.prs > 0 && <span className="badge good num" aria-label={`${s.prs} personal record${s.prs === 1 ? '' : 's'}`}><Icon name="flag" size={12} /> {s.prs}</span>}
+              {s.prs > 0 && <span className="badge good num" aria-label={`${plural(s.prs, 'personal record', 'personal records')}`}><Icon name="flag" size={12} /> {s.prs}</span>}
               <Icon name="chevronRight" className="chev" size={18} />
             </Link>
           ))}
         </div>
-      ) : <div className="empty"><Icon name="history" size={40} /><h3>No workouts yet</h3><p>Finished workouts land here.</p><Link to="/" className="btn primary"><Icon name="play" size={18} /> Start one</Link></div>}
+      ) : <div className="empty"><Icon name="history" size={40} /><h3>No workouts yet</h3><p>Finished workouts land here.</p><Link to="/" className="btn primary"><Icon name="play" size={18} /> Start a workout</Link></div>}
     </div>
   );
 }
@@ -84,7 +84,7 @@ export function ExerciseHistoryPage() {
 
   const e1rmPts: LinePoint[] = rows.filter((r) => r.bestSet?.e1rmKg).map((r) => ({ t: t(r), v: W(r.bestSet!.e1rmKg!), approx: !r.bestSet!.e1rmReliable,
     caption: `${loadText(lt, r.bestSet!.loadKg, u)} × ${r.bestSet!.reps}${effort(r.bestSet!.rir)}` }));
-  const volPts: LinePoint[] = rows.filter((r) => r.volumeKg > 0).map((r) => ({ t: t(r), v: Math.round(fromKg(r.volumeKg, u)), caption: `${r.workingSets} sets` }));
+  const volPts: LinePoint[] = rows.filter((r) => r.volumeKg > 0).map((r) => ({ t: t(r), v: Math.round(fromKg(r.volumeKg, u)), caption: plural(r.workingSets, 'set', 'sets') }));
   const repsPts: LinePoint[] = rows.filter((r) => r.mostReps > 0).map((r) => ({ t: t(r), v: r.mostReps, caption: r.heaviest ? loadText(lt, r.heaviest.loadKg, u) : undefined }));
   const heavyPts: LinePoint[] = rows.filter((r) => r.heaviest).map((r) => ({ t: t(r), v: W(r.heaviest!.loadKg), caption: `× ${r.heaviest!.reps}` }));
   const everAdded = data.sessions.some((r) => (r.heaviest?.loadKg ?? 0) > 0) || (data.records.heaviest?.loadKg ?? 0) > 0;
@@ -96,13 +96,13 @@ export function ExerciseHistoryPage() {
       ...(lt === 'bodyweight' && everAdded ? [{ key: 'heavy', title: 'Heaviest added weight', pts: heavyPts, fmt: fmtW }] : []),
       ...(lt === 'assisted' ? [{ key: 'heavy', title: 'Assistance', note: 'Lower is stronger', pts: heavyPts, fmt: fmtW }] : []),
     ]),
-    { key: 'vol', title: 'Session volume', note: 'Load × reps, warm-ups excluded', pts: volPts, fmt: (v: number) => `${v.toLocaleString()} ${u}` },
+    { key: 'vol', title: 'Session volume', note: 'Weight × reps, warm-ups excluded', pts: volPts, fmt: (v: number) => `${v.toLocaleString()} ${u}` },
   ];
 
   const rec = data.records;
   const newestFirst = [...rows].reverse();
   return (
-    <div className="page wide">
+    <div className="page wide" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" /></button>
         <h1 className="small ellipsis">{ex ? <ExName ex={ex} /> : data.exercise.label}</h1>
@@ -112,7 +112,7 @@ export function ExerciseHistoryPage() {
       <div className="row card" style={{ marginBottom: 12 }}>
         <ExerciseThumb ex={ex} size={56} />
         <div className="grow">
-          <div className="num" style={{ fontWeight: 700, fontSize: '1.25rem' }}>{data.totalSessions} session{data.totalSessions === 1 ? '' : 's'}</div>
+          <div className="num w-7 t-20">{plural(data.totalSessions, 'session', 'sessions')}</div>
           <div className="muted" style={{ fontSize: '0.8125rem' }}>{data.firstDate ? `${shortDate(data.firstDate)} – ${shortDate(data.lastDate!)}` : 'Not done yet'}</div>
         </div>
       </div>
@@ -168,16 +168,16 @@ export function ExerciseHistoryPage() {
           <Link key={r.sessionId} to={`/session/${r.sessionId}`} className="card pressable" style={{ color: 'inherit', textDecoration: 'none' }}>
             <div className="row" style={{ marginBottom: 4 }}>
               <span className="grow" style={{ fontWeight: 600 }}>{keyToDate(r.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: r.date.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}</span>
-              {r.prCount > 0 && <span className="badge good num" aria-label={`${r.prCount} personal record${r.prCount === 1 ? '' : 's'}`}><Icon name="flag" size={12} /> PR{r.prCount > 1 ? ` ×${r.prCount}` : ''}</span>}
-              {r.bestSet?.e1rmKg && <span className="badge accent num">e1RM {r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
+              {r.prCount > 0 && <span className="badge good num" aria-label={`${plural(r.prCount, 'personal record', 'personal records')}`}><Icon name="flag" size={12} /> PR{r.prCount > 1 ? ` ×${r.prCount}` : ''}</span>}
+              {r.bestSet?.e1rmKg && <span className="badge accent num" title="Estimated one-rep max">Est. 1RM {r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
             </div>
             <div className="num muted sess-meta">
-              {r.workingSets} sets{r.volumeKg > 0 ? ` · ${fmtVolume(r.volumeKg, u)}` : ''}{r.bestSet ? ` · best ${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}` : ''}
+              {plural(r.workingSets, 'set', 'sets')}{r.volumeKg > 0 ? ` · ${fmtVolume(r.volumeKg, u)}` : ''}{r.bestSet ? ` · best ${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}` : ''}
             </div>
             <div className="stack" style={{ gap: 2 }}>
               {r.sets.map((l) => (
                 <div key={l.id} className="num faint" style={{ fontSize: '0.875rem' }}>
-                  {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? '↳ drop' : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l as SetLog, u, settings.effortMode)}
+                  {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? <><span aria-hidden>↳ </span>Drop set</> : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l as SetLog, u, settings.effortMode)}
                 </div>
               ))}
             </div>

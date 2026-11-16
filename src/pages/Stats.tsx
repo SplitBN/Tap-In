@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router';
 import { BarChart, type Bar } from '../components/Charts';
 import { Icon } from '../components/Icon';
 import { useSettings } from '../db/settings';
-import { titleCase } from '../lib/format';
+import { titleCase, plural } from '../lib/format';
 import { keyToDate } from '../lib/nutrition';
 import { fromKg } from '../lib/science';
 import { run } from '../api/registry';
@@ -29,7 +29,7 @@ export function StatsPage() {
   const none = t.workouts === 0;
 
   return (
-    <div className="page wide">
+    <div className="page wide" data-role="gym">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" /></button>
         <h1 className="small">Stats</h1>
@@ -56,13 +56,13 @@ export function StatsPage() {
               <BarChart label="Weekly volume" bars={bars((w) => vol(w.volumeKg), (w) => `${w.workingSets} sets`)} fmt={(v) => `${v.toLocaleString()} ${unit}`} />
             </ChartCard>
             <ChartCard title="Workouts per week">
-              <BarChart integer label="Workouts per week" bars={bars((w) => w.workouts, (w) => (w.avgMinutes != null ? `avg ${fmtMin(w.avgMinutes)}` : 'rest week'))} fmt={(v) => `${v} workout${v === 1 ? '' : 's'}`} />
+              <BarChart integer label="Workouts per week" bars={bars((w) => w.workouts, (w) => (w.avgMinutes != null ? `avg ${fmtMin(w.avgMinutes)}` : 'rest week'))} fmt={(v) => `${plural(v, 'workout', 'workouts')}`} />
             </ChartCard>
             <ChartCard title="Time per week" note="Total workout time (start to finish)">
-              <BarChart label="Workout time per week" bars={bars((w) => w.minutes, (w) => `${w.workouts} workout${w.workouts === 1 ? '' : 's'}`)} fmt={fmtMin} />
+              <BarChart label="Workout time per week" bars={bars((w) => w.minutes, (w) => `${plural(w.workouts, 'workout', 'workouts')}`)} fmt={fmtMin} />
             </ChartCard>
             <ChartCard title="PRs per week" note="Each e1RM, weight or rep PR counts 1">
-              <BarChart integer label="PRs per week" bars={bars((w) => w.prs)} fmt={(v) => `${v} PR${v === 1 ? '' : 's'}`} />
+              <BarChart integer label="PRs per week" bars={bars((w) => w.prs)} fmt={(v) => `${plural(v, 'PR', 'PRs')}`} />
             </ChartCard>
           </div>
           <Muscles data={data} />
@@ -109,7 +109,7 @@ function Muscles({ data }: { data: WeeklyProgress }) {
   return (
     <section className="card muscle-card" aria-label="Hard sets per muscle this week">
       <h3 className="chart-title">Hard sets per muscle</h3>
-      <div className="chart-note">This week so far{avgN ? ` vs average of the last ${avgN} full week${avgN === 1 ? '' : 's'}` : ''}</div>
+      <div className="chart-note">This week so far{avgN ? ` vs average of the last ${plural(avgN, 'full week', 'full weeks')}` : ''}</div>
       <div className="m-legend" aria-hidden>
         <span><i className="sw-now" />This week</span>
         {avgN > 0 && <span><i className="sw-avg" />Average</span>}

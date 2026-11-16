@@ -1,13 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { toast } from '../components/Toast';
 import { Icon } from '../components/Icon';
 import { NumberSheet, type NumberSpec } from '../components/NumberPicker';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
-import { weightDelete, weightLog, weightUpdate } from '../api/body';
+import { recordsRestore, weightDelete, weightLog, weightUpdate } from '../api/body';
 import { useSettings } from '../db/settings';
 import type { BodyweightEntry } from '../db/types';
-import { fmtDate, fmtWeight } from '../lib/format';
+import { fmtDate, fmtNum, fmtWeight } from '../lib/format';
 import { fromKg, toKg } from '../lib/science';
 
 export function WeightPage() {
@@ -15,12 +17,22 @@ export function WeightPage() {
   const entries = useLiveQuery(() => db.bodyweight.orderBy('at').reverse().filter(alive).toArray(), []) ?? [];
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<BodyweightEntry>();
+  const nav = useNavigate();
+  // a root tab when Supps is off (it takes that tab slot); otherwise a pushed screen with a back button
+  const pushed = settings.features.supplements;
+  const back = () => ((window.history.state?.idx ?? 0) > 0 ? nav(-1) : nav('/settings'));
+  const add = <button className="icon-btn filled" aria-label="Log weight" onClick={() => { setEdit(undefined); setOpen(true); }}><Icon name="plus" /></button>;
   return (
-    <div className="page">
-      <header className="page-head">
-        <h1>Weight</h1>
-        <button className="icon-btn filled" aria-label="Log weight" onClick={() => { setEdit(undefined); setOpen(true); }}><Icon name="plus" /></button>
-      </header>
+    <div className="page" data-role="weight">
+      {pushed ? (
+        <header className="page-head">
+          <button className="icon-btn" aria-label="Back" onClick={back}><Icon name="chevronLeft" /></button>
+          <h1 className="small">Weight</h1>
+          {add}
+        </header>
+      ) : (
+        <header className="page-head"><h1>Weight</h1>{add}</header>
+      )}
       {entries.length ? (
         <>
           <Sparkline entries={entries} unit={settings.unit} />
@@ -34,7 +46,7 @@ export function WeightPage() {
                     <span className="title num">{fmtWeight(e.kg, settings.unit)}</span>
                     <span className="sub" style={{ display: 'block' }}>{fmtDate(e.at)} · {new Date(e.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
                   </span>
-                  {d != null && <span className="num" style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>{d > 0 ? '+' : ''}{d.toFixed(1)}</span>}
+                  {d != null && <span className="num t-15" style={{ color: 'var(--text-2)' }}>{d > 0 ? '+' : d < 0 ? '−' : '±'}{Math.abs(d).toFixed(1)} {settings.unit}</span>}
                 </button>
               );
             })}
@@ -42,7 +54,7 @@ export function WeightPage() {
         </>
       ) : (
         <div className="empty"><Icon name="scale" size={40} /><h3>No weigh-ins yet</h3><p>Weigh in at the same time of day for the cleanest trend.</p>
-          <button className="btn primary" onClick={() => setOpen(true)}>Log weight</button></div>
+          <button className="btn primary" onClick={() => { setEdit(undefined); setOpen(true); }}><Icon name="plus" size={18} /> Log weight</button></div>
       )}
       <WeighInSheet open={open} onClose={() => setOpen(false)} entry={edit} />
     </div>
@@ -64,7 +76,7 @@ function Sparkline({ entries, unit }: { entries: BodyweightEntry[]; unit: 'kg' |
         <span className="num muted" style={{ fontSize: '0.8125rem' }}>{fmtWeight(min, unit)} – {fmtWeight(max, unit)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="Weight over time">
-        <path d={d} fill="none" stroke="var(--warn)" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={d} fill="none" stroke="var(--role, var(--c-weight))" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
     </div>
   );
@@ -75,8 +87,8 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
   const unit = settings.unit;
   const last = useLiveQuery(() => db.bodyweight.orderBy('at').reverse().filter(alive).first(), []);
   const spec = useMemo<NumberSpec>(() => (unit === 'kg'
-    ? { min: 30, max: 250, step: 0.1, decimals: 1, unit, format: (v) => `${v.toFixed(1)} kg` }
-    : { min: 66, max: 550, step: 0.2, decimals: 1, unit, format: (v) => `${v.toFixed(1)} lb` }), [unit]);
+    ? { min: 30, max: 250, step: 0.1, decimals: 1, unit, format: (v) => `${fmtNum(v)} kg` }
+    : { min: 66, max: 550, step: 0.2, decimals: 1, unit, format: (v) => `${fmtNum(v)} lb` }), [unit]);
   const [when, setWhen] = useState('');
   const [was, setWas] = useState(false);
   if (open !== was) {
@@ -92,7 +104,7 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
     else await run(weightLog, { kg, at });
   };
   return (
-    <NumberSheet open={open} onClose={onClose} title={entry ? 'Edit weigh-in' : 'Log weight'} value={cur} onPick={save} spec={spec}
+    <NumberSheet open={open} onClose={onClose} role="weight" title={entry ? 'Edit weigh-in' : 'Log weight'} value={cur} onPick={save} spec={spec}
       extra={
         <label className="field"><span>When</span>
           <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
@@ -104,7 +116,10 @@ export function WeighInSheet({ open, onClose, entry }: { open: boolean; onClose:
           <button className="btn grow" onClick={async () => { await run(weightUpdate, { id: entry.id, kg: entry.kg, at: new Date(new Date(when).getTime() || entry.at).toISOString() }); onClose(); }}>
             <Icon name="check" size={18} stroke={2.4} /> Save time
           </button>
-          <button className="btn danger grow" onClick={async () => { await run(weightDelete, { id: entry.id }); onClose(); }}><Icon name="trash" size={16} /> Delete</button>
+          <button className="btn danger grow" onClick={async () => {
+            await run(weightDelete, { id: entry.id }); onClose();
+            toast('Weigh-in deleted', () => run(recordsRestore, { table: 'bodyweight', id: entry.id }));
+          }}><Icon name="trash" size={16} /> Delete</button>
         </div>
       )}
     />
