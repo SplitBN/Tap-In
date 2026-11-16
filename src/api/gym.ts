@@ -29,7 +29,7 @@ const applyPatch = (it: WorkoutItem, p: z.infer<typeof zItemPatch>): WorkoutItem
 export const exercisesSearch = defineCommand({
   name: 'exercises.search', kind: 'query',
   description: 'Find exercises by name (typo-tolerant, any word order, gym shorthand like "db", "rdl", "ohp"). Returns id, name, muscles, equipment, loadType, unilateral.',
-  input: z.object({ query: z.string(), muscle: z.string().optional(), limit: z.number().int().max(100).default(20) }),
+  input: z.object({ query: z.string(), muscle: z.string().optional(), limit: z.number().int().min(1).max(100).default(20) }),
   run: async ({ query, muscle, limit }) => {
     const all = (await db.exercises.toArray()).filter((e) => alive(e) && (!muscle || e.muscles.includes(muscle)));
     return searchExercises(all, query, await exerciseUsage(), limit)
@@ -191,7 +191,7 @@ export const sessionsGet = defineCommand({ name: 'sessions.get', kind: 'query', 
   input: z.object({ id: zId }), run: async ({ id }) => sessionView(await need(db.sessions.get(id), 'Session')) });
 export const sessionsList = defineCommand({ name: 'sessions.list', kind: 'query',
   description: 'Finished workout sessions between two dates (inclusive), newest first: id, name, date, duration, sets done.',
-  input: z.object({ from: zDate.optional(), to: zDate.optional(), limit: z.number().int().max(500).default(50) }),
+  input: z.object({ from: zDate.optional(), to: zDate.optional(), limit: z.number().int().min(1).max(500).default(50) }),
   run: async ({ from, to, limit }) => {
     const lo = from ? keyToDate(from).getTime() : 0; const hi = to ? keyToDate(to).getTime() + 86400000 : Date.now() + 86400000;
     const list = await db.sessions.where('startedAt').between(lo, hi).filter((s) => alive(s) && !!s.endedAt).reverse().limit(limit).toArray();

@@ -12,6 +12,7 @@ import { goalFor } from '../db/food';
 import type { FoodEntry, Macros, Meal, NutritionGoal } from '../db/types';
 import { dateKey, keyToDate, shiftDate, sum } from '../lib/nutrition';
 import { MEALS, mealNow, k } from '../lib/meals';
+import { hasHebrew, unitLabel } from '../lib/units';
 
 export { MEALS, mealNow, k } from '../lib/meals';
 
@@ -140,7 +141,8 @@ function Shortcut({ icon, label, tint, onClick }: { icon: string; label: string;
 }
 
 const fmtQty = (e: FoodEntry) => {
-  if (e.unit && e.unit !== 'g' && e.unit !== 'ml' && e.qty != null) return `${+e.qty.toFixed(2)} × ${e.unit.replace(/^1 /, '')}`;
+  // same wording as the amount picker: Hebrew household measures read in English when the food name is English
+  if (e.unit && e.unit !== 'g' && e.unit !== 'ml' && e.qty != null) return `${+e.qty.toFixed(2)} × ${unitLabel(e.unit, !hasHebrew(e.name)).replace(/^1 /, '')}`;
   return `${Math.round(e.qty ?? e.grams ?? 0)} ${e.unit === 'ml' ? 'ml' : 'g'}`;
 };
 

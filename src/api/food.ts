@@ -13,7 +13,7 @@ const item = (it: Awaited<ReturnType<typeof getItem>>) => it && ({ key: it.key, 
 
 export const foodsSearch = defineCommand({ name: 'foods.search', kind: 'query',
   description: 'Search foods (Hebrew or English, typo-tolerant): your own foods and recipes, Israeli MoH and Israeli products, then USDA. Ranked by match then by how often you log it. Nutrition is per 100 g (or 100 ml). key is what you pass to entries.log / recipes.',
-  input: z.object({ query: z.string(), limit: z.number().int().max(60).default(15) }),
+  input: z.object({ query: z.string(), limit: z.number().int().min(1).max(60).default(15) }),
   run: async ({ query, limit }) => (await searchFoods(query, limit)).map(item) });
 export const foodsGet = defineCommand({ name: 'foods.get', kind: 'query', description: 'One food by key (with portions/units and per-100 g nutrition).',
   input: z.object({ key: z.string() }), run: async ({ key }) => item(await getItem(key)) ?? null });
@@ -145,7 +145,7 @@ export const goalsGet = defineCommand({ name: 'goals.get', kind: 'query', descri
   input: z.object({ date: zDate.optional() }), run: async ({ date }) => (await goalFor(date ?? dateKey())) ?? null });
 export const goalsSet = defineCommand({ name: 'goals.set', kind: 'action',
   description: 'Set nutrition goals from today on (older days keep their targets; a goal already set today is updated in place). Omitted fields keep current values. maintenanceKcal = a manual maintenance override; null (or omitted with no override in force) = the Mifflin-St Jeor × activity estimate from the latest weigh-in. kcal defaults from maintenance and weekly rate, protein to 1.6 g/kg. Pass null to turn a kcal/protein/carb/fat target off. Returns the saved goal.',
-  input: z.object({ sex: z.enum(['male', 'female']).optional(), birthYear: z.number().int().optional(), heightCm: z.number().optional(), activity: z.enum(['sedentary', 'light', 'active', 'very']).optional(),
+  input: z.object({ sex: z.enum(['male', 'female']).optional(), birthYear: z.number().int().min(1900).max(2020).optional(), heightCm: z.number().optional(), activity: z.enum(['sedentary', 'light', 'active', 'very']).optional(),
     rateKgPerWeek: z.number().min(-1.5).max(1.5).optional(), maintenanceKcal: z.number().positive().nullable().optional(),
     kcal: z.number().positive().nullable().optional(), proteinG: z.number().positive().nullable().optional(), carbsG: z.number().min(0).nullable().optional(), fatG: z.number().min(0).nullable().optional() }),
   run: async (i) => {

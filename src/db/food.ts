@@ -1,7 +1,7 @@
 import { alive, db, newRecord, save } from './db';
 import type { Food, FoodEntry, Macros, Meal, NutritionGoal, Portion } from './types';
 import { scale } from '../lib/nutrition';
-import { rank, tokenize } from '../lib/search';
+import { normalize, rank, tokenize } from '../lib/search';
 
 /** Unified view of anything you can log: bundled databases and your own/scanned foods. */
 export interface FoodItem {
@@ -102,10 +102,28 @@ export async function searchFoods(q: string, limit = 60): Promise<FoodItem[]> {
   const [{ items }, usage] = await Promise.all([loadFoods(), foodUsage()]);
   const hebrewQuery = HEBREW.test(q);
   const pool = hebrewQuery ? [...mine, ...items.filter((i) => i.source !== 'usda')] : [...mine, ...items];
+  // Food tables name the base food first, then qualifiers after commas ("Rice, white, cooked"; "אורז, לבן").
+  // Query = that head noun → it's the food itself; query followed by another word ("Rice flour") → a derived product.
+  const qn = normalize(q).trim();
+  const head = (text: string | undefined) => {
+    const n = normalize(text ?? '').trim();
+    if (!qn || !n.startsWith(qn)) return 0;
+    const rest = (text ?? '').trim().slice(q.trim().length).trimStart();
+    return n === qn || rest.startsWith(',') || rest === '' ? -1.5 : 0.5;
+  };
+  const PREPARED = /\b(fried|chips|mix|popped|porridge|nuggets|patties|roll|salad|dried|powder|cake|pudding|coated|flavou?red|canned|sweetened|breaded|instant)\b|McDonald|מטוגן|אבקה|מיובש|תערובת/i;
+  const PLAIN = /\b(cooked|boiled|steamed|raw|plain|fresh|whole)\b|מבושל|טרי/i;
+  const headBias = (it: FoodItem) => {
+    const h = Math.min(head(it.name), head(it.alt));
+    if (h >= 0) return h;
+    const all = `${it.name} ${it.alt ?? ''}`;
+    // among foods that ARE the query: plain cooked/raw forms before prepared products
+    return h + (/uncooked|לא מבושל/i.test(all) ? 0.4 : 0) + (PREPARED.test(all) ? 0.8 : PLAIN.test(all) ? -0.4 : 0);
+  };
   return rank(pool, q, {
     tokensOf, keyOf: (it) => it.key, nameLength: (it) => it.name.length, usage, limit,
     bias: (it) => (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
-      : it.israeli ? 0.4 : -1) + (ODD.test(`${it.name} ${it.alt ?? ''}`) ? 3 : 0),
+      : it.israeli ? 0.4 : -1) + (ODD.test(`${it.name} ${it.alt ?? ''}`) ? 3 : 0) + headBias(it),
   });
 }
 
