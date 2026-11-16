@@ -1,16 +1,20 @@
-// End-of-workout summary: big stats, PR / beat-last-time highlights, per-exercise trend, sets per muscle,
-// then the optional post-workout survey — one screen. All numbers come from the sessions.summary command.
+// End-of-workout summary (reference: docs/design-refs/alpha-workout-summary.png): one badge with the improvement count,
+// a stat strip (Nth workout · duration · week streak), exercise rows with PR / ↑ counts, muscle rows, then the optional
+// post-workout survey. All numbers come from the sessions.summary command.
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { z } from 'zod';
 import { run } from '../api/registry';
 import { sessionsRate, sessionsSummary, type WorkoutSummaryData } from '../api/gym';
 import { useSettings } from '../db/settings';
-import type { LoadType, SurveyBody, SurveySleep, Unit } from '../db/types';
-import { fmtWeight, plural, relDay, titleCase } from '../lib/format';
+import { db } from '../db/db';
+import type { Exercise, LoadType, SurveyBody, SurveySleep, Unit } from '../db/types';
+import { fmtDate, fmtWeight, plural, relDay, titleCase } from '../lib/format';
 import { fromKg } from '../lib/science';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
+import { ExThumb } from './ExThumb';
+import { MuscleMap } from './MuscleMap';
 
 type Ex = WorkoutSummaryData['exercises'][number];
 
@@ -31,34 +35,45 @@ const signed = (v: number, fmt: (x: number) => string) => `${v > 0 ? '+' : v < 0
 export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boolean; sessionId: string; onClose: () => void; onDone: () => void }) {
   const settings = useSettings();
   const data = useLiveQuery(() => (open ? run(sessionsSummary, { id: sessionId }) : undefined), [open, sessionId]);
+  const exMap = useLiveQuery(async () => {
+    const ids = data?.exercises.map((e) => e.exerciseId) ?? [];
+    return Object.fromEntries((await db.exercises.bulkGet(ids)).filter(Boolean).map((e) => [e!.id, e!])) as Record<string, Exercise>;
+  }, [data?.exercises.map((e) => e.exerciseId).join()]) ?? {};
+  const [order, setOrder] = useState<'workout' | 'improved'>('workout');
   const unit = settings.unit;
+  const exercises = data ? (order === 'workout' ? data.exercises : [...data.exercises].sort((a, b) => (b.prSets * 2 + b.upSets) - (a.prSets * 2 + a.upSets))) : [];
   return (
     <Sheet open={open} onClose={onClose} full role="gym" title={data ? data.name : 'Summary'}>
       {data && (
         <div className="sum">
           <p className="faint sum-when">{relDay(Date.parse(data.startedAt))}{data.live ? ' · in progress' : ''}</p>
 
-          <div className="sum-stats sum-in" style={{ '--i': 0 } as CSSProperties}>
-            <Stat label="Time" {...fmtMin(data.durationMin)}
-              delta={data.vsLastWorkout && Math.abs(data.vsLastWorkout.durationDeltaMin) >= 1 ? { text: signed(Math.round(data.vsLastWorkout.durationDeltaMin), (x) => `${x} min`) } : undefined} />
-            <Stat label="Volume" v={fmtVolume(data.totals.volumeKg, unit)} u={unit}
-              delta={data.vsLastWorkout?.volumeDeltaPct != null && data.vsLastWorkout.volumeDeltaPct !== 0
-                ? { text: signed(Math.round(data.vsLastWorkout.volumeDeltaPct), (x) => `${x}%`), tone: data.vsLastWorkout.volumeDeltaPct > 0 ? 'good' : 'bad' } : undefined} />
-            <Stat label="Sets" v={String(data.totals.workingSets)} u=""
-              delta={data.vsLastWorkout && data.vsLastWorkout.setsDelta ? { text: signed(data.vsLastWorkout.setsDelta, String) } : undefined} />
-          </div>
-          <p className="faint sum-caption">Volume = weight × reps{data.vsLastWorkout ? ` · vs last ${data.name}, ${relDay(Date.parse(data.vsLastWorkout.date + 'T12:00')).toLowerCase()}` : ''}</p>
+          <Badge data={data} />
 
-          <Highlights data={data} unit={unit} />
+          <div className="sum-strip sum-in" style={{ '--i': 1 } as CSSProperties}>
+            <StripStat icon="bolt" tone="gold" value={<>{data.workoutNumber.toLocaleString()}<small>{ordinal(data.workoutNumber)}</small></>} label="workout" />
+            <StripStat icon="timer" tone="gold" value={fmtMin(data.durationMin).v} label={fmtMin(data.durationMin).u === 'h' ? 'hours' : 'min'} />
+            <StripStat icon="fire" tone="warm" value={<>{data.weekStreak}<small>w</small></>} label="streak" srLabel={`${plural(data.weekStreak, 'week', 'weeks')} in a row`} />
+          </div>
+          <p className="faint sum-caption num">
+            {plural(data.totals.workingSets, 'set', 'sets')} · {fmtVolume(data.totals.volumeKg, unit)} {unit}
+            {data.vsLastWorkout?.volumeDeltaPct != null && data.vsLastWorkout.volumeDeltaPct !== 0 && <> · <span className={data.vsLastWorkout.volumeDeltaPct > 0 ? 'good-text' : ''}>{signed(Math.round(data.vsLastWorkout.volumeDeltaPct), (x) => `${x}%`)}</span> vs {fmtDate(Date.parse(data.vsLastWorkout.date + 'T12:00'), { month: 'short', day: 'numeric' })}</>}
+          </p>
 
           {data.exercises.length > 0 && <>
-            <div className="section-title">Exercises</div>
-            <div className="list sum-in" style={{ '--i': 2 } as CSSProperties}>
-              {data.exercises.map((e) => <ExerciseRow key={e.exerciseId} e={e} unit={unit} />)}
+            <div className="sum-head">
+              <span className="faint">{plural(data.exercises.length, 'exercise', 'exercises')}</span>
+              <button className="text-link sum-sort" onClick={() => setOrder(order === 'workout' ? 'improved' : 'workout')}
+                aria-label={`Sorted by ${order === 'workout' ? 'workout order' : 'most improved'}. Change`}>
+                {order === 'workout' ? 'Workout order' : 'Most improved'}<Icon name="sort" size={18} />
+              </button>
+            </div>
+            <div className="group sum-in" style={{ '--i': 2 } as CSSProperties}>
+              {exercises.map((e) => <ExerciseRow key={e.exerciseId} e={e} ex={exMap[e.exerciseId]} unit={unit} />)}
             </div>
           </>}
 
-          {data.muscles.length > 0 && <MuscleBars data={data} />}
+          {data.muscles.length > 0 && <MuscleRows data={data} />}
 
           {settings.features.survey && <Survey data={data} />}
 
@@ -71,43 +86,52 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
   );
 }
 
-function Stat({ label, v, u, delta }: { label: string; v: string; u: string; delta?: { text: string; tone?: 'good' | 'bad' } }) {
+const ordinal = (n: number) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; };
+
+/** One big badge with the number of improvements (PR sets + sets that beat last time). */
+function Badge({ data }: { data: WorkoutSummaryData }) {
+  const n = data.improvements;
+  const prs = data.exercises.reduce((a, e) => a + e.prSets, 0);
+  const ups = n - prs;
   return (
-    <div className="sum-stat">
-      <div className="sum-stat-label">{label}</div>
-      <div className="sum-stat-value num">{v}{u && <span className="sum-stat-unit">{u}</span>}</div>
-      {delta && <div className={'sum-delta num ' + (delta.tone ?? '')}>{delta.text}</div>}
+    <div className="sum-badge sum-in" style={{ '--i': 0 } as CSSProperties}>
+      <svg viewBox="0 0 200 150" width="200" height="150" aria-hidden className="sum-badge-art">
+        <defs>
+          <linearGradient id="sum-gold" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffe08a" /><stop offset="0.55" stopColor="#ffc53d" /><stop offset="1" stopColor="#f29b17" />
+          </linearGradient>
+        </defs>
+        <g fill="var(--card-3)">
+          <circle cx="38" cy="38" r="6" /><circle cx="164" cy="36" r="6" /><circle cx="26" cy="112" r="5" /><circle cx="176" cy="110" r="5" />
+          <path d="M44 78l4.4 8.9 9.8 1.4-7.1 6.9 1.7 9.8-8.8-4.6-8.8 4.6 1.7-9.8-7.1-6.9 9.8-1.4z" />
+          <path d="M158 78l4.4 8.9 9.8 1.4-7.1 6.9 1.7 9.8-8.8-4.6-8.8 4.6 1.7-9.8-7.1-6.9 9.8-1.4z" />
+        </g>
+        <path d="M100 14l16.5 33.4 36.9 5.4-26.7 26 6.3 36.7L100 98.2l-33 17.3 6.3-36.7-26.7-26 36.9-5.4z"
+          fill="url(#sum-gold)" stroke="url(#sum-gold)" strokeWidth="16" strokeLinejoin="round" />
+        <path d="M100 14l16.5 33.4 36.9 5.4-26.7 26 6.3 36.7L100 98.2l-33 17.3 6.3-36.7-26.7-26 36.9-5.4z"
+          fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="2" strokeLinejoin="round" transform="translate(0 -1)" />
+      </svg>
+      <span className="sum-badge-num num" aria-hidden>{n > 0 ? n : <Icon name="check" size={40} stroke={3.4} />}</span>
+      <p className="sum-badge-cap">
+        {n > 0 ? <>
+          {prs > 0 && <span className="pr-text"><Icon name="medal" size={16} stroke={2} />{plural(prs, 'PR', 'PRs')}</span>}
+          {ups > 0 && <span className="good-text"><Icon name="arrowUp" size={16} stroke={2.4} />{plural(ups, 'set', 'sets')} beat last time</span>}
+        </> : <span>Workout done</span>}
+      </p>
     </div>
   );
 }
 
-function Highlights({ data, unit }: { data: WorkoutSummaryData; unit: Unit }) {
-  const rows = data.exercises.map((e) => {
-    const parts: { pr: boolean; text: string }[] = [];
-    if (e.prs.e1rm) parts.push({ pr: true, text: `Best est. 1RM ${fmtWeight(half(e.prs.e1rm.kg), unit)}` });
-    if (e.prs.weight) parts.push({ pr: true, text: `Heaviest ${loadText(e.loadType, e.prs.weight.loadKg, unit)}` });
-    if (e.prs.reps) parts.push({ pr: true, text: `Rep PR ${e.prs.reps.reps} × ${loadText(e.loadType, e.prs.reps.loadKg, unit)}` });
-    if (!parts.length && e.trend === 'up')
-      parts.push({ pr: false, text: e.beatByE1rm && e.e1rmDeltaKg ? `Beat last time · est. 1RM +${fmtWeight(half(e.e1rmDeltaKg), unit)}` : 'Beat last time · more reps' });
-    return { e, parts };
-  }).filter((r) => r.parts.length).sort((a, b) => Number(b.parts[0].pr) - Number(a.parts[0].pr));
-  if (!rows.length) return null;
-  const prCount = rows.filter((r) => r.parts[0].pr).length;
+function StripStat({ icon, tone, value, label, srLabel }: { icon: string; tone: 'gold' | 'warm'; value: ReactNode; label: string; srLabel?: string }) {
   return (
-    <>
-      <div className="section-title">{prCount ? plural(prCount, 'record', 'records') : 'Progress'}</div>
-      <div className="sum-hl sum-in" style={{ '--i': 1 } as CSSProperties}>
-        {rows.map(({ e, parts }) => (
-          <div key={e.exerciseId} className="sum-hl-row">
-            <span className={'sum-hl-icon' + (parts[0].pr ? ' pr' : '')} aria-hidden><Icon name={parts[0].pr ? 'bolt' : 'chevronUp'} size={18} stroke={2.4} /></span>
-            <span className="grow">
-              <span className="sum-hl-title ellipsis">{e.exercise}</span>
-              <span className="sum-hl-sub">{parts.map((p) => p.text).join(' · ')}</span>
-            </span>
-          </div>
-        ))}
-      </div>
-    </>
+    <div className="sum-strip-item">
+      <span className={'sum-strip-icon ' + tone} aria-hidden><Icon name={icon} size={26} stroke={2} /></span>
+      <span>
+        <span className="sum-strip-value num" aria-hidden={srLabel ? true : undefined}>{value}</span>
+        <span className="sum-strip-label" aria-hidden={srLabel ? true : undefined}>{label}</span>
+        {srLabel && <span className="sr-only">{srLabel}</span>}
+      </span>
+    </div>
   );
 }
 
@@ -118,47 +142,62 @@ const TREND = {
   new: { sym: 'New', label: 'first time', cls: 'new' },
 } as const;
 
-function ExerciseRow({ e, unit }: { e: Ex; unit: Unit }) {
+/** Thumbnail, name · equipment, "N sets" with PR / ↑ counts; tap for the details (best set, est. 1RM, records). */
+function ExerciseRow({ e, ex, unit }: { e: Ex; ex?: Exercise; unit: Unit }) {
+  const [open, setOpen] = useState(false);
   const t = TREND[e.trend];
   const b = e.bestSet;
+  const records: string[] = [];
+  if (e.prs.e1rm) records.push(`Best est. 1RM ${fmtWeight(half(e.prs.e1rm.kg), unit)}`);
+  if (e.prs.weight) records.push(`Heaviest ${loadText(e.loadType, e.prs.weight.loadKg, unit)}`);
+  if (e.prs.reps) records.push(`Rep PR ${e.prs.reps.reps} × ${loadText(e.loadType, e.prs.reps.loadKg, unit)}`);
   return (
-    <div className="list-item">
-      <span className="grow">
-        <span className="title ellipsis" style={{ display: 'block' }}>{e.exercise}</span>
-        <span className="sub num" style={{ display: 'block' }}>
-          {plural(e.sets, 'set', 'sets')}
-          {b && ` · ${loadText(e.loadType, b.loadKg, unit)} × ${b.reps}`}{b?.e1rmKg != null && ` · est. 1RM ${b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}
-          {e.bodyweight === 'missing' && ' · no weigh-in'}
+    <div>
+      <button className="ex-row pressable" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ExThumb ex={ex} />
+        <span className="grow" style={{ minWidth: 0 }}>
+          <span className="ex-row-name ellipsis">{e.exercise}</span>
+          <span className="ex-row-sub sum-counts num">
+            <span>{plural(e.sets, 'set', 'sets')}</span>
+            {e.prSets > 0 && <span className="pr-text"><Icon name="medal" size={16} stroke={2} /><span className="sr-only">PR sets: </span>{e.prSets}</span>}
+            {e.upSets > 0 && <span className="good-text"><Icon name="arrowUp" size={16} stroke={2.4} /><span className="sr-only">sets beat last time: </span>{e.upSets}</span>}
+            {e.trend === 'new' && <span className="faint">new</span>}
+          </span>
         </span>
-      </span>
-      <span className={'sum-trend ' + t.cls} role="img" aria-label={t.label} title={t.label}>{t.sym}</span>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={18} className="chev" />
+      </button>
+      {open && (
+        <div className="sum-detail num">
+          {b && <div>Best set {loadText(e.loadType, b.loadKg, unit)} × {b.reps}{b.e1rmKg != null && ` · est. 1RM ${b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}</div>}
+          <div>{t.sym !== 'New' && <span className={'sum-trend-inline ' + t.cls} aria-hidden>{t.sym} </span>}{t.label.charAt(0).toUpperCase() + t.label.slice(1)}
+            {e.beatByE1rm && e.e1rmDeltaKg ? ` · est. 1RM +${fmtWeight(half(e.e1rmDeltaKg), unit)}` : ''}</div>
+          {records.length > 0 && <div className="pr-text">{records.join(' · ')}</div>}
+          {e.bodyweight === 'missing' && <div className="faint">No weigh-in: bodyweight volume is a guess</div>}
+        </div>
+      )}
     </div>
   );
 }
 
-function MuscleBars({ data }: { data: WorkoutSummaryData }) {
-  const max = Math.max(1, ...data.muscles.map((m) => m.week.fractional));
+/** Muscle rows: a small body figure with that muscle lit, share of today's sets, sets today and this week. */
+function MuscleRows({ data }: { data: WorkoutSummaryData }) {
+  const total = data.muscles.reduce((a, m) => a + m.fractional, 0) || 1;
   const n = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
   return (
     <>
-      <div className="section-title">Sets per muscle</div>
-      <div className="card sum-in sum-muscles" style={{ '--i': 3 } as CSSProperties}>
+      <div className="sum-head"><span className="faint">Muscles</span></div>
+      <div className="group sum-in" style={{ '--i': 3 } as CSSProperties}>
         {data.muscles.map((m) => (
-          <div key={m.muscle} className="sum-m-row">
-            <span className="sum-m-name ellipsis">{titleCase(m.muscle)}</span>
-            <span className="sum-m-bar" aria-hidden>
-              <span className="wk" style={{ width: `${(m.week.fractional / max) * 100}%` }} />
-              <span className="now" style={{ width: `${(m.fractional / max) * 100}%` }} />
-            </span>
-            <span className="sum-m-num num" aria-label={`${n(m.fractional)} sets today, ${n(m.week.fractional)} this week`}>
-              {n(m.fractional)}<span className="faint"> / {n(m.week.fractional)}</span>
+          <div key={m.muscle} className="ex-row">
+            <span className="mm-tile" aria-hidden><MuscleMap primary={[m.muscle]} view="auto" height={54} label="" /></span>
+            <span className="grow" style={{ minWidth: 0 }}>
+              <span className="ex-row-name ellipsis">{titleCase(m.muscle)}</span>
+              <span className="ex-row-sub num">{Math.round((m.fractional / total) * 100)}% · {plural(Number(n(m.fractional)), 'set', 'sets')}<span className="faint"> · {n(m.week.fractional)} this week</span></span>
             </span>
           </div>
         ))}
-        <p className="faint sum-caption" style={{ margin: '10px 0 0', textAlign: 'left' }}>
-          Today / this week (since Mon). Secondary muscles count ½ a set, a common convention.
-        </p>
       </div>
+      <p className="faint sum-caption" style={{ textAlign: 'left' }}>Secondary muscles count ½ a set, a common convention. Week = since Monday.</p>
     </>
   );
 }
@@ -168,7 +207,7 @@ function Survey({ data }: { data: WorkoutSummaryData }) {
   const rate = (p: Omit<z.input<typeof sessionsRate.input>, 'id'>) => run(sessionsRate, { id: data.sessionId, ...p });
   return (
     <>
-      <div className="section-title">How was it?</div>
+      <div className="sum-head"><span className="faint">How was it?</span></div>
       <div className="card stack sum-survey" style={{ gap: 18 }}>
         <Q label="Effort" hint={s.sessionRpe != null ? (CR10[s.sessionRpe] ? `${s.sessionRpe} · ${CR10[s.sessionRpe]}` : String(s.sessionRpe)) : 'Whole session, 0–10'}>
           {/* CR-10 keeps its 0–10 values: 1–10 in a balanced 5 × 2 grid, 0 ("Rest") as a full-width row under it */}

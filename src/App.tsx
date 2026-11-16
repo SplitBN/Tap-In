@@ -9,7 +9,7 @@ import { startSync } from './lib/sync';
 import { useSettings } from './db/settings';
 import { ExerciseHistoryPage, HistoryPage } from './pages/History';
 import { HomePage } from './pages/Home';
-import { PlanPage, PlansPage } from './pages/Plans';
+import { AllPlansPage, PlanPage, PlansPage } from './pages/Plans';
 import { SessionPage } from './pages/Session';
 import { SettingsPage } from './pages/Settings';
 import { WeightPage } from './pages/Weight';
@@ -57,7 +57,7 @@ function TabBar() {
 }
 
 const TITLES: [string, string][] = [ // longest prefix first
-  ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
+  ['/plans/all', 'Plans'], ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
   ['/exercises', 'Exercises'], ['/exercise/', 'Exercise'], ['/stats', 'Stats'], ['/weight', 'Weight'], ['/settings', 'Settings'],
   ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'],
 ];
@@ -98,6 +98,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/plans" element={<PlansPage />} />
+          <Route path="/plans/all" element={<AllPlansPage />} />
           <Route path="/plans/:id" element={<PlanPage />} />
           <Route path="/workouts/:id" element={<WorkoutEditorPage />} />
           <Route path="/session/:id" element={<SessionPage />} />

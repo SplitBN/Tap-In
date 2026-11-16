@@ -4,10 +4,11 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { createPortal } from 'react-dom';
-import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/ExercisePicker';
-import { equipmentLabel, equipmentTag, exerciseLabel } from '../lib/equipment';
+import { ExercisePicker, ExerciseEditor } from '../components/ExercisePicker';
+import { equipmentLabel, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
-import { ItemSettings } from '../components/ItemSettings';
+import { ExerciseMenu, repsText } from '../components/ExerciseMenu';
+import { ExThumb } from '../components/ExThumb';
 import { EffortExplainer, EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
 import { WorkoutSummary } from '../components/WorkoutSummary';
@@ -19,7 +20,7 @@ import { exercisesNextTarget, itemsAdd, itemsRemove, itemsReorder, itemsReplace,
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
-import { fmtDuration, fmtNum, fmtWeight, plural, relDay, titleCase } from '../lib/format';
+import { fmtDate, fmtDuration, fmtNum, fmtWeight, plural, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
 import { defaultRestSec, suggestDrop, defaultStepKg, fromKg, rirToRpe, snappedStepKg } from '../lib/science';
 import { workingSetCount } from '../lib/workoutStats';
@@ -81,6 +82,7 @@ export function SessionPage() {
   }, [progress]);
 
   const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | null>(null);
+  const [menuSub, setMenuSub] = useState<'reps' | undefined>(); // ⋯ sheet opened straight on the reps target
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
   // summary sheet: 'finish' right after finishing (Done goes Home), 'view' for a past session (Done just closes)
   const [summary, setSummary] = useState<null | 'finish' | 'view'>(null);
@@ -121,6 +123,14 @@ export function SessionPage() {
   // a slot kept only for a replaced exercise's done sets counts as done
   const isDone = (it: WorkoutItem) => !!it.replacedBy || itemDone(it, exMap[it.exerciseId], settings, sets);
   const doneCount = workingSetCount(sets.filter((s) => s.doneAt)); // same counting as the summary
+  const replaceCurrent = async () => {
+    if (!current) return;
+    setMenu(null);
+    const doneN = workingSetCount(sets.filter((x) => x.itemKey === current.key && x.doneAt));
+    if (doneN && !(await confirmDialog({ title: `Replace ${exerciseLabel(ex, 'exercise')}?`,
+      message: `${doneN === 1 ? 'Its done set stays' : `Its ${doneN} done sets stay`} in this workout as ${exerciseLabel(ex, 'this exercise')}. The new exercise starts fresh.`, confirm: 'Replace exercise' }))) return;
+    setPicking('replace');
+  };
 
   return (
     <div className="page no-tabs" data-role="gym" style={{ paddingTop: 0, paddingBottom: "calc(var(--safe-b) + 110px)" }}>
@@ -152,7 +162,8 @@ export function SessionPage() {
       {current && ex ? (
         <ExercisePanel key={current.key} session={session} item={current} ex={ex} sets={sets.filter((s) => s.itemKey === current.key)}
           replaced={current.replacedBy ? exMap[items.find((i) => i.key === current.replacedBy)?.exerciseId ?? ''] ?? null : undefined}
-          settings={settings} onMenu={() => setMenu('item')} progress={progress ?? undefined}
+          settings={settings} onMenu={(sub) => { setMenuSub(sub); setMenu('item'); }} progress={progress ?? undefined}
+          onReplace={replaceCurrent} live={live}
           onSetDone={(row) => afterSetDone(row, current, session.id, items, exMap, settings, live, select)} />
       ) : items.length ? null /* exercises still loading: no "Empty workout" flash */ : (
         <div className="empty">
@@ -163,45 +174,34 @@ export function SessionPage() {
         </div>
       )}
 
-      {live && settings.features.restTimer && <RestBar />}
+      {live && settings.features.restTimer && <RestBar onStart={() => {
+        const sec = !current || current.rest.mode === 'countup' ? undefined : current.rest.sec ?? (ex ? defaultRestSec(ex.mechanic, settings.restCompoundSec, settings.restIsolationSec) : 120);
+        rest.start(sec, ex && exerciseLabel(ex), { sessionId: session.id, setRef: 'manual' });
+      }} />}
 
       {/* item menu: everything editable in a plan is editable here */}
-      <Sheet open={menu === 'item' && !!current} onClose={() => setMenu(null)} title={ex && exerciseLabel(ex)}>
-        {current && (
-          <>
-            <ItemSettings item={current} exercise={ex} settings={settings}
-              onChange={(n) => updateItemChecked(session.id, current, itemPatch(current, n), sets, () => setMenu(null))} />
-            <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 4 }}>
-              {curIdx < items.length - 1 && (() => {
-                const linked = !!current.supersetId && current.supersetId === items[curIdx + 1]?.supersetId;
-                return <button className="menu-item" onClick={() => run(itemsSuperset, { ...t, itemKey: current.key })}>
-                  <Icon name={linked ? 'unlink' : 'link'} /><span className="grow ellipsis">{linked ? 'Unlink superset' : `Superset + ${exerciseLabel(exMap[items[curIdx + 1].exerciseId], 'next')}`}</span>
-                </button>;
-              })()}
-              <button className="menu-item" onClick={async () => {
-                setMenu(null);
-                const doneN = workingSetCount(sets.filter((x) => x.itemKey === current.key && x.doneAt));
-                if (doneN && !(await confirmDialog({ title: `Replace ${exerciseLabel(ex, 'exercise')}?`,
-                  message: `${doneN === 1 ? 'Its done set stays' : `Its ${doneN} done sets stay`} in this workout as ${exerciseLabel(ex, 'this exercise')}. The new exercise starts fresh.`, confirm: 'Replace exercise' }))) return;
-                setPicking('replace');
-              }}><Icon name="swap" />Replace</button>
-              <button className="menu-item" onClick={() => setMenu('info')}><Icon name="info" />How-to</button>
-              <button className="menu-item" onClick={() => setMenu('editEx')}><Icon name="edit" />Edit exercise</button>
-              {curIdx > 0 && <button className="menu-item" onClick={() => reorder(moveItem(items, curIdx, -1))}><Icon name="chevronLeft" />Move left</button>}
-              {curIdx < items.length - 1 && <button className="menu-item" onClick={() => reorder(moveItem(items, curIdx, 1))}><Icon name="chevronRight" />Move right</button>}
-              <button className="menu-item danger" onClick={async () => {
-                const mine = sets.filter((x) => x.itemKey === current.key);
-                const doneN = mine.filter((x) => x.doneAt).length;
-                if (doneN) {
-                  setMenu(null);
-                  if (!(await confirmDialog({ title: `Remove ${exerciseLabel(ex, 'exercise')}?`, message: `Its ${plural(doneN, 'logged set', 'logged sets')} will be deleted. This can’t be undone.`, confirm: 'Remove exercise', danger: true }))) return;
-                }
-                await run(itemsRemove, { ...t, itemKey: current.key }); setMenu(null);
-              }}><Icon name="trash" />Remove</button>
-            </div>
-          </>
-        )}
-      </Sheet>
+      {current && (
+        <ExerciseMenu open={menu === 'item'} initialSub={menuSub} onClose={() => setMenu(null)} item={current} ex={ex} settings={settings}
+          nextEx={curIdx < items.length - 1 ? exMap[items[curIdx + 1].exerciseId] ?? null : undefined}
+          linked={!!current.supersetId && current.supersetId === items[curIdx + 1]?.supersetId}
+          canLeft={curIdx > 0} canRight={curIdx < items.length - 1}
+          onChange={(n) => updateItemChecked(session.id, current, itemPatch(current, n), sets, () => setMenu(null))}
+          onSuperset={() => run(itemsSuperset, { ...t, itemKey: current.key })}
+          onMove={(d) => reorder(moveItem(items, curIdx, d))}
+          onInfo={() => setMenu('info')}
+          onEditEx={() => setMenu('editEx')}
+          onAdd={() => { setMenu(null); setPicking('add'); }}
+          onReplace={replaceCurrent}
+          onRemove={async () => {
+            const mine = sets.filter((x) => x.itemKey === current.key);
+            const doneN = mine.filter((x) => x.doneAt).length;
+            if (doneN) {
+              setMenu(null);
+              if (!(await confirmDialog({ title: `Remove ${exerciseLabel(ex, 'exercise')}?`, message: `Its ${plural(doneN, 'logged set', 'logged sets')} will be deleted. This can’t be undone.`, confirm: 'Remove exercise', danger: true }))) return;
+            }
+            await run(itemsRemove, { ...t, itemKey: current.key }); setMenu(null);
+          }} />
+      )}
 
       <Sheet open={menu === 'info'} onClose={() => setMenu(null)} title={ex && exerciseLabel(ex)}>
         {ex && <ExerciseInfo ex={ex} />}
@@ -296,7 +296,7 @@ function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, 
               <button type="button" data-current={cur} onClick={() => onSelect(it.key)} aria-current={cur ? 'step' : undefined}
                 aria-label={exerciseLabel(ex) + (isDone(it) ? ', done' : '')}
                 className={'avatar pressable' + (cur ? ' current' : '') + (isDone(it) ? ' done' : '')}>
-                <Avatar ex={ex} />
+                <ExThumb ex={ex} size="lg" />
                 {isDone(it) && <span className="avatar-badge"><Icon name="check" size={11} stroke={3.2} /></span>}
               </button>
             </SortableItem>
@@ -316,8 +316,9 @@ export function Avatar({ ex }: { ex?: Exercise }) {
   return <span className="avatar-initials">{initials || '?'}</span>;
 }
 
-function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, replaced, progress }: {
-  session: Session; item: WorkoutItem; ex: Exercise; sets: SetLog[]; settings: Settings; onMenu: () => void; onSetDone: (r: Row) => void;
+function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, replaced, progress, onReplace, live }: {
+  session: Session; item: WorkoutItem; ex: Exercise; sets: SetLog[]; settings: Settings; onMenu: (sub?: 'reps') => void; onSetDone: (r: Row) => void;
+  onReplace: () => void; live: boolean;
   /** sessions.liveProgress (undefined while loading): badges for ticked sets */
   progress?: LiveProgress;
   /** defined when this slot only holds the done sets of an exercise that was replaced (by `replaced`, null if unknown) */
@@ -343,8 +344,12 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
   const unit = settings.unit;
   const loadLabel = ex.loadType === 'bodyweight' ? `+${unit}` : ex.loadType === 'assisted' ? `assist` : unit;
   const effortOn = settings.features.effort;
-  const img = exerciseImage(ex);
-  const [imgIdx, setImgIdx] = useState(0);
+  // warm-up rows fold behind a chip once they're done (or the working sets have started)
+  const warmN = groups.filter((g) => g[0].kind === 'warmup').length;
+  const [showWarm, setShowWarm] = useState(() => warmN > 0
+    && !sets.some((l) => l.kind === 'working' && l.doneAt) && !groups.filter((g) => g[0].kind === 'warmup').flat().every((r) => sets.some((l) => logId(l) === rowId(r) && l.doneAt)));
+  const shown = useMemo(() => (showWarm ? groups : groups.filter((g) => g[0].kind !== 'warmup')), [groups, showWarm]);
+  const warmDone = groups.filter((g) => g[0].kind === 'warmup').filter((g) => g.every((r) => byId.get(rowId(r))?.doneAt)).length;
 
   const stepKg = snappedStepKg(ex.stepKg ?? defaultStepKg(ex.equipment, unit), unit);
   const heavier = (a: number, b: number) => (ex.loadType === 'assisted' ? a < b : a > b); // less assistance = heavier
@@ -389,7 +394,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
   });
 
   // The first not-done row is highlighted as "next", but any set can be checked or un-checked.
-  const flat = groups.flat();
+  const flat = shown.flat();
   const activeIdx = flat.findIndex((r) => !byId.get(rowId(r))?.doneAt);
   const [shakeId, setShakeId] = useState<string>();
   const [repsFor, setRepsFor] = useState<Row | null>(null);
@@ -429,38 +434,43 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
 
   let workNo = 0;
   return (
-    <div style={{ paddingTop: 12 }}>
-      {/* exercise header */}
-      <div className="row" style={{ alignItems: 'flex-start', gap: 12 }}>
-        {img ? (
-          <button onClick={() => setImgIdx((imgIdx + 1) % Math.max(1, ex.images.length))} aria-label="Next image"
-            style={{ border: 0, padding: 0, background: 'none', flex: 'none' }}>
-            <img className="ex-hero" src={exerciseImage(ex, imgIdx)} alt="" style={{ width: 92, height: 92, borderRadius: 'var(--squircle)', objectFit: 'cover', background: 'var(--card-2)' }} />
+    <div style={{ paddingTop: 14 }}>
+      {/* exercise header: big name + ⋯, then equipment / rep target / note lines (reference: alpha-live-exercise) */}
+      <div className="title-more ex-head">
+        <h2 className="ex-title ex-name" title={ex.name}>{ex.name}</h2>
+        <button className="more-pill" aria-label="Exercise options" onClick={() => onMenu()}><Icon name="more" size={22} stroke={3} /></button>
+      </div>
+      <div className="ex-meta">
+        {live && !replaced ? (
+          <button className="ex-meta-btn" onClick={onReplace} aria-label={`${equipmentLabel(ex.equipment)}: replace exercise`}>
+            {equipmentLabel(ex.equipment)}<Icon name="swap" size={16} />
           </button>
-        ) : <ExerciseThumb ex={ex} size={96} />}
-        <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
-          <h2 className="ex-title" title={ex.name} style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.12, letterSpacing: '-0.025em', fontWeight: 800, color: 'var(--text)' }}>{ex.name}</h2>
-          <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{equipmentTag(ex) && <>{equipmentTag(ex)} · </>}{titleCase(ex.muscles.join(', '))}</div>
-          <div className="tags">
-            {item.repsMin != null && <span className="tag" title="Target reps"><Icon name="flag" size={12} stroke={2.2} /><span className="sr-only">Target reps </span>{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
-            {target?.decision && <TargetTag t={target} unit={unit} onClick={() => setWhyOpen(true)} />}
-            {ex.unilateral && <span className="tag" title="Each side logged separately"><span aria-hidden>L | R</span><span className="sr-only">Each side logged separately</span></span>}
-            {item.supersetId && <span className="tag role" title="Superset"><Icon name="link" size={12} stroke={2.2} /><span aria-hidden>SS</span><span className="sr-only">Superset</span></span>}
-            {(item.drops ?? 0) > 0 && <span className="tag drop" title={plural(item.drops!, 'drop set', 'drop sets')}><span aria-hidden>↓ {item.drops}</span><span className="sr-only">{plural(item.drops!, 'drop set', 'drop sets')}</span></span>}
-            {ex.loadType !== 'weighted' && bw == null && <span className="tag warn" title="No bodyweight logged: log a weigh-in for accurate volume"><Icon name="scale" size={12} stroke={2.2} /><span aria-hidden>BW?</span><span className="sr-only">No bodyweight logged</span></span>}
-          </div>
-        </div>
-        <button className="icon-btn" aria-label="Exercise options" onClick={onMenu}><Icon name="more" /></button>
+        ) : <span className="ex-meta-btn">{equipmentLabel(ex.equipment)}</span>}
+        <button className="ex-meta-btn" onClick={() => onMenu('reps')} aria-label={repsText(item) ? `Target ${repsText(item)} reps: change` : 'Set a rep target'}>
+          {repsText(item) ? `${repsText(item)} reps` : 'Reps'}<Icon name="pencil" size={15} />
+        </button>
+        {target?.decision && <TargetTag t={target} unit={unit} onClick={() => setWhyOpen(true)} />}
+        {ex.unilateral && <span className="tag" title="Each side logged separately"><span aria-hidden>L | R</span><span className="sr-only">Each side logged separately</span></span>}
+        {item.supersetId && <span className="tag role" title="Superset"><Icon name="link" size={12} stroke={2.2} /><span aria-hidden>SS</span><span className="sr-only">Superset</span></span>}
+        {(item.drops ?? 0) > 0 && <span className="tag drop" title={plural(item.drops!, 'drop set', 'drop sets')}><span aria-hidden>↓ {item.drops}</span><span className="sr-only">{plural(item.drops!, 'drop set', 'drop sets')}</span></span>}
+        {ex.loadType !== 'weighted' && bw == null && <span className="tag warn" title="No bodyweight logged: log a weigh-in for accurate volume"><Icon name="scale" size={12} stroke={2.2} /><span aria-hidden>BW?</span><span className="sr-only">No bodyweight logged</span></span>}
       </div>
       {replaced !== undefined && <p className="muted" style={{ margin: '10px 2px 0', fontSize: '0.875rem' }}>Replaced{replaced ? ` by ${exerciseLabel(replaced)}` : ''}. Its done sets stay here.</p>}
       <NoteLine value={item.notes} onSave={(notes) => run(itemsUpdate, { sessionId: session.id, itemKey: item.key, patch: { notes: notes ?? null } })} />
+      {warmN > 0 && (
+        <button className="chip warm-chip" aria-expanded={showWarm} onClick={() => setShowWarm(!showWarm)}>
+          <span className="num">{plural(warmN, 'warm-up set', 'warm-up sets')}</span>
+          {warmDone === warmN ? <Icon name="check" size={15} stroke={2.6} /> : <Icon name={showWarm ? 'chevronUp' : 'chevronDown'} size={15} stroke={2.4} />}
+          {warmDone === warmN && <span className="sr-only">, done</span>}
+        </button>
+      )}
 
       {/* set table */}
-      <div style={{ marginTop: 14 }}>
+      <div style={{ marginTop: 16 }}>
         <div className="set-grid set-head" data-effort={effortOn}>
           <span aria-hidden>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <button type="button" className="set-head-btn" onClick={() => setEffortInfo(true)} aria-label={`${settings.effortMode === 'rir' ? 'Reps in reserve' : 'RPE'}: what is this?`}>{settings.effortMode.toUpperCase()}<Icon name="info" size={12} stroke={2.2} /></button>}<span />
         </div>
-        {groups.map((g) => {
+        {shown.map((g) => {
           const head = g[0];
           if (head.kind === 'working') workNo++;
           const label = head.kind === 'warmup' ? 'W' : head.kind === 'drop' ? '↓' : String(workNo);
@@ -530,12 +540,16 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
 
       {/* history: same grid as the inputs, without the boxes */}
       <Link to={`/exercise/${ex.id}`} className="history-card pressable">
-        <div className="row" style={{ padding: '0 6px 4px' }}>
-          <Icon name="history" size={16} className="faint" />
-          <span className="grow muted" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{prev?.session ? relDay(prev.session.startedAt) : 'No history yet'}</span>
-          <Icon name="chart" size={16} className="faint" />
-          <Icon name="chevronRight" size={16} className="chev" />
+        <div className="row hc-head">
+          <span className="grow ellipsis">{prev?.session ? `${fmtDate(prev.session.startedAt)} · ${prev.session.name}` : 'No history yet'}</span>
+          <Icon name="chart" size={16} />
+          <Icon name="chevronRight" size={16} />
         </div>
+        {!!prev?.sets.length && (
+          <div className="set-grid set-row ghost hc-cols" data-effort={effortOn} aria-hidden>
+            <span className="set-no">#</span><span className="cell">{loadLabel}</span><span className="cell">reps</span>{effortOn && <span className="cell">{settings.effortMode}</span>}<span />
+          </div>
+        )}
         {prev?.sets.sort(setOrder).map((l) => {
           const e = settings.effortMode === 'rir' ? l.rir : l.rpe;
           return (
@@ -647,8 +661,8 @@ function NoteLine({ value, onSave }: { value?: string; onSave: (v?: string) => v
   if (editing) return <NoteEditor value={value} onSave={onSave} onDone={() => setEditing(false)} />;
   return (
     <button className="note-line pressable" onClick={() => setEditing(true)} aria-label={value ? `Edit note: ${value}` : 'Add note'}>
-      <Icon name="pencil" size={16} />
-      <span className={value ? '' : 'faint'}>{value || 'Note'}</span>
+      <span className={'grow' + (value ? '' : ' faint')}>{value || 'Note'}</span>
+      <Icon name="note" size={20} />
     </button>
   );
 }
@@ -658,7 +672,6 @@ function NoteEditor({ value, onSave, onDone }: { value?: string; onSave: (v?: st
   const commit = () => { flush(); onDone(); };
   return (
     <div className="note-line editing">
-      <Icon name="pencil" size={16} />
       <textarea autoFocus rows={2} value={draft} placeholder="Seat 4, grip, cues…" aria-label="Exercise note"
         onChange={(e) => setDraft(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); } }} />
@@ -667,11 +680,15 @@ function NoteEditor({ value, onSave, onDone }: { value?: string; onSave: (v?: st
 }
 
 
-function RestBar() {
+/** Floating rest timer: a round button when idle (tap = start a rest now), the full bar while resting. */
+function RestBar({ onStart }: { onStart: () => void }) {
   const st = useRest();
   const now = useTick(!!st, 250);
-  if (!st) return null;
   const shell = document.querySelector(".shell");
+  if (!st) {
+    const fab = <button className="rest-fab pressable" onClick={onStart} aria-label="Start rest timer"><Icon name="timer" size={28} stroke={2} /></button>;
+    return shell ? createPortal(fab, shell) : fab;
+  }
   const elapsed = (now - st.startedAt) / 1000;
   const countdown = st.targetSec != null;
   const left = countdown ? st.targetSec! - elapsed : 0;

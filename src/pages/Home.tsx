@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { Icon } from '../components/Icon';
+import { ThumbPill } from '../components/ExThumb';
 import { alive, db } from '../db/db';
 import { activeSession, nextWorkoutId } from '../db/gym';
 import { run } from '../api/registry';
@@ -18,7 +19,6 @@ import { Ring, Summary, useDay } from './Food';
 import { useSuppDay } from './Supplements';
 import { fmtNum } from '../lib/format';
 import { dateKey, goalHit, sum } from '../lib/nutrition';
-import { exerciseImage } from '../db/seed';
 import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
 
@@ -95,7 +95,7 @@ function GymWidget() {
         <div className="row">
           <span className="grow" style={{ minWidth: 0 }}>
             <span className="big-label ellipsis" style={{ display: 'block', marginBottom: 8 }}>{active.name}</span>
-            <ImageStack ids={active.items.map((i) => i.exerciseId)} />
+            <ThumbPill ids={active.items.map((i) => i.exerciseId)} />
           </span>
           <span className="num big-value" aria-label={`Running for ${fmtDuration(now - active.startedAt)}`}>{fmtDuration(now - active.startedAt)}</span>
           <button className="round-btn lg" aria-label={`Resume ${active.name}`} onClick={() => nav(`/session/${active.id}`)}><Icon name="play" size={22} /></button>
@@ -104,7 +104,7 @@ function GymWidget() {
     );
   }
   return (
-    <Widget role="gym" icon="dumbbell" title={plan && alive(plan) ? plan.name : 'Gym'} wide onOpen={() => nav(plan ? `/plans/${plan.id}` : '/plans')}
+    <Widget role="gym" icon="dumbbell" title={plan && alive(plan) ? plan.name : 'Gym'} wide onOpen={() => nav('/plans')}
       action={<button className="icon-btn sm tint" aria-label="Start empty workout" onClick={() => start()}><Icon name="plus" size={18} /></button>}>
       {next ? (
         <div className="row">
@@ -112,12 +112,12 @@ function GymWidget() {
             <div className="faint w-6" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Next</div>
             <div className="big-label ellipsis">{next.name}</div>
             <div className="muted t-13" style={{ marginBottom: 10 }}>{plural(next.items.length, 'exercise', 'exercises')} · {plural(next.items.reduce((a, i) => a + i.sets, 0), 'set', 'sets')}</div>
-            <ImageStack ids={next.items.map((i) => i.exerciseId)} />
+            <ThumbPill ids={next.items.map((i) => i.exerciseId)} />
           </div>
           <button className="round-btn lg" aria-label={`Start ${next.name}`} onClick={() => start(next.id)}><Icon name="play" size={22} /></button>
         </div>
       ) : (
-        <button className="row pressable plain widget-cta" onClick={() => nav(plan ? `/plans/${plan.id}` : '/plans')}>
+        <button className="row pressable plain widget-cta" onClick={() => nav('/plans')}>
           <span className="grow">{plan ? 'Add a workout to this plan' : 'Create a plan'}</span>
           <Icon name="chevronRight" size={18} className="chev" />
         </button>
@@ -298,21 +298,6 @@ function CalendarWidget() {
         )}
       </AnimatePresence>
     </Widget>
-  );
-}
-
-/** Overlapping exercise images with a "+N" count, like a contact stack. */
-function ImageStack({ ids, max = 4 }: { ids: string[]; max?: number }) {
-  const exs = useLiveQuery(() => db.exercises.bulkGet(ids.slice(0, max)), [ids.join()]) ?? [];
-  if (!ids.length) return null;
-  return (
-    <span className="stack-imgs" aria-hidden>
-      {exs.map((e, i) => {
-        const src = exerciseImage(e);
-        return src ? <img key={i} src={src} alt="" /> : <span key={i} className="ini">{e?.name?.[0] ?? '?'}</span>;
-      })}
-      {ids.length > max && <span className="more">+{ids.length - max}</span>}
-    </span>
   );
 }
 

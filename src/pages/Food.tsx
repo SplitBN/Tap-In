@@ -49,7 +49,7 @@ export function FoodPage() {
     <div className="page" data-role="food">
       <header className="page-head">
         <h1>Food</h1>
-        <button className="icon-btn" aria-label="Goals" onClick={() => nav('/nutrition')}><Icon name="target" /></button>
+        <button className="icon-btn filled" aria-label="Goals" onClick={() => nav('/nutrition')}><Icon name="target" /></button>
       </header>
 
       <div className="date-pill">

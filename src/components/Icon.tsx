@@ -44,6 +44,9 @@ const P: Record<string, string> = {
   pill: 'M10.5 3.5a5 5 0 0 1 7 7l-7 7a5 5 0 0 1-7-7zM7 7l7 7',
   syringe: 'M18 2l4 4M20 4l-9.5 9.5M14 6l4 4M9.5 8.5l6 6M4 20l3-3M7 17l-1.5-1.5L14 7l3 3-8.5 8.5z',
   chart: 'M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6',
+  medal: 'M8.5 3h7l-1.8 5.2M8.5 3l1.8 5.2M12 21a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 12.6l1 2 2.2.3-1.6 1.6.4 2.2-2-1.1-2 1.1.4-2.2-1.6-1.6 2.2-.3z',
+  arrowUp: 'M12 19V5M6 11l6-6 6 6',
+  sort: 'M8 20V4M4 8l4-4 4 4M16 4v16M12 16l4 4 4-4',
 };
 
 export function Icon({ name, size = 22, stroke = 1.8, className, style }: { name: keyof typeof P | string; size?: number; stroke?: number; className?: string; style?: React.CSSProperties }) {

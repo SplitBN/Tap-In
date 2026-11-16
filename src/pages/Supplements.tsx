@@ -64,7 +64,7 @@ export function SupplementsPage() {
     <div className="page" data-role="supp">
       <header className="page-head">
         <h1>Supps</h1>
-        <button className="icon-btn" aria-label="Add a note" onClick={() => setNoting(true)}><Icon name="note" /></button>
+        <button className="icon-btn filled" aria-label="Add a note" onClick={() => setNoting(true)}><Icon name="note" /></button>
         <button className="icon-btn filled" aria-label="Add supplement" onClick={() => setEditing('new')}><Icon name="plus" /></button>
       </header>
 

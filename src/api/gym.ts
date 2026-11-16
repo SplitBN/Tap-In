@@ -386,6 +386,15 @@ export const exerciseHistory = defineCommand({ name: 'exercises.history', kind: 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const bestOut = (b: BestSet | null) => b && ({ loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir, e1rmKg: b.e1rmKg > 0 ? r1(b.e1rmKg) : null, e1rmReliable: b.reliable });
 
+/** Weeks in a row (Monday weeks, local time) with at least one workout, counting back from the week of `ts`.
+ *  `starts` = start times of the workouts that count. The week of `ts` itself must have one (the summary's own session). */
+async function weekStreakAt(ts: number, starts: number[]) {
+  const weeks = new Set(starts.filter((t) => t <= ts).map(weekStartMs));
+  let n = 0;
+  for (let w = weekStartMs(ts); weeks.has(w); w = weekStartMs(w - 3600000)) n++; // 1 h before Monday 00:00 = the week before (DST-safe)
+  return n;
+}
+
 async function buildSummary(s: Session) {
   const endMs = s.endedAt ?? Date.now();
   const bw = await db.bodyweight.orderBy('at').filter(alive).toArray();
@@ -452,6 +461,15 @@ async function buildSummary(s: Session) {
   const muscles = Object.entries(mThis).map(([muscle, m]) => ({ muscle, ...m, week: mWeek[muscle] }))
     .sort((a, b) => b.fractional - a.fractional || b.week.fractional - a.week.fractional);
 
+  // per-set badges (same rules as the live screen): PR sets and sets that beat the same set last time
+  const live = await liveProgress(s);
+  const badges = (exId: string, b: SetBadge) => live.sets.filter((x) => x.exerciseId === exId && x.badge === b).length;
+  const exercisesOut = exercises.map((e) => ({ ...e, prSets: badges(e.exerciseId, 'pr'), upSets: badges(e.exerciseId, 'up') }));
+  const improvements = exercisesOut.reduce((a, e) => a + e.prSets + e.upSets, 0);
+  const finishedBefore = earlier.length; // finished sessions that started before this one
+  const workoutNumber = finishedBefore + 1;
+  const weekStreak = await weekStreakAt(s.startedAt, [s.startedAt, ...earlier.map((e) => e.startedAt)]);
+
   const durationMin = r1((endMs - s.startedAt) / 60000);
   const totalVolume = volumeKg(cur), totalSets = workingSetCount(cur);
   const prevW = s.workoutId ? earlier.find((e) => e.workoutId === s.workoutId) : undefined;
@@ -468,7 +486,7 @@ async function buildSummary(s: Session) {
     sessionId: s.id, name: s.name, date: dateKey(s.startedAt), live: !s.endedAt,
     startedAt: new Date(s.startedAt).toISOString(), endedAt: s.endedAt ? new Date(s.endedAt).toISOString() : null,
     durationMin, totals: { workingSets: totalSets, volumeKg: r1(totalVolume), exercises: exercises.length },
-    vsLastWorkout, highlights, exercises, muscles,
+    vsLastWorkout, highlights, exercises: exercisesOut, muscles, improvements, workoutNumber, weekStreak,
     week: { from: dateKey(ws), sessions: weekSessions.length },
     survey: { sessionRpe: s.sessionRpe ?? null, sleep: s.sleep ?? null, soreness: s.soreness ?? null, note: s.notes ?? null, ratedAt: s.ratedAt ? new Date(s.ratedAt).toISOString() : null },
     sessionLoadAU: s.sessionRpe != null ? Math.round(s.sessionRpe * durationMin) : null,
@@ -487,9 +505,25 @@ export const sessionsSummary = defineCommand({ name: 'sessions.summary', kind: '
     'bodyweight logged|estimated|missing tells whether bodyweight lifts had a bodyweight snapshot. highlights[] lists PRs first, then beat-last-time. ' +
     'muscles[]: working sets per muscle this session: direct (primary muscles, 1 per set), indirect (secondary muscles), fractional = direct + 0.5 × indirect (0.5 is a convention), and week = the same counts for Monday → this session. ' +
     'vsLastWorkout compares with the previous session of the same plan workout (null if none). survey = post-workout answers; sessionLoadAU = session RPE × minutes (Foster et al. 2001). ' +
+    'exercises[].prSets / upSets = how many of its working sets got a PR / beat-the-same-set-last-time badge (same per-set rules as sessions.liveProgress); improvements = the sum of both over all exercises. ' +
+    'workoutNumber = 1 + finished workouts that started before this one ("Nth workout"); weekStreak = Monday-start weeks in a row with a workout, counting back from this session’s week (this week included). ' +
     'Only sessions that started before this one are used for comparisons, so a past summary is stable.',
   input: z.object({ id: zId }),
   run: async ({ id }) => buildSummary(await need(db.sessions.get(id), 'Session')) });
+
+export const sessionsStreak = defineCommand({ name: 'sessions.streak', kind: 'query',
+  description: 'Training streak: weeks in a row (Monday-start weeks, local time) with at least one finished workout, up to the week of `date` (default today). ' +
+    'A week with no workout yet does not break the streak until it is over: if the week of `date` has none, counting starts from the week before. ' +
+    'Returns weeks (the streak), thisWeek (finished workouts in the week of date) and total (finished workouts up to that date).',
+  input: z.object({ date: zDate.optional() }),
+  run: async ({ date }) => {
+    const end = date ? keyToDate(date).getTime() + 86400000 - 1 : Date.now();
+    const starts = (await db.sessions.where('startedAt').belowOrEqual(end).filter((x) => alive(x) && !!x.endedAt).toArray()).map((x) => x.startedAt);
+    const ws = weekStartMs(end);
+    const thisWeek = starts.filter((t) => t >= ws).length;
+    const weeks = await weekStreakAt(thisWeek ? end : ws - 3600000, starts);
+    return { weeks, thisWeek, total: starts.length };
+  } });
 
 export const sessionsRate = defineCommand({ name: 'sessions.rate', kind: 'action',
   description: 'Save the post-workout survey on a session (every field optional and skippable; only given fields change, null clears one). ' +
@@ -589,7 +623,7 @@ async function liveProgress(s: Session) {
       beatLastTime = same.length > 0 && compareToPrevious([st], same, st.loadType).trend === 'up';
     }
     const badge: SetBadge = prs.length ? 'pr' : beatLastTime ? 'up' : null;
-    return { setId: raw.id, itemKey: raw.itemKey, kind: raw.kind, setNo: raw.setNo, side: raw.side, badge, prs, beatLastTime };
+    return { setId: raw.id, itemKey: raw.itemKey, exerciseId: raw.exerciseId, kind: raw.kind, setNo: raw.setNo, side: raw.side, badge, prs, beatLastTime };
   });
   const replacedDone = s.items.filter((i) => i.replacedBy).reduce((a, i) => a + workingSetCount(cur.filter((x) => x.itemKey === i.key)), 0);
   return {

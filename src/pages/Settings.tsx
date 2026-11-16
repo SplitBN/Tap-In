@@ -15,9 +15,11 @@ import { dataExport, dataImport, settingsUpdate } from '../api/body';
 import { viewportInfo } from '../lib/viewport';
 import { AccountSection } from '../components/Account';
 
-function Toggle({ label, sub, on, onChange, disabled }: { label: string; sub?: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+function Toggle({ label, sub, on, onChange, disabled, icon, role }: { label: string; sub?: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean;
+  /** module rows get their area's icon + colour */ icon?: string; role?: string }) {
   return (
-    <label className="list-item" style={{ opacity: disabled ? 0.5 : 1 }}>
+    <label className="list-item" style={{ opacity: disabled ? 0.5 : 1 }} data-role={role}>
+      {icon && <span className="role-chip lg" aria-hidden><Icon name={icon} size={18} stroke={2} /></span>}
       <span className="grow"><span className="title">{label}</span>{sub && <span className="sub" style={{ display: 'block' }}>{sub}</span>}</span>
       <span className="switch"><input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} /><span /></span>
     </label>
@@ -58,17 +60,22 @@ export function SettingsPage() {
       <div className="section-title">Features</div>
       <p className="faint" style={{ margin: '-4px 4px 8px', fontSize: '0.8125rem' }}>Anything turned off disappears from the app.</p>
       <div className="list">
-        <Toggle label="Gym" on={f.gym} onChange={feat('gym')} />
-        <Toggle label="Rest timer" on={f.restTimer} onChange={feat('restTimer')} />
-        <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
-        <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
-        <Toggle label="Progression suggestions" sub="Today's target from your rep range. Off: last time's numbers" on={f.progression !== false} onChange={feat('progression')} />
-        <Toggle label="Post-workout survey" sub="Effort, sleep, body: 3 taps after a workout" on={f.survey} onChange={feat('survey')} />
-        <Toggle label="Food" on={f.food} onChange={feat('food')} />
-        <Toggle label="Supps" sub="Supplements, medications and peptides" on={f.supplements} onChange={feat('supplements')} />
+        <Toggle label="Gym" icon="dumbbell" role="gym" on={f.gym} onChange={feat('gym')} />
+        <Toggle label="Food" icon="food" role="food" on={f.food} onChange={feat('food')} />
+        <Toggle label="Supps" icon="pill" role="supp" sub="Supplements, medications and peptides" on={f.supplements} onChange={feat('supplements')} />
       </div>
+      {f.gym && <>
+        <div className="section-title">Workout</div>
+        <div className="list">
+          <Toggle label="Rest timer" on={f.restTimer} onChange={feat('restTimer')} />
+          <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
+          <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
+          <Toggle label="Progression suggestions" sub="Today's target from your rep range. Off: last time's numbers" on={f.progression !== false} onChange={feat('progression')} />
+          <Toggle label="Post-workout survey" sub="Effort, sleep, body: 3 taps after a workout" on={f.survey} onChange={feat('survey')} />
+        </div>
+      </>}
 
-      {f.restTimer && <>
+      {f.gym && f.restTimer && <>
         <div className="section-title">Default rest</div>
         <div className="list">
           <Line label="Compound"><Stepper label="Compound rest" value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restCompoundSec: v })} /></Line>
