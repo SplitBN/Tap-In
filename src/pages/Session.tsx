@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog } from '../components/Dialog';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { createPortal } from 'react-dom';
@@ -15,13 +15,13 @@ import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { lastPerformance, latestBodyweightKg, sessionDiffersFromPlan, setOrder } from '../db/gym';
 import { run } from '../api/registry';
-import { itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsSuperset, itemsUpdate, sessionsDelete, sessionsFinish, sessionsUpdate, setBeyond, setsLog, setsUpdate } from '../api/gym';
+import { exercisesNextTarget, itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsSuperset, itemsUpdate, sessionsDelete, sessionsFinish, sessionsLiveProgress, sessionsUpdate, setBeyond, setsLog, setsUpdate, type LiveProgress, type NextTarget, type SetBadge } from '../api/gym';
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
 import { fmtDuration, fmtNum, fmtWeight, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
-import { defaultRestSec, suggestDrop, defaultStepKg, snappedStepKg } from '../lib/science';
+import { defaultRestSec, suggestDrop, defaultStepKg, fromKg, rirToRpe, snappedStepKg } from '../lib/science';
 import { workingSetCount } from '../lib/workoutStats';
 import { groupPos, itemPatch, useExerciseMap } from './WorkoutEditor';
 
@@ -67,6 +67,18 @@ export function SessionPage() {
   const live = !!session && !session.endedAt;
   useWakeLock(live);
   const now = useTick(live, 1000);
+  // running totals + per-set ↑ / PR badges, computed on read from the logged sets (same counting as the summary)
+  const progress = useLiveQuery(() => (id ? run(sessionsLiveProgress, { id }).catch(() => null) : Promise.resolve(null)), [id]);
+  // light haptic when a newly ticked set earns ↑ / PR (Android; iOS has no vibration API). Lives here, not in the exercise
+  // panel, because the last set of an exercise moves on to the next one. Badges already there on load never vibrate.
+  const badged = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!progress) return;
+    const now = progress.sets.filter((x) => x.badge).map((x) => x.setId);
+    const seen = badged.current;
+    if (seen && now.some((sid) => !seen.has(sid))) navigator.vibrate?.(10);
+    badged.current = new Set(now);
+  }, [progress]);
 
   const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | null>(null);
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
@@ -119,8 +131,14 @@ export function SessionPage() {
           <button className="icon-btn" aria-label="Back" onClick={back}><Icon name="chevronLeft" /></button>
           <div className="grow" style={{ textAlign: 'center' }}>
             <div className="ellipsis" style={{ fontWeight: 650 }}>{session.name}</div>
-            <div className="num muted" style={{ fontSize: '0.8125rem' }}>
-              {live ? fmtDuration(now - session.startedAt) : `${relDay(session.startedAt)} · ${fmtDuration((session.endedAt ?? now) - session.startedAt)}`}
+            <div className="num muted live-stats" style={{ fontSize: '0.8125rem' }}>
+              {live ? <>
+                <span>{fmtDuration(now - session.startedAt)}</span>
+                {progress && <>
+                  <span aria-label={`${progress.totals.workingSetsDone} of ${progress.totals.workingSetsPlanned} sets done`}>{progress.totals.workingSetsDone}/{progress.totals.workingSetsPlanned}</span>
+                  <span aria-label="Volume">{Math.round(fromKg(progress.totals.volumeKg, settings.unit)).toLocaleString()} {settings.unit}</span>
+                </>}
+              </> : `${relDay(session.startedAt)} · ${fmtDuration((session.endedAt ?? now) - session.startedAt)}`}
             </div>
           </div>
           {!live && <button className="icon-btn" aria-label="Workout summary" onClick={() => setSummary('view')}><Icon name="chart" /></button>}
@@ -134,7 +152,7 @@ export function SessionPage() {
       {current && ex ? (
         <ExercisePanel key={current.key} session={session} item={current} ex={ex} sets={sets.filter((s) => s.itemKey === current.key)}
           replaced={current.replacedBy ? exMap[items.find((i) => i.key === current.replacedBy)?.exerciseId ?? ''] ?? null : undefined}
-          settings={settings} onMenu={() => setMenu('item')}
+          settings={settings} onMenu={() => setMenu('item')} progress={progress ?? undefined}
           onSetDone={(row) => afterSetDone(row, current, session.id, items, exMap, settings, live, select)} />
       ) : (
         <div className="empty">
@@ -295,8 +313,10 @@ export function Avatar({ ex }: { ex?: Exercise }) {
   return <span className="avatar-initials">{initials || '?'}</span>;
 }
 
-function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, replaced }: {
+function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, replaced, progress }: {
   session: Session; item: WorkoutItem; ex: Exercise; sets: SetLog[]; settings: Settings; onMenu: () => void; onSetDone: (r: Row) => void;
+  /** sessions.liveProgress (undefined while loading): badges for ticked sets */
+  progress?: LiveProgress;
   /** defined when this slot only holds the done sets of an exercise that was replaced (by `replaced`, null if unknown) */
   replaced?: Exercise | null;
 }) {
@@ -307,6 +327,15 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
   const groups = useMemo(() => rowsFor(item, ex, settings), [item, ex, settings]);
   const byId = useMemo(() => new Map(sets.map((l) => [logId(l), l])), [sets]);
   const prevById = useMemo(() => new Map((prev?.sets ?? []).map((l) => [logId(l), l])), [prev]);
+  // progression target (exercises.nextTarget) for the live workout; off or no rule → last time's numbers as before
+  const progOn = settings.features.progression !== false && !session.endedAt;
+  const target = useLiveQuery(() => (progOn ? run(exercisesNextTarget, { exerciseId: ex.id, repsMin: item.repsMin || null, repsMax: item.repsMax || null, beforeSessionId: session.id }).catch(() => null) : Promise.resolve(null)),
+    [progOn, ex.id, item.repsMin, item.repsMax, session.id]);
+  const targetById = useMemo(() => new Map<string, Partial<SetLog>>(target?.decision ? target.rows.map((t) => [`working:${t.setNo}:0:${t.side}`,
+    { loadKg: t.loadKg, reps: t.reps, ...(t.rir != null ? { rir: t.rir, rpe: rirToRpe(t.rir) } : {}) }]) : []), [target]);
+  const badgeById = useMemo(() => new Map<string, SetBadge>((progress?.sets ?? []).filter((x) => x.itemKey === item.key).map((x) => [`working:${x.setNo}:0:${x.side}`, x.badge])), [progress, item.key]);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
   const unit = settings.unit;
   const loadLabel = ex.loadType === 'bodyweight' ? `+${unit}` : ex.loadType === 'assisted' ? `assist` : unit;
   const effortOn = settings.features.effort;
@@ -329,7 +358,8 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
       if (parentLoad != null) return { loadKg: suggestDrop(parentLoad, stepKg), reps: p?.reps };
       return p;
     }
-    const p = prevById.get(rowId(r));
+    // working rows: today's progression target replaces last time's numbers (warm-ups keep last time's)
+    const p = (r.kind === 'working' ? targetById.get(rowId(r)) : undefined) ?? prevById.get(rowId(r));
     if (r.side === 'right') {
       const left = typed(byId.get(rowId({ ...r, side: 'left' })));
       if (left) return { loadKg: left.loadKg ?? p?.loadKg, reps: left.reps ?? p?.reps, rir: left.rir ?? p?.rir, rpe: left.rpe ?? p?.rpe };
@@ -409,6 +439,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
           <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{equipmentTag(ex) && <>{equipmentTag(ex)} · </>}{titleCase(ex.muscles.join(', '))}</div>
           <div className="tags">
             {item.repsMin != null && <span className="tag"><Icon name="flag" size={12} stroke={2.2} />{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
+            {target?.decision && <TargetTag t={target} unit={unit} onClick={() => setWhyOpen(true)} />}
             {ex.unilateral && <span className="tag">L | R</span>}
             {item.supersetId && <span className="tag role"><Icon name="link" size={12} stroke={2.2} />SS</span>}
             {(item.drops ?? 0) > 0 && <span className="tag drop">↓ {item.drops}</span>}
@@ -458,6 +489,18 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                         {effortVal(l) != null ? fmtNum(effortVal(l)!) : <span className="ph">{effortVal(sug) != null ? fmtNum(effortVal(sug)!) : '–'}</span>}
                       </button>
                     )}
+                    {progress && <AnimatePresence initial={false}>
+                      {done && badgeById.get(rowId(r)) && (
+                        <motion.span key={badgeById.get(rowId(r))} className={'set-badge ' + badgeById.get(rowId(r))} role="img"
+                          aria-label={badgeById.get(rowId(r)) === 'pr' ? 'Personal record' : 'Beat last time'}
+                          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.25, filter: 'blur(4px)' }}
+                          animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                          exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                          transition={{ type: 'spring', duration: 0.3, bounce: 0 }}>
+                          {badgeById.get(rowId(r)) === 'pr' ? 'PR' : '↑'}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>}
                     <button className={'check' + (done ? ' on' : state === 'active' && ready ? ' ready' : '') + (state === 'future' ? ' later' : '')}
                       onClick={() => toggleDone(r)} aria-pressed={done}
                       aria-label={done ? `Undo set ${label}` : `Complete set ${label}`}>
@@ -496,6 +539,9 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
         })}
       </Link>
 
+      <Sheet open={whyOpen} onClose={() => setWhyOpen(false)} title="Today's target">
+        {target && <TargetWhy t={target} unit={unit} />}
+      </Sheet>
       <WeightSheet open={!!weightFor} onClose={() => setWeightFor(null)} unit={unit} exercise={ex}
         label={ex.loadType === 'bodyweight' ? 'Added weight' : ex.loadType === 'assisted' ? 'Assistance' : 'Weight'}
         valueKg={weightFor ? byId.get(rowId(weightFor))?.loadKg ?? suggestion(weightFor)?.loadKg : null}
@@ -507,6 +553,42 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
       <EffortSheet open={!!effortFor} onClose={() => setEffortFor(null)} mode={settings.effortMode}
         value={effortFor ? effortVal(byId.get(rowId(effortFor))) : null}
         onDone={(v, mode) => effortFor && upsert(effortFor, v == null ? { rir: null, rpe: null } : mode === 'rir' ? { rir: v } : { rpe: v })} />
+    </div>
+  );
+}
+
+/** Tiny hint on the exercise header: what the progression target changes vs last time. */
+function targetHint(t: NextTarget, unit: Settings['unit']) {
+  const w = (kg: number) => fmtWeight(Math.abs(kg), unit);
+  switch (t.decision) {
+    case 'increase': return { text: `↑ ${t.loadType === 'assisted' ? '−' : '+'}${w(t.loadDeltaKg)}`, tone: 'up' };
+    case 'reduce': return { text: `↓ ${t.loadType === 'assisted' ? '+' : '−'}${w(t.loadDeltaKg)}`, tone: 'down' };
+    case 'reps': return { text: '+1 rep', tone: 'up' };
+    default: return { text: '= hold', tone: 'hold' };
+  }
+}
+function TargetTag({ t, unit, onClick }: { t: NextTarget; unit: Settings['unit']; onClick: () => void }) {
+  const h = targetHint(t, unit);
+  return <button className={'tag prog ' + h.tone} onClick={onClick} aria-label={`Today's target: ${h.text}. Why?`}>{h.text}</button>;
+}
+function TargetWhy({ t, unit }: { t: NextTarget; unit: Settings['unit'] }) {
+  const line = (load: number, reps: number) => `${t.loadType === 'bodyweight' ? (load ? `BW+${fmtWeight(load, unit, false)}` : 'BW') : fmtWeight(load, unit, false)} × ${reps}`;
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <p style={{ margin: 0, lineHeight: 1.45 }}>{t.reason}</p>
+      <div className="list">
+        {t.rows.map((r) => (
+          <div key={`${r.setNo}:${r.side}`} className="list-item num" style={{ minHeight: 44 }}>
+            <span className="faint" style={{ width: 36 }}>{r.setNo}{r.side !== 'both' && <small>{r.side === 'left' ? 'L' : 'R'}</small>}</span>
+            <span className="grow muted">{line(r.lastLoadKg, r.lastReps)}</span>
+            <span aria-hidden className="faint">→</span>
+            <span style={{ fontWeight: 650, minWidth: 92, textAlign: 'right' }}>{line(r.loadKg, r.reps)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="faint" style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45 }}>
+        Rough guide: double progression, a common coaching rule, not a tested formula. {t.basis && `Last time: ${relDay(Date.parse(t.basis.date + 'T12:00')).toLowerCase()}. `}Tap any value to change it, or turn this off in Settings.
+      </p>
     </div>
   );
 }

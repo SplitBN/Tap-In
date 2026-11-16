@@ -1,37 +1,46 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ExName, ExerciseThumb } from '../components/ExercisePicker';
 import { exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
-import { alive, db } from '../db/db';
-import { setOrder } from '../db/gym';
+import { LineChart, type LinePoint } from '../components/Charts';
+import { db } from '../db/db';
 import { useSettings } from '../db/settings';
-import type { SetLog } from '../db/types';
-import { fmtDate, fmtDuration, fmtWeight, relDay, setText } from '../lib/format';
-import { e1rm, totalLoadKg } from '../lib/science';
+import type { LoadType, SetLog, Unit } from '../db/types';
+import { fmtWeight, relDay, setText } from '../lib/format';
+import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
+import { fromKg } from '../lib/science';
+import { run } from '../api/registry';
+import { progressExercise, progressSessions, type ExerciseProgress } from '../api/progress';
 import { ExerciseInfo } from './Session';
-import { workingSetCount } from '../lib/workoutStats';
+
+/** Volume in the display unit, rounded, with thousands separators ("8,450 kg"). */
+export const fmtVolume = (kg: number, unit: Unit) => `${Math.round(fromKg(kg, unit)).toLocaleString()} ${unit}`;
 
 export function HistoryPage() {
-  const sessions = useLiveQuery(() => db.sessions.orderBy('startedAt').reverse().filter((s) => alive(s) && !!s.endedAt).limit(200).toArray(), []) ?? [];
-  const counts = useLiveQuery(async () => {
-    const m: Record<string, number> = {};
-    for (const s of sessions) m[s.id] = workingSetCount(await db.sets.where('sessionId').equals(s.id).filter((x) => alive(x) && !!x.doneAt).toArray()); // same counting as the summary
-    return m;
-  }, [sessions]) ?? {};
+  const settings = useSettings();
+  const nav = useNavigate();
+  const rows = useLiveQuery(() => run(progressSessions, { limit: 200 }), []);
   return (
     <div className="page">
-      <header className="page-head"><h1>History</h1></header>
-      {sessions.length ? (
+      <header className="page-head">
+        <button className="icon-btn" aria-label="Back" onClick={() => nav('/plans')}><Icon name="chevronLeft" /></button>
+        <h1 className="small">History</h1>
+        <button className="icon-btn" aria-label="Stats" onClick={() => nav('/stats')}><Icon name="chart" size={20} /></button>
+      </header>
+      {!rows ? null : rows.length ? (
         <div className="list">
-          {sessions.map((s) => (
+          {rows.map((s) => (
             <Link key={s.id} to={`/session/${s.id}`} className="list-item pressable">
               <span className="grow">
                 <span className="title">{s.name}</span>
-                <span className="sub" style={{ display: 'block' }}>{relDay(s.startedAt)} · {fmtDuration((s.endedAt ?? s.startedAt) - s.startedAt)} · {counts[s.id] ?? '…'} sets</span>
+                <span className="sub num" style={{ display: 'block' }}>
+                  {relDay(keyToDate(s.date).getTime())} · {s.minutes} min · {s.workingSets} sets{s.volumeKg > 0 ? ` · ${fmtVolume(s.volumeKg, settings.unit)}` : ''}
+                </span>
               </span>
+              {s.prs > 0 && <span className="badge good num" aria-label={`${s.prs} personal record${s.prs === 1 ? '' : 's'}`}><Icon name="flag" size={12} /> {s.prs}</span>}
               <Icon name="chevronRight" className="chev" size={18} />
             </Link>
           ))}
@@ -41,68 +50,152 @@ export function HistoryPage() {
   );
 }
 
-/** Per-exercise history. Analytics (e1RM trend etc.) will grow here. */
+type Range = '3M' | '1Y' | 'All';
+type Row = ExerciseProgress['sessions'][number];
+
+/** "100 kg", "BW+10 kg", "BW−20 kg" — the logged load the way the set list shows it. */
+function loadText(loadType: LoadType, loadKg: number, unit: Unit) {
+  if (loadType === 'weighted') return fmtWeight(loadKg, unit);
+  if (loadType === 'bodyweight') return loadKg ? `BW+${fmtWeight(loadKg, unit)}` : 'BW';
+  return `BW−${fmtWeight(loadKg, unit)}`;
+}
+const shortDate = (key: string) => keyToDate(key).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: key.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' });
+
+/** Per-exercise progress: all-time records, charts over a chosen range, then every session with its sets. */
 export function ExerciseHistoryPage() {
   const { id } = useParams();
   const nav = useNavigate();
   const settings = useSettings();
+  const u = settings.unit;
   const ex = useLiveQuery(() => db.exercises.get(id!), [id]);
   const [info, setInfo] = useState(false);
-  const groups = useLiveQuery(async () => {
-    const sets = await db.sets.where('exerciseId').equals(id!).filter((x) => alive(x) && !!x.doneAt).toArray();
-    const bySession = new Map<string, SetLog[]>();
-    sets.forEach((s) => bySession.set(s.sessionId, [...(bySession.get(s.sessionId) ?? []), s]));
-    const sessions = (await db.sessions.bulkGet([...bySession.keys()])).filter(alive);
-    return sessions.sort((a, b) => b.startedAt - a.startedAt).map((s) => ({ s, sets: bySession.get(s.id)!.sort(setOrder) }));
-  }, [id]) ?? [];
+  const [range, setRange] = useState<Range>('All');
+  const from = useMemo(() => (range === 'All' ? undefined : shiftDate(dateKey(), range === '3M' ? -91 : -365)), [range]);
+  const data = useLiveQuery(() => run(progressExercise, { exerciseId: id!, from }), [id, from]);
 
-  if (!ex) return null;
-  const best = (sets: SetLog[]) => {
-    let top: { kg: number; reliable: boolean } | undefined;
-    for (const l of sets) {
-      if (l.kind === 'warmup' || !l.reps) continue;
-      const est = e1rm(totalLoadKg(l.loadType, l.loadKg, l.bodyweightKg), l.reps, l.rir ?? 0);
-      if (!top || est.kg > top.kg) top = est;
-    }
-    return top;
-  };
+  if (!data) return null;
+  const lt = data.exercise.loadType;
+  // effort in the user's chosen notation, like the set list (RPE = 10 − RIR)
+  const effort = (rir: number | null) => (rir == null ? '' : settings.effortMode === 'rir' ? ` @${rir} RIR` : ` @${10 - rir}`);
+  const rows = data.sessions;
+  const t = (r: Row) => Date.parse(r.startedAt);
+  const W = (kg: number) => Math.round(fromKg(kg, u) * 10) / 10;
+  const fmtW = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${u}`;
+
+  const e1rmPts: LinePoint[] = rows.filter((r) => r.bestSet?.e1rmKg).map((r) => ({ t: t(r), v: W(r.bestSet!.e1rmKg!), approx: !r.bestSet!.e1rmReliable,
+    caption: `${loadText(lt, r.bestSet!.loadKg, u)} × ${r.bestSet!.reps}${effort(r.bestSet!.rir)}` }));
+  const volPts: LinePoint[] = rows.filter((r) => r.volumeKg > 0).map((r) => ({ t: t(r), v: Math.round(fromKg(r.volumeKg, u)), caption: `${r.workingSets} sets` }));
+  const repsPts: LinePoint[] = rows.filter((r) => r.mostReps > 0).map((r) => ({ t: t(r), v: r.mostReps, caption: r.heaviest ? loadText(lt, r.heaviest.loadKg, u) : undefined }));
+  const heavyPts: LinePoint[] = rows.filter((r) => r.heaviest).map((r) => ({ t: t(r), v: W(r.heaviest!.loadKg), caption: `× ${r.heaviest!.reps}` }));
+  const everAdded = data.sessions.some((r) => (r.heaviest?.loadKg ?? 0) > 0) || (data.records.heaviest?.loadKg ?? 0) > 0;
+
+  const charts: { key: string; title: string; note?: string; pts: LinePoint[]; fmt: (v: number) => string; integer?: boolean }[] = [
+    { key: 'e1rm', title: 'Estimated 1RM', note: lt === 'weighted' ? 'Best set each session' : 'Best set each session, incl. bodyweight', pts: e1rmPts, fmt: fmtW },
+    ...(lt === 'weighted' ? [{ key: 'heavy', title: 'Heaviest weight', pts: heavyPts, fmt: fmtW }] : [
+      { key: 'reps', title: 'Most reps in a set', pts: repsPts, fmt: (v: number) => `${v} reps`, integer: true },
+      ...(lt === 'bodyweight' && everAdded ? [{ key: 'heavy', title: 'Heaviest added weight', pts: heavyPts, fmt: fmtW }] : []),
+      ...(lt === 'assisted' ? [{ key: 'heavy', title: 'Assistance', note: 'Lower is stronger', pts: heavyPts, fmt: fmtW }] : []),
+    ]),
+    { key: 'vol', title: 'Session volume', note: 'Load × reps, warm-ups excluded', pts: volPts, fmt: (v: number) => `${v.toLocaleString()} ${u}` },
+  ];
+
+  const rec = data.records;
+  const newestFirst = [...rows].reverse();
   return (
-    <div className="page">
+    <div className="page wide">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" /></button>
-        <h1 className="small ellipsis"><ExName ex={ex} /></h1>
-        <button className="icon-btn" aria-label="How to do it" onClick={() => setInfo(true)}><Icon name="info" size={20} /></button>
+        <h1 className="small ellipsis">{ex ? <ExName ex={ex} /> : data.exercise.label}</h1>
+        {ex && <button className="icon-btn" aria-label="How to do it" onClick={() => setInfo(true)}><Icon name="info" size={20} /></button>}
       </header>
+
       <div className="row card" style={{ marginBottom: 12 }}>
         <ExerciseThumb ex={ex} size={56} />
         <div className="grow">
-          <div className="muted" style={{ fontSize: '0.8125rem' }}>Sessions logged</div>
-          <div style={{ fontWeight: 700, fontSize: '1.25rem' }} className="num">{groups.length}</div>
+          <div className="num" style={{ fontWeight: 700, fontSize: '1.25rem' }}>{data.totalSessions} session{data.totalSessions === 1 ? '' : 's'}</div>
+          <div className="muted" style={{ fontSize: '0.8125rem' }}>{data.firstDate ? `${shortDate(data.firstDate)} – ${shortDate(data.lastDate!)}` : 'Not done yet'}</div>
         </div>
       </div>
-      <p className="faint" style={{ fontSize: '0.8125rem', margin: '0 4px 8px' }}>e1RM = estimated one-rep max (Epley, using reps + RIR). Marked ≈ when based on more than 10 reps to failure, where estimates are less accurate.</p>
+
+      {data.totalSessions > 0 && (
+        <>
+          <h2 className="section-title">All-time records</h2>
+          <div className="card rec-card">
+            <div className="rec-grid">
+              {rec.bestE1rm && <RecTile label="Est. 1RM" value={`${rec.bestE1rm.reliable ? '' : '≈'}${fmtWeight(rec.bestE1rm.kg, u)}`}
+                sub={`${loadText(lt, rec.bestE1rm.loadKg, u)} × ${rec.bestE1rm.reps} · ${shortDate(rec.bestE1rm.date)}`} to={`/session/${rec.bestE1rm.sessionId}`} />}
+              {rec.heaviest && (lt !== 'bodyweight' || everAdded) && <RecTile label={lt === 'assisted' ? 'Least assistance' : lt === 'bodyweight' ? 'Most added' : 'Heaviest'}
+                value={lt === 'weighted' ? fmtWeight(rec.heaviest.loadKg, u) : loadText(lt, rec.heaviest.loadKg, u)} sub={`× ${rec.heaviest.reps} · ${shortDate(rec.heaviest.date)}`} to={`/session/${rec.heaviest.sessionId}`} />}
+              {rec.mostReps && <RecTile label="Most reps" value={`${rec.mostReps.reps}`} sub={`${loadText(lt, rec.mostReps.loadKg, u)} · ${shortDate(rec.mostReps.date)}`} to={`/session/${rec.mostReps.sessionId}`} />}
+              {rec.bestVolume && <RecTile label="Best volume" value={fmtVolume(rec.bestVolume.kg, u)} sub={shortDate(rec.bestVolume.date)} to={`/session/${rec.bestVolume.sessionId}`} />}
+            </div>
+            {rec.repRecords.length > 1 && (
+              <>
+                <div className="rec-sub">Rep records</div>
+                <div className="rec-reps">
+                  {rec.repRecords.slice(0, 6).map((r) => (
+                    <Link key={r.loadKg} to={`/session/${r.sessionId}`} className="rec-rep pressable">
+                      <span className="num">{loadText(lt, r.loadKg, u)}</span><b className="num">× {r.reps}</b><span className="faint">{shortDate(r.date)}</span>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="row" style={{ margin: '22px 0 10px' }}>
+            <h2 className="section-title grow" style={{ margin: '0 6px' }}>Progress</h2>
+            <div className="seg range-seg" role="group" aria-label="Time range">
+              {(['3M', '1Y', 'All'] as Range[]).map((r) => <button key={r} aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
+            </div>
+          </div>
+          <div className="chart-grid">
+            {charts.map((c) => (
+              <section key={c.key} className="card chart-card" aria-label={c.title}>
+                <h3 className="chart-title">{c.title}</h3>
+                {c.note && <div className="chart-note">{c.note}</div>}
+                <LineChart points={c.pts} fmt={c.fmt} label={c.title} integer={c.integer} />
+              </section>
+            ))}
+          </div>
+          <p className="faint chart-foot">e1RM = estimated one-rep max (Epley, using reps + RIR). ≈ and hollow dots: based on more than 10 reps to failure, where estimates are less accurate (Reynolds et al. 2006).</p>
+        </>
+      )}
+
+      <h2 className="section-title">Sessions{range !== 'All' ? ` · last ${range === '3M' ? '3 months' : 'year'}` : ''}</h2>
       <div className="stack">
-        {groups.map(({ s, sets }) => {
-          const b = best(sets);
-          return (
-            <Link key={s.id} to={`/session/${s.id}`} className="card pressable" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <div className="row" style={{ marginBottom: 6 }}>
-                <span className="grow" style={{ fontWeight: 600 }}>{fmtDate(s.startedAt)}</span>
-                {b && <span className="badge accent num">e1RM {b.reliable ? '' : '≈'}{fmtWeight(Math.round(b.kg * 2) / 2, settings.unit)}</span>}
-              </div>
-              <div className="stack" style={{ gap: 2 }}>
-                {sets.map((l) => (
-                  <div key={l.id} className="num muted" style={{ fontSize: '0.875rem' }}>
-                    {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? '↳ drop' : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l, settings.unit, settings.effortMode)}
-                  </div>
-                ))}
-              </div>
-            </Link>
-          );
-        })}
-        {!groups.length && <p className="empty">No sets logged for this exercise yet.</p>}
+        {newestFirst.map((r) => (
+          <Link key={r.sessionId} to={`/session/${r.sessionId}`} className="card pressable" style={{ color: 'inherit', textDecoration: 'none' }}>
+            <div className="row" style={{ marginBottom: 4 }}>
+              <span className="grow" style={{ fontWeight: 600 }}>{keyToDate(r.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: r.date.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}</span>
+              {r.prCount > 0 && <span className="badge good num" aria-label={`${r.prCount} personal record${r.prCount === 1 ? '' : 's'}`}><Icon name="flag" size={12} /> PR{r.prCount > 1 ? ` ×${r.prCount}` : ''}</span>}
+              {r.bestSet?.e1rmKg && <span className="badge accent num">e1RM {r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
+            </div>
+            <div className="num muted sess-meta">
+              {r.workingSets} sets{r.volumeKg > 0 ? ` · ${fmtVolume(r.volumeKg, u)}` : ''}{r.bestSet ? ` · best ${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}` : ''}
+            </div>
+            <div className="stack" style={{ gap: 2 }}>
+              {r.sets.map((l) => (
+                <div key={l.id} className="num faint" style={{ fontSize: '0.875rem' }}>
+                  {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? '↳ drop' : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l as SetLog, u, settings.effortMode)}
+                </div>
+              ))}
+            </div>
+          </Link>
+        ))}
+        {!rows.length && <p className="empty">{data.totalSessions ? 'No sessions in this range.' : 'No sets logged for this exercise yet.'}</p>}
       </div>
-      <Sheet open={info} onClose={() => setInfo(false)} title={exerciseLabel(ex)}><ExerciseInfo ex={ex} /></Sheet>
+      {ex && <Sheet open={info} onClose={() => setInfo(false)} title={exerciseLabel(ex)}><ExerciseInfo ex={ex} /></Sheet>}
     </div>
+  );
+}
+
+function RecTile({ label, value, sub, to }: { label: string; value: string; sub: string; to: string }) {
+  return (
+    <Link to={to} className="rec-tile pressable">
+      <span className="rec-label">{label}</span>
+      <b className="rec-value">{value}</b>
+      <span className="rec-meta num">{sub}</span>
+    </Link>
   );
 }

@@ -126,6 +126,7 @@ export interface Settings {
     restTimer: boolean;
     effort: boolean;
     warmups: boolean;
+    progression?: boolean; // progression targets (greyed "today" numbers) instead of last time's; undefined = on
   };
 }
 

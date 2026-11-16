@@ -5,7 +5,7 @@ import { createPlan, createWorkout, finishSession, latestBodyweightKg, newItem, 
 import { getSettings, updateSettings } from '../db/settings';
 import type { Exercise, Session, SetLog, SurveyBody, SurveySleep, Workout, WorkoutItem } from '../db/types';
 import { normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
-import { e1rm, rirToRpe, rpeToRir, totalLoadKg } from '../lib/science';
+import { defaultStepKg, e1rm, progressionTarget, rirToRpe, rpeToRir, snappedStepKg, totalLoadKg, TARGET_RIR } from '../lib/science';
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
@@ -499,3 +499,103 @@ async function rateSession({ id, sessionRpe, sleep, soreness, note }: { id: stri
   const saved = await save('sessions', { ...s, sessionRpe: pick(sessionRpe, s.sessionRpe), sleep: pick(sleep, s.sleep), soreness: pick(soreness, s.soreness), notes, ratedAt: Date.now() } as Session);
   return { id, sessionRpe: saved.sessionRpe ?? null, sleep: saved.sleep ?? null, soreness: saved.soreness ?? null, note: saved.notes ?? null };
 }
+
+// ---------------- live workout: progression targets & live progress ----------------
+/** Bodyweight fallback for sets without a snapshot (same rule as the summary): last weigh-in at/before ts, else the first after. */
+async function bwFallback() {
+  const bw = await db.bodyweight.orderBy('at').filter(alive).toArray();
+  return (ts: number) => { let v: number | undefined; for (const b of bw) { if (b.at <= ts) v = b.kg; else return v ?? b.kg; } return v; };
+}
+
+/** The last finished session (started before `beforeSessionId`'s start, or before now) with done working sets of this exercise. */
+async function previousWorking(exerciseId: string, beforeSessionId?: string) {
+  const ref = beforeSessionId ? await db.sessions.get(beforeSessionId) : undefined;
+  const before = ref?.startedAt ?? Date.now() + 1;
+  const sets = await db.sets.where('exerciseId').equals(exerciseId)
+    .filter((x) => alive(x) && !!x.doneAt && x.kind === 'working' && x.sessionId !== beforeSessionId).toArray();
+  const sids = [...new Set(sets.map((x) => x.sessionId))];
+  const sess = (await db.sessions.bulkGet(sids)).filter((x): x is Session => !!x && alive(x) && !!x.endedAt && x.startedAt < before)
+    .sort((a, b) => b.startedAt - a.startedAt);
+  const prev = sess[0];
+  return prev ? { session: prev, sets: sets.filter((x) => x.sessionId === prev.id).sort(setOrder) } : null;
+}
+
+export async function nextTarget({ exerciseId, repsMin, repsMax, beforeSessionId }: { exerciseId: string; repsMin?: number | null; repsMax?: number | null; beforeSessionId?: string }) {
+  const ex = await need(db.exercises.get(exerciseId), 'Exercise');
+  const unit = (await getSettings()).unit;
+  const stepKg = snappedStepKg(ex.stepKg ?? defaultStepKg(ex.equipment, unit), unit);
+  const prev = await previousWorking(exerciseId, beforeSessionId);
+  const last = (prev?.sets ?? []).filter((x) => x.reps != null && x.reps > 0)
+    .map((x) => ({ setNo: x.setNo, side: x.side, loadKg: x.loadKg ?? 0, reps: x.reps!, rir: x.rir ?? null }));
+  const t = progressionTarget(last, repsMin, repsMax, stepKg, ex.loadType);
+  return {
+    exerciseId, exercise: exerciseLabel(ex), loadType: ex.loadType, stepKg, targetRir: TARGET_RIR,
+    basis: prev ? { sessionId: prev.session.id, date: dateKey(prev.session.startedAt) } : null,
+    decision: t?.decision ?? null, loadDeltaKg: t?.loadDeltaKg ?? 0, repDelta: t?.repDelta ?? 0,
+    reason: t?.reason ?? (prev ? 'No rep range on this exercise: repeat last time.' : 'No earlier session of this exercise.'),
+    // with no rule (no rep range) the rows are last time's numbers, unchanged
+    rows: t?.rows ?? last.map((r) => ({ ...r, lastLoadKg: r.loadKg, lastReps: r.reps })),
+  };
+}
+export type NextTarget = Awaited<ReturnType<typeof nextTarget>>;
+
+export const exercisesNextTarget = defineCommand({ name: 'exercises.nextTarget', kind: 'query',
+  description: 'What to lift today for an exercise (progression target, "double progression": a coaching convention and rough guide, not a validated formula). ' +
+    'Looks at the last finished session with this exercise (before beforeSessionId if given, e.g. the live session) and its done working sets, and the rep range repsMin–repsMax (from the session slot; only repsMin = fixed reps). ' +
+    `Rule: every set at >= repsMax with RIR >= ${TARGET_RIR} (or no RIR logged) -> decision "increase": + one equipment weight step (stepKg; assisted = less assistance), reps = repsMin. ` +
+    'More than half the sets below repsMin -> "reduce": one step lighter, reps = repsMin. Otherwise "reps": same weight, +1 rep per set up to repsMax (a set at RIR 0 repeats its reps), or "hold" if nothing would change. ' +
+    'Bodyweight lifts with no added weight progress by +1 rep instead of weight. decision null = no rep range or no history (rows = last time unchanged). ' +
+    'Returns decision, loadDeltaKg, reason (human-readable), rows[] per working set and side (loadKg = logged load: weight / added weight / assistance, reps, lastLoadKg, lastReps). Sets beyond last time\'s count: repeat the last row.',
+  input: z.object({ exerciseId: zId, repsMin: z.number().int().min(1).nullable().optional(), repsMax: z.number().int().min(1).nullable().optional(),
+    beforeSessionId: zId.optional().describe('Only compare with sessions that started before this one (pass the live session id)') }),
+  run: nextTarget });
+
+export type SetBadge = 'pr' | 'up' | null;
+async function liveProgress(s: Session) {
+  const bwAt = await bwFallback();
+  const cur = (await db.sets.where('sessionId').equals(s.id).filter((x) => alive(x) && !!x.doneAt).toArray()).sort(setOrder);
+  const curStat = cur.map((x) => ({ raw: x, st: toStatSet(x, bwAt(s.startedAt)) }));
+  const exIds = [...new Set(cur.map((x) => x.exerciseId))];
+  // same "earlier" as the summary: finished sessions that started before this one
+  const earlier = (await db.sessions.where('startedAt').below(s.startedAt).filter((x) => alive(x) && !!x.endedAt && x.id !== s.id).toArray())
+    .sort((a, b) => b.startedAt - a.startedAt);
+  const earlierById = new Map(earlier.map((x) => [x.id, x]));
+  const priorRaw = exIds.length ? await db.sets.where('exerciseId').anyOf(exIds).filter((x) => alive(x) && !!x.doneAt && x.kind === 'working' && earlierById.has(x.sessionId)).toArray() : [];
+  const prior = priorRaw.map((x) => ({ raw: x, st: toStatSet(x, bwAt(earlierById.get(x.sessionId)!.startedAt)) }));
+
+  const sets = curStat.filter(({ raw }) => raw.kind === 'working' && (raw.reps ?? 0) > 0).map(({ raw, st }) => {
+    const past = prior.filter((p) => p.raw.exerciseId === raw.exerciseId);
+    let prs: ('e1rm' | 'weight' | 'reps')[] = [];
+    let beatLastTime = false;
+    if (past.length) { // never a PR on the first time an exercise is done
+      // today's sets ticked before this one count as prior too, so only the set that raised the bar gets the badge
+      const todayBefore = curStat.filter((c) => c.raw.exerciseId === raw.exerciseId && c.raw.kind === 'working' && c.raw.id !== raw.id && (c.raw.doneAt ?? 0) < (raw.doneAt ?? 0)).map((c) => c.st);
+      const r = personalRecords([st], [...past.map((p) => p.st), ...todayBefore], st.loadType);
+      prs = (['e1rm', 'weight', 'reps'] as const).filter((k) => r[k]);
+      const prevSess = earlier.find((e) => past.some((p) => p.raw.sessionId === e.id));
+      const same = past.filter((p) => p.raw.sessionId === prevSess?.id && p.raw.setNo === raw.setNo && p.raw.side === raw.side).map((p) => p.st);
+      beatLastTime = same.length > 0 && compareToPrevious([st], same, st.loadType).trend === 'up';
+    }
+    const badge: SetBadge = prs.length ? 'pr' : beatLastTime ? 'up' : null;
+    return { setId: raw.id, itemKey: raw.itemKey, kind: raw.kind, setNo: raw.setNo, side: raw.side, badge, prs, beatLastTime };
+  });
+  const replacedDone = s.items.filter((i) => i.replacedBy).reduce((a, i) => a + workingSetCount(cur.filter((x) => x.itemKey === i.key)), 0);
+  return {
+    sessionId: s.id,
+    totals: {
+      workingSetsDone: workingSetCount(cur),
+      workingSetsPlanned: s.items.filter((i) => !i.replacedBy).reduce((a, i) => a + i.sets, 0) + replacedDone,
+      volumeKg: r1(volumeKg(curStat.map((c) => c.st))),
+    },
+    sets,
+  };
+}
+export type LiveProgress = Awaited<ReturnType<typeof liveProgress>>;
+
+export const sessionsLiveProgress = defineCommand({ name: 'sessions.liveProgress', kind: 'query',
+  description: 'Live progress of a workout (meant for the one in progress, works on any): totals.workingSetsDone / workingSetsPlanned and totals.volumeKg (counted exactly like sessions.summary totals), ' +
+    'and per done working set a badge: "pr" = an all-time record vs every earlier session (e1RM from <=10 reps to failure, heaviest logged load, or most reps at >= that load; same rules as sessions.summary prs; ' +
+    'today\'s sets ticked earlier count as prior, so only the set that raised the bar gets it; never on the first time an exercise is done), "up" = beat the same set (set number + side) of the previous session of that exercise ' +
+    '(higher e1RM, or more reps at >= its weight; bodyweight lifts need a 1% e1RM change), null = neither. prs lists which records.',
+  input: z.object({ id: zId }),
+  run: async ({ id }) => liveProgress(await need(db.sessions.get(id), 'Session')) });

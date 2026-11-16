@@ -16,6 +16,8 @@ import { WorkoutEditorPage } from './pages/WorkoutEditor';
 import { FoodPage } from './pages/Food';
 import { NutritionPage } from './pages/Nutrition';
 import { SupplementsPage } from './pages/Supplements';
+import { StatsPage } from './pages/Stats';
+import { ExercisesPage } from './pages/Exercises';
 
 type Tab = { to: string; icon: string; label: string; home?: boolean };
 
@@ -35,7 +37,7 @@ function TabBar() {
   ];
   const tabs: Tab[] = [...left, { to: '/', icon: 'home', label: 'Home', home: true }, ...right];
   const isActive = (t: Tab) => (t.home ? pathname === '/' : pathname.startsWith(t.to)
-    || (t.to === '/plans' && /^\/(workouts|history|exercise)/.test(pathname)) || (t.to === '/food' && pathname.startsWith('/nutrition')));
+    || (t.to === '/plans' && /^\/(workouts|history|exercise|stats)/.test(pathname)) || (t.to === '/food' && pathname.startsWith('/nutrition')));
   return (
     <div className="tabbar">
       <nav aria-label="Main">
@@ -83,6 +85,8 @@ export default function App() {
           <Route path="/session/:id" element={<SessionPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/exercise/:id" element={<ExerciseHistoryPage />} />
+          <Route path="/exercises" element={<ExercisesPage />} />
+          <Route path="/stats" element={<StatsPage />} />
           <Route path="/weight" element={<WeightPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/food" element={<FoodPage />} />

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
     restTimer: true,
     effort: true,
     warmups: true,
+    progression: true,
   },
 };
 

@@ -21,6 +21,8 @@ export function PlansPage() {
     <div className="page">
       <header className="page-head">
         <h1>Gym</h1>
+        <button className="icon-btn filled" aria-label="Stats" onClick={() => nav('/stats')}><Icon name="chart" /></button>
+        <button className="icon-btn filled" aria-label="Exercises" onClick={() => nav('/exercises')}><Icon name="search" /></button>
         <button className="icon-btn filled" aria-label="History" onClick={() => nav('/history')}><Icon name="history" /></button>
         <button className="icon-btn filled" aria-label="New plan" onClick={() => setNaming(true)}><Icon name="plus" /></button>
       </header>

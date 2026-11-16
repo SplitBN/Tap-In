@@ -81,3 +81,76 @@ export function stepInUnit(stepKg: number, unit: Unit): number {
 }
 /** The step actually used in `unit`, back in kg (for rounding suggestions to loadable weights). */
 export const snappedStepKg = (stepKg: number, unit: Unit) => toKg(stepInUnit(stepKg, unit), unit);
+
+// ---------------- progression target ("what to lift today") ----------------
+/** Effort we aim working sets at: at least 1 rep in reserve (RIR-based RPE ≤ 9). A convention, not a published threshold. */
+export const TARGET_RIR = 1;
+
+export type ProgressionDecision = 'increase' | 'reps' | 'hold' | 'reduce';
+export interface ProgressionSet { setNo: number; side: 'both' | 'left' | 'right'; loadKg: number; reps: number; rir: number | null }
+export interface ProgressionTarget {
+  decision: ProgressionDecision;
+  /** change of the logged load (kg) on every row: + step, − step or 0. For assisted lifts "heavier" = less assistance, so increase is negative. */
+  loadDeltaKg: number;
+  /** reps added on the rows that progress by reps (+1), 0 otherwise */
+  repDelta: number;
+  reason: string;
+  /** one target per working set of last time (same setNo + side); rir is last time's, only on rows where load AND reps are unchanged
+   *  (a bare ✓ saves it, so an invented effort must never raise e1RM) */
+  rows: (ProgressionSet & { lastLoadKg: number; lastReps: number })[];
+}
+
+/** Double progression with an RIR brake — the rule behind the greyed "today" numbers.
+ *
+ *  This is a coaching CONVENTION (the classic "double progression" used by apps such as Alpha Progression), not a
+ *  formula from a trial: no study validates these exact thresholds, so the UI labels it a rough guide. Effort is read on
+ *  the RIR-based RPE scale (Zourdos et al. 2016, JSCR 30(1):267–275; Helms et al. 2016, Strength Cond J 38(4):42–49).
+ *  Background only: adjusting load by RIR instead of fixed loading has been studied (Graham & Cleather 2021, JSCR
+ *  35(9):2451–2456), but not this specific rule.
+ *
+ *  Input: last session's done WORKING sets of the exercise (warm-ups and drop steps excluded), every side of one-side
+ *  exercises (both sides must qualify). Range lo–hi from the slot; only lo given → lo = hi. Effort missing (not logged,
+ *  or the RIR column off) → decide on reps alone.
+ *  1. increase: every set reached ≥ hi reps, each with RIR ≥ TARGET_RIR (or no RIR) → load + one equipment step on
+ *     every row, reps = lo. Assisted: one step less assistance (never below 0). Bodyweight with no added weight on any
+ *     set → no weight to add, so reps + 1 instead (decision "reps", may go above hi).
+ *  2. reduce: more than half the sets fell below lo → load − one step (assisted: + step), reps = lo. If the load is
+ *     already 0 (nothing to take off) → hold instead.
+ *  3. reps: otherwise same load; each row: below lo → lo; at/over hi → hi; else +1 rep, except a set taken to failure
+ *     (RIR 0) repeats its reps. If no row changes (e.g. top of range but at RIR 0) → hold.
+ *  Mixed weights across sets (pyramids, back-offs) keep their shape: the same step is added to each row's own load.
+ *  Returns null without history or without a rep range (callers fall back to last time's numbers). */
+export function progressionTarget(last: ProgressionSet[], repsMin: number | undefined | null, repsMax: number | undefined | null,
+  stepKg: number, loadType: LoadType): ProgressionTarget | null {
+  const sets = last.filter((s) => s.reps > 0);
+  if (!sets.length || repsMin == null) return null;
+  const lo = repsMin, hi = Math.max(repsMin, repsMax ?? repsMin);
+  const easyEnough = (s: ProgressionSet) => s.rir == null || s.rir >= TARGET_RIR;
+  const row = (s: ProgressionSet, loadKg: number, reps: number, keepRir: boolean) =>
+    ({ setNo: s.setNo, side: s.side, loadKg: Math.max(0, loadKg), reps, rir: keepRir && reps === s.reps && loadKg === s.loadKg ? s.rir : null, lastLoadKg: s.loadKg, lastReps: s.reps });
+  const heavier = loadType === 'assisted' ? -stepKg : stepKg; // load change that makes the lift heavier
+
+  if (sets.every((s) => s.reps >= hi && easyEnough(s))) {
+    if (loadType === 'bodyweight' && sets.every((s) => s.loadKg === 0))
+      return { decision: 'reps', loadDeltaKg: 0, repDelta: 1, reason: `Top of ${lo}–${hi} reached with no added weight: one more rep (or add weight).`,
+        rows: sets.map((s) => row(s, 0, s.reps + 1, true)) };
+    if (loadType === 'assisted' && sets.every((s) => s.loadKg === 0))
+      return { decision: 'reps', loadDeltaKg: 0, repDelta: 1, reason: `Top of ${lo}–${hi} reached with no assistance left: one more rep.`,
+        rows: sets.map((s) => row(s, 0, s.reps + 1, true)) };
+    return { decision: 'increase', loadDeltaKg: heavier, repDelta: 0,
+      reason: `Every set reached the top of ${lo}–${hi} reps${sets.some((s) => s.rir != null) ? ` with ≥ ${TARGET_RIR} rep in reserve` : ''}: add one step and start again at ${lo}.`,
+      rows: sets.map((s) => row(s, s.loadKg + heavier, lo, false)) };
+  }
+  const short = sets.filter((s) => s.reps < lo).length;
+  if (short * 2 > sets.length) {
+    const canLighten = loadType === 'assisted' || sets.some((s) => s.loadKg > 0);
+    if (canLighten) return { decision: 'reduce', loadDeltaKg: -heavier, repDelta: 0,
+      reason: `Most sets fell below ${lo} reps: one step lighter, aim for ${lo}.`,
+      rows: sets.map((s) => row(s, s.loadKg - heavier, lo, false)) };
+  }
+  const rows = sets.map((s) => row(s, s.loadKg, s.reps < lo ? lo : s.reps >= hi ? hi : s.rir === 0 ? s.reps : s.reps + 1, true));
+  const grows = rows.some((r) => r.reps > r.lastReps);
+  if (!grows) return { decision: 'hold', loadDeltaKg: 0, repDelta: 0,
+    reason: `Top of ${lo}–${hi} reached but at failure (0 in reserve): repeat it, then add weight.`, rows };
+  return { decision: 'reps', loadDeltaKg: 0, repDelta: 1, reason: `Within ${lo}–${hi} reps: same weight, one more rep per set (sets at failure repeat).`, rows };
+}

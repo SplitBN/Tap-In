@@ -182,7 +182,7 @@ function WeekWidget() {
   const days = new Set((data?.sessions ?? []).map((s) => (new Date(s.startedAt).getDay() + 6) % 7));
   const today = (new Date().getDay() + 6) % 7;
   return (
-    <Widget role="gym" icon="chart" title="Week" onOpen={() => nav('/history')}>
+    <Widget role="gym" icon="chart" title="Week" onOpen={() => nav('/stats')}>
       <div className="row" style={{ alignItems: 'baseline', gap: 4 }}>
         <span className="num big-value">{data?.sessions.length ?? 0}</span>
         <span className="muted" style={{ fontSize: '0.8125rem' }}>workouts · {data?.sets ?? 0} sets</span>
