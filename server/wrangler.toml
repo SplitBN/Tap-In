@@ -16,3 +16,12 @@ crons = ["* * * * *"] # reminders: check every minute
 ALLOWED_ORIGINS = "https://splitbn.github.io,http://localhost:5173"
 VAPID_SUBJECT = "https://splitbn.github.io/Tap-In/"
 # VAPID_PUBLIC_KEY: set with `wrangler secret put VAPID_PUBLIC_KEY` (public by design, stored as a secret for one place to manage)
+
+# Rest-over alerts: one SQLite-backed Durable Object per device (alarm at the exact second rest ends).
+[[durable_objects.bindings]]
+name = "REST_ALARM"
+class_name = "RestAlarm"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RestAlarm"]

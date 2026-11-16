@@ -70,6 +70,23 @@ export async function signOut() {
 const b64uToBytes = (s: string) => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
 
 /** Ask permission (must run from a tap; iOS needs the app on the Home Screen) and register this device. */
+/** Rest-over alert for this device (server Durable Object alarm). No-op unless signed in with notifications on. */
+// The endpoint is looked up ahead of time: iOS gives a backgrounded page only a moment, so the hide handler must
+// go straight to a keepalive fetch without awaiting the service worker.
+let endpoint: string | null | undefined;
+export async function warmPushEndpoint() {
+  if (endpoint !== undefined || !('serviceWorker' in navigator)) return;
+  endpoint = (await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription())?.endpoint ?? null;
+}
+async function restAlert(path: '/push/rest' | '/push/rest/cancel', extra: Record<string, unknown> = {}) {
+  if (!state.account) return;
+  if (endpoint === undefined) await warmPushEndpoint();
+  if (!endpoint) return;
+  try { await api(path, { method: 'POST', keepalive: true, body: JSON.stringify({ endpoint, ...extra }) }); } catch { /* offline: the in-app timer still works */ }
+}
+export const scheduleRestAlert = (at: number, title: string, body: string) => restAlert('/push/rest', { at, title, body });
+export const cancelRestAlert = () => restAlert('/push/rest/cancel');
+
 export async function enablePush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('Notifications need the app installed on the Home Screen (Share → Add to Home Screen), iOS 16.4+.');
   const perm = await Notification.requestPermission();
@@ -79,13 +96,13 @@ export async function enablePush() {
   const reg = await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
   await api('/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone }) });
-  await setMeta('push', true);
+  await setMeta('push', true); endpoint = sub.endpoint;
 }
 export async function disablePush() {
   const reg = await navigator.serviceWorker?.ready;
   const sub = await reg?.pushManager.getSubscription();
   if (sub) { try { await api('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) }); } catch { /* offline */ } await sub.unsubscribe(); }
-  await setMeta('push', false);
+  await setMeta('push', false); endpoint = null;
 }
 export const pushEnabled = async () => !!(await meta<boolean>('push')) && Notification?.permission === 'granted';
 export const testPush = () => api<{ sent: number }>('/push/test', { method: 'POST' });

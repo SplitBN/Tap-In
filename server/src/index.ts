@@ -1,5 +1,6 @@
 // Tap In backend — Cloudflare Worker + D1.
 import { runReminders, sendPush } from './reminders';
+import { RestAlarm } from './restAlarm';
 // Routes:
 //   POST /auth/register   {invite, name}            → {token, recoveryKey, user}
 //   POST /auth/recover    {recoveryKey}             → {token, user}
@@ -21,7 +22,9 @@ export interface Env {
   VAPID_SUBJECT: string; // mailto: or https: contact for push services (var)
   VAPID_PUBLIC_KEY: string; // public by design (var)
   VAPID_PRIVATE_KEY?: string; // secret
+  REST_ALARM: DurableObjectNamespace<RestAlarm>; // one per push endpoint (device)
 }
+export { RestAlarm };
 
 type User = { id: string; name: string };
 
@@ -130,6 +133,19 @@ async function route(req: Request, env: Env): Promise<Response> {
     await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ? AND user_id = ?').bind(endpoint ?? '', user.id).run();
     return json({ ok: true });
   }
+  // rest-over alert for THIS device: scheduled when the app is backgrounded mid-rest, cancelled when it returns
+  if (req.method === 'POST' && (p === '/push/rest' || p === '/push/rest/cancel')) {
+    if (!env.VAPID_PRIVATE_KEY) throw new HttpError(503, 'Push is not configured on the server');
+    const { endpoint, at, title, body: text } = await body<{ endpoint?: string; at?: number; title?: string; body?: string }>();
+    const sub = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM push_subs WHERE endpoint = ? AND user_id = ?').bind(endpoint ?? '', user.id).first<{ endpoint: string; p256dh: string; auth: string }>();
+    if (!sub) throw new HttpError(404, 'This device is not registered for notifications');
+    const alarm = env.REST_ALARM.get(env.REST_ALARM.idFromName(sub.endpoint));
+    if (p === '/push/rest/cancel') { await alarm.cancel(); return json({ ok: true }); }
+    if (typeof at !== 'number' || at < Date.now() - 5000 || at > Date.now() + 3600_000) throw new HttpError(400, 'at must be within the next hour');
+    await alarm.schedule({ at: Math.max(at, Date.now() + 1000), title: (title || 'Rest over').slice(0, 80), body: (text || 'Time for your next set').slice(0, 160), sub });
+    return json({ ok: true, at });
+  }
+
   if (req.method === 'POST' && p === '/push/test') {
     if (!env.VAPID_PRIVATE_KEY) throw new HttpError(503, 'Push is not configured on the server');
     const subs = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM push_subs WHERE user_id = ?').bind(user.id).all<{ endpoint: string; p256dh: string; auth: string }>();

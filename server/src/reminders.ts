@@ -38,10 +38,11 @@ async function records<T>(env: Env, userId: string, tbl: string): Promise<T[]> {
   return rows.results.map((r) => JSON.parse(r.data) as T).filter((r) => !(r as { deletedAt?: number | null }).deletedAt);
 }
 
-export async function sendPush(env: Env, sub: { endpoint: string; p256dh: string; auth: string }, body: { title: string; body: string; url?: string; tag?: string }) {
+export async function sendPush(env: Env, sub: { endpoint: string; p256dh: string; auth: string }, body: { title: string; body: string; url?: string; tag?: string },
+  opts: { ttl?: number; urgency?: 'low' | 'normal' | 'high' } = {}) {
   const vapid: VapidKeys = { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY! };
   const subscription: PushSubscription = { endpoint: sub.endpoint, expirationTime: null, keys: { p256dh: sub.p256dh, auth: sub.auth } };
-  const payload = await buildPushPayload({ data: JSON.stringify(body), options: { ttl: 3600, urgency: 'normal', topic: body.tag?.slice(0, 32) } }, subscription, vapid);
+  const payload = await buildPushPayload({ data: JSON.stringify(body), options: { ttl: opts.ttl ?? 3600, urgency: opts.urgency ?? 'normal', topic: body.tag?.slice(0, 32) } }, subscription, vapid);
   const res = await fetch(sub.endpoint, payload);
   if (res.status === 404 || res.status === 410) await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?').bind(sub.endpoint).run(); // subscription gone
   return res.status;
