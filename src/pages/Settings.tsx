@@ -71,6 +71,7 @@ export function SettingsPage() {
           <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
           <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
           <Toggle label="Progression suggestions" sub="Today's target from your rep range. Off: last time's numbers" on={f.progression !== false} onChange={feat('progression')} />
+          <Toggle label="Plan week" sub="“Week 3” next to your plan" on={f.planWeek !== false} onChange={feat('planWeek')} />
           <Toggle label="Post-workout survey" sub="Effort, sleep, body: 3 taps after a workout" on={f.survey} onChange={feat('survey')} />
         </div>
       </>}

@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
     effort: true,
     warmups: true,
     progression: true,
+    planWeek: true,
   },
 };
 

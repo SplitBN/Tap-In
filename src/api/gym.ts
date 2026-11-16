@@ -9,6 +9,7 @@ import { defaultStepKg, e1rm, progressionTarget, rirToRpe, rpeToRir, snappedStep
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
+import { planStart, planWeek } from '../lib/planWeek';
 import { bestSet, compareToPrevious, personalRecords, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount, type BestSet } from '../lib/workoutStats';
 
 const zLoadType = z.enum(['weighted', 'bodyweight', 'assisted']);
@@ -91,13 +92,13 @@ export const exercisesDelete = defineCommand({
 // ---------------- plans & workouts ----------------
 export const plansList = defineCommand({
   name: 'plans.list', kind: 'query',
-  description: 'All workout plans with their workouts (in rotation order), each workout\'s exercises, and which plan is active.',
+  description: 'All workout plans with their workouts (in rotation order), each workout\'s exercises, which plan is active, startDate (YYYY-MM-DD the plan\'s weeks count from: the start date set with plans.update, else the day the plan was created) and week (the plan\'s current week number, 1-based; Week 1 is the Monday-start week holding startDate).',
   input: z.object({}),
   run: async () => {
     const s = await getSettings();
     const plans = await db.plans.filter(alive).toArray();
     return Promise.all(plans.map(async (p) => ({
-      id: p.id, name: p.name, active: s.activePlanId === p.id,
+      id: p.id, name: p.name, active: s.activePlanId === p.id, startDate: planStart(p), week: planWeek(p),
       workouts: await Promise.all((await db.workouts.bulkGet(p.workoutIds)).filter((w) => w && alive(w)).map(async (w) => ({
         id: w!.id, name: w!.name,
         items: await Promise.all(w!.items.map(async (i) => ({ key: i.key, exerciseId: i.exerciseId, exercise: await exName(i.exerciseId), sets: i.sets, repsMin: i.repsMin, repsMax: i.repsMax, warmups: i.warmups, drops: i.drops, rest: i.rest, supersetId: i.supersetId, notes: i.notes }))),
@@ -110,6 +111,15 @@ export const plansCreate = defineCommand({ name: 'plans.create', kind: 'action',
   input: z.object({ name: z.string().min(1) }), run: async ({ name }) => createPlan(name) });
 export const plansRename = defineCommand({ name: 'plans.rename', kind: 'action', description: 'Rename a plan. Returns the plan record.',
   input: z.object({ id: zId, name: z.string().min(1) }), run: async ({ id, name }) => save('plans', { ...(await need(db.plans.get(id), 'Plan')), name }) });
+export const plansUpdate = defineCommand({ name: 'plans.update', kind: 'action',
+  description: 'Change a plan\'s name and/or startDate; only the fields you pass change. startDate (YYYY-MM-DD) sets where "Week N" counts from (Week 1 = the Monday-start week holding it); null goes back to counting from the day the plan was created. Returns the plan record.',
+  input: z.object({ id: zId, name: z.string().trim().min(1).optional(), startDate: zDate.nullable().optional() }),
+  run: async ({ id, name, startDate }) => {
+    const p = { ...(await need(db.plans.get(id), 'Plan')) };
+    if (name !== undefined) p.name = name;
+    if (startDate !== undefined) p.startDate = startDate ?? undefined;
+    return save('plans', p);
+  } });
 export const plansDelete = defineCommand({ name: 'plans.delete', kind: 'action', description: 'Delete a plan and its workouts (past workout sessions stay in history). If it was the active plan, no plan is active afterwards.',
   input: z.object({ id: zId }), run: async ({ id }) => {
     const plan = await need(db.plans.get(id), 'Plan');

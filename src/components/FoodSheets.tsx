@@ -19,6 +19,16 @@ import { plural } from '../lib/format';
 
 const baseUnit = (it: { unitBase?: 'g' | 'ml' }) => it.unitBase ?? 'g';
 
+/** Soft rounded tile with the food's first letter (a bolt for a quick add): the food stand-in for an exercise photo. */
+export function FoodTile({ name, quick, recipe }: { name: string; quick?: boolean; recipe?: boolean }) {
+  const ch = [...(name.trim() || '?')][0].toUpperCase();
+  return (
+    <span className="tile-ic" aria-hidden>
+      {quick ? <Icon name="bolt" size={18} stroke={2} /> : recipe ? <Icon name="note" size={18} stroke={2} /> : ch}
+    </span>
+  );
+}
+
 /** "28C 4P 11F" in the macro colours. */
 export function MacroLine({ m }: { m: Macros }) {
   return (
@@ -106,7 +116,7 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
             <input className="input" placeholder="Search foods · חיפוש" dir="auto" value={q} onChange={(e) => setQ(e.target.value)} enterKeyHint="search" autoCorrect="off" aria-label="Search foods" />
           </label>
           {!results && frequent.length > 0 && <div className="section-title">Frequent {mealLabel.toLowerCase()} foods</div>}
-          <div>
+          <div className={(results?.length || (!results && frequent.length)) ? 'group' : undefined}>
             {(results ?? []).map((raw) => {
               const it = show(raw);
               const p = it.portions[0];
@@ -123,14 +133,14 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
                 onToggle={mode === 'log' ? () => setSel(sel.includes(f.item.key) ? sel.filter((x) => x !== f.item.key) : [...sel, f.item.key]) : undefined}
                 onOpen={() => setPicked({ item: f.item, qty: f.qty, unit: f.unit })} />
             ))}
-            {results && !results.length && (
-              <div className="empty compact">
-                <p>No match for “{q}”.</p>
-                <button className="btn" onClick={() => setEditor({ kind: 'food', draft: { name: q } })}><Icon name="plus" size={16} /> Create “{q}”</button>
-              </div>
-            )}
-            {!results && !frequent.length && <div className="empty compact"><Icon name="search" size={32} /><h3>Find a food</h3><p>Search in Hebrew or English. Typos are fine.</p></div>}
           </div>
+          {results && !results.length && (
+            <div className="empty compact">
+              <p>No match for “{q}”.</p>
+              <button className="btn" onClick={() => setEditor({ kind: 'food', draft: { name: q } })}><Icon name="plus" size={16} /> Create “{q}”</button>
+            </div>
+          )}
+          {!results && !frequent.length && <div className="empty compact"><Icon name="search" size={32} /><h3>Find a food</h3><p>Search in Hebrew or English. Typos are fine.</p></div>}
         </>
       )}
 
@@ -141,14 +151,18 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
 
       {tab === 'mine' && (
         <>
-          {mine.length > 0 && <div className="row" style={{ margin: '12px 0' }}>
-            <button className="btn grow" onClick={() => setEditor({ kind: 'food' })}><Icon name="plus" size={16} /> New food</button>
-            {mode === 'log' && <button className="btn grow" onClick={() => setEditor({ kind: 'recipe' })}><Icon name="plus" size={16} /> New recipe</button>}
-          </div>}
-          {mine.length ? mine.map((f) => {
-            const it = foodToItem(f); const p = it.portions[0];
-            return <FoodRow key={f.id} item={it} m={scale(it.per100, p ? p.g : 100)} amount={p ? p.label.replace(/^1 /, '') : `100 ${baseUnit(it)}`} onOpen={() => setPicked({ item: it })} />;
-          }) : (
+          {mine.length ? <>
+            <div className="group" style={{ marginTop: 12 }}>
+              {mine.map((f) => {
+                const it = foodToItem(f); const p = it.portions[0];
+                return <FoodRow key={f.id} item={it} m={scale(it.per100, p ? p.g : 100)} amount={p ? p.label.replace(/^1 /, '') : `100 ${baseUnit(it)}`} onOpen={() => setPicked({ item: it })} />;
+              })}
+            </div>
+            <nav className="text-links" aria-label="Create">
+              <button className="text-link" onClick={() => setEditor({ kind: 'food' })}>New food</button>
+              {mode === 'log' && <button className="text-link" onClick={() => setEditor({ kind: 'recipe' })}>New recipe</button>}
+            </nav>
+          </> : (
             <div className="empty compact">
               <Icon name="food" size={32} />
               <h3>No foods of your own yet</h3>
@@ -178,6 +192,7 @@ function FoodRow({ item, m, amount, onOpen, selected, onToggle }: {
   return (
     <div className="food-row">
       <button className="food-row-main pressable" onClick={onOpen}>
+        <FoodTile name={item.name} recipe={item.source === 'recipe'} />
         <span className="grow" style={{ minWidth: 0 }}>
           <span className="food-row-name" dir="auto">{item.name}</span>
           {(item.brand || item.alt) && <span className="food-row-alt" dir="auto">{item.brand || item.alt}</span>}
@@ -291,7 +306,7 @@ function AmountSheet({ item, entry, initialQty, initialUnit, meal: meal0, date, 
           <button className={'preset' + (unit === b && qty !== '100' ? ' on' : '')} onClick={() => { if (portion) setQty(String(Math.round(grams))); setUnit(b); setQtyOpen(true); }}>Custom {b}</button>
         </div>
         {/* new entries take the meal from the add sheet's pill; only an existing entry can move meals here */}
-        {mode === 'log' && entry && <div className="row"><span className="muted grow">Meal</span><MealPill meal={meal} onChange={setMeal} /></div>}
+        {mode === 'log' && entry && <div className="row"><span className="muted grow t-17">Meal</span><MealPill meal={meal} onChange={setMeal} /></div>}
         <MacroPie m={m} />
         <button className="btn primary lg block" onClick={go}><Icon name="check" size={20} stroke={2.6} /> {mode === 'pick' ? 'Add to recipe' : entry ? 'Save' : 'Add'}</button>
         {entry && <DeleteEntry entry={entry} onDone={onClose} />}
@@ -336,10 +351,15 @@ export function MacroPie({ m }: { m: Macros }) {
 }
 
 function DeleteEntry({ entry, onDone }: { entry: FoodEntry; onDone: () => void }) {
-  return <button className="btn danger block" onClick={async () => {
+  return <DangerRow label="Delete" onClick={async () => {
     await run(entriesDelete, { id: entry.id }); onDone();
     toast(`${entry.name || 'Entry'} deleted`, () => run(recordsRestore, { table: 'entries', id: entry.id }));
-  }}><Icon name="trash" size={18} /> Delete</button>;
+  }} />;
+}
+
+/** The destructive action at the foot of a sheet: a red row in its own group (like Remove in the exercise sheet). */
+export function DangerRow({ label, icon = 'trash', onClick }: { label: string; icon?: string; onClick: () => void }) {
+  return <div className="group"><button className="am-row pressable danger" onClick={onClick}><Icon name={icon} /><span className="grow">{label}</span></button></div>;
 }
 
 /* ================================================================== */
@@ -397,7 +417,7 @@ function QuickEditSheet({ entry, onClose }: { entry: FoodEntry; onClose: () => v
   return (
     <Sheet open onClose={onClose} title="Quick add">
       <QuickForm meal={entry.meal} date={entry.date} entry={entry} onDone={onClose} />
-      <div style={{ marginTop: 10 }}><DeleteEntry entry={entry} onDone={onClose} /></div>
+      <div style={{ marginTop: 12 }}><DeleteEntry entry={entry} onDone={onClose} /></div>
     </Sheet>
   );
 }
@@ -464,23 +484,23 @@ export function FoodEditor({ open, onClose, onSaved, draft, food }: {
                 <button className="icon-btn sm" aria-label="Remove unit" onClick={() => { setUnits(units.filter((_, j) => j !== i)); if (v.basis === i) setV({ ...v, basis: '100' }); }}><Icon name="close" size={16} /></button>
               </div>
             ))}
-            <button className="btn" onClick={() => setUnits([...units, { label: '', g: '' }])}><Icon name="plus" size={16} /> Add unit</button>
+            <button className="text-link" style={{ alignSelf: 'flex-start' }} onClick={() => setUnits([...units, { label: '', g: '' }])}>Add unit</button>
           </div>
         </div>
         <PickerRowInline label="Nutrition per" options={basisOptions} value={v.basis} onChange={(basis) => setV({ ...v, basis })} />
         <div className="grid-4">{field('kcal', 'kcal')}{field('c', 'Carbs', true, '', 'mc-c')}{field('p', 'Protein', true, '', 'mc-p')}{field('f', 'Fat', true, '', 'mc-f')}</div>
         <button className="btn primary lg block" onClick={go} disabled={!valid}><Icon name="check" size={20} stroke={2.6} /> Save</button>
-        {food && <button className="btn danger block" onClick={async () => {
+        {food && <DangerRow label="Delete food" onClick={async () => {
           if (!(await confirmDialog({ title: `Delete “${food.name}”?`, message: 'Past log entries keep their numbers.', confirm: 'Delete food', danger: true }))) return;
           await run(foodsDelete, { id: food.id }); onClose();
-        }}><Icon name="trash" size={18} /> Delete</button>}
+        }} />}
       </div>
     </Sheet>
   );
 }
 
 function PickerRowInline<T>(p: { label: string; options: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
-  return <div className="list" style={{ background: 'var(--card-2)' }}><PickerRow {...p} /></div>;
+  return <div className="group"><PickerRow {...p} /></div>;
 }
 
 /* ================================================================== */
@@ -512,11 +532,11 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
     <Sheet open={open} onClose={onClose} title={recipe ? 'Edit recipe' : 'New recipe'} full>
       <div className="stack" style={{ gap: 12 }}>
         <label className="field"><span>Name</span><input className="input" dir="auto" value={name} placeholder="Overnight oats" onChange={(e) => setName(e.target.value)} /></label>
-        <div className="list" style={{ background: 'var(--card-2)' }}>
+        <div className="group">
           <NumberRow label="Makes" spec={SERV} value={servings} onChange={setServings} title="Servings" />
         </div>
         <div className="section-title" style={{ margin: '8px 4px 0' }}>Ingredients</div>
-        <div className="list" style={{ background: 'var(--card-2)' }}>
+        <div className="group">
           {items.map((it, i) => (
             <div key={i} className="list-item">
               <span className="grow" style={{ minWidth: 0 }}><span className="title ellipsis bidi-start" dir="auto" style={{ display: 'block' }}>{it.name}</span>
@@ -532,7 +552,7 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
         <label className="field"><span>Cooked weight (optional)</span>
           <input className="input num" inputMode="decimal" value={cooked} placeholder={`${Math.round(r.weight)} g raw`} onChange={(e) => setCooked(e.target.value)} />
         </label>
-        <div className="card" style={{ background: 'var(--card-2)' }}>
+        <div className="group" style={{ padding: '12px 16px' }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span className="muted" style={{ fontWeight: 650 }}>Per serving · {Math.round(r.servingG)} g</span>
             <span className="num" style={{ fontWeight: 800, fontSize: '1.25rem' }}>{k(perServing.kcal)} kcal</span>
@@ -540,10 +560,10 @@ export function RecipeEditor({ open, onClose, onSaved, recipe }: { open: boolean
           <MacroLine m={perServing} />
         </div>
         <button className="btn primary lg block" onClick={go} disabled={!name.trim() || !items.length}><Icon name="check" size={20} stroke={2.6} /> Save recipe</button>
-        {recipe && <button className="btn danger block" onClick={async () => {
+        {recipe && <DangerRow label="Delete recipe" onClick={async () => {
           if (!(await confirmDialog({ title: `Delete “${recipe.name}”?`, message: 'Past log entries keep their numbers.', confirm: 'Delete recipe', danger: true }))) return;
           await run(foodsDelete, { id: recipe.id }); onClose();
-        }}><Icon name="trash" size={18} /> Delete</button>}
+        }} />}
       </div>
       <AddFoodSheet open={adding} onClose={() => setAdding(false)} meal="lunch" date="" mode="pick"
         onPick={(it, grams) => setItems([...items, { foodKey: it.key, name: it.name, grams: Math.round(grams * 10) / 10, per100: it.per100 }])} />

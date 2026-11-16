@@ -32,6 +32,8 @@
   --c-supp: #bf5af2;
   --c-drop: #bf5af2;
   --c-warm: #ff9f0a;
+  /* macro colours: carbs green, protein purple, fat yellow */
+  --mc-c: #4cd9a4; --mc-p: #b38cff; --mc-f: #ffd60a;
   /* chrome */
   --glass: rgba(37, 37, 40, 0.62);
   --glass-edge: rgba(255, 255, 255, 0.14);
@@ -39,6 +41,8 @@
   --scrim: rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
   --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* muscle map */
+  --mm-body: #3a3a3c; --mm-base: #545456; --mm-soft: color-mix(in srgb, var(--role, var(--accent)) 40%, #545456);
 
   --r-sm: 12px;
   --r: 18px;
@@ -98,8 +102,8 @@
 [data-role='supp'] { --role: var(--c-supp); --role-solid: var(--c-supp); --on-role: #000; }
 [data-role='neutral'] { --role: var(--text-2); }
 /* type-scale helpers (replace one-off inline font sizes) */
-.t-11 { font-size: var(--fs-11); } .t-13 { font-size: var(--fs-13); } .t-15 { font-size: var(--fs-15); } .t-17 { font-size: var(--fs-17); }
-.t-20 { font-size: var(--fs-20); } .t-22 { font-size: var(--fs-22); } .t-28 { font-size: var(--fs-28); }
+.t-13 { font-size: var(--fs-13); } .t-15 { font-size: var(--fs-15); } .t-17 { font-size: var(--fs-17); }
+.t-20 { font-size: var(--fs-20); }
 .w-6 { font-weight: var(--fw-semi); } .w-7 { font-weight: var(--fw-bold); } .w-8 { font-weight: var(--fw-heavy); }
 .role-text { color: var(--role, var(--accent)); }
 
@@ -141,24 +145,27 @@ label:has(> input[type='file']:focus-visible) { outline: 2px solid var(--accent)
 .page {
   flex: 1; width: 100%; max-width: 720px; margin: 0 auto;
   padding: calc(var(--safe-t) + 14px) 16px calc(var(--tab-h) + var(--safe-b) + 40px);
+  container-type: inline-size;
 }
 .page.no-tabs { padding-bottom: calc(var(--safe-b) + 32px); }
-.page-head { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 14px; }
-.page-head h1 { flex: 1; margin: 0; font-size: 2.125rem; line-height: 1.1; letter-spacing: -0.025em; font-weight: 800; }
+.page-head { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px; }
+.page-head h1 { flex: 1; margin: 0; font-size: 1.875rem; line-height: 1.1; letter-spacing: -0.025em; font-weight: 750; }
 .page-head h1.small { font-size: 1.0625rem; letter-spacing: -0.01em; text-align: center; font-weight: 650; }
 .page-head h1.accent { color: var(--role, var(--accent)); }
-.section-title { margin: 26px 6px 8px; font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.05em; }
+/* section labels read like the reference's "6 exercises": sentence case, calm grey */
+.section-title { margin: 24px 4px 8px; font-size: var(--fs-15); font-weight: 600; color: var(--text-3); }
 .link { display: inline-flex; align-items: center; gap: 6px; padding: 10px 4px; border: 0; background: none; color: var(--role, var(--accent)); font-size: 1.0625rem; font-weight: 560; }
 
 /* ---------- surfaces ---------- */
 .card { background: var(--card); border-radius: var(--r-lg); padding: 14px 16px; }
-.list { background: var(--card); border-radius: var(--r-lg); overflow: hidden; }
-.list > * + * { box-shadow: inset 0 1px 0 var(--line); }
+/* grouped lists: no hairlines, a little air top and bottom, roomy rows */
+.list { background: var(--card); border-radius: var(--r-lg); overflow: hidden; padding: 4px 0; }
 .list-item {
-  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 16px;
   background: none; border: 0; text-align: left; color: var(--text);
 }
 .list-item .title { font-weight: 560; }
+.list-item.role-text { color: var(--role, var(--accent)); }
 .list-item .sub { font-size: 0.8125rem; color: var(--text-2); }
 .chev { color: var(--text-3); flex: none; }
 .empty { text-align: center; padding: 48px 20px; color: var(--text-2); }
@@ -197,9 +204,8 @@ label:has(> input[type='file']:focus-visible) { outline: 2px solid var(--accent)
 .icon-btn.sm { width: 36px; height: 36px; color: var(--text-2); }
 .icon-btn.sm.tint { color: var(--role, var(--accent)); }
 /* hit areas >= 44px tall while the visual stays small (vertical only, so neighbours never overlap) */
-.icon-btn.sm::after, .round-btn.finish::after, .round-btn.sm-round::after, .sel-circle::after { content: ''; position: absolute; inset: -4px 0; }
+.icon-btn.sm::after, .round-btn.finish::after, .sel-circle::after { content: ''; position: absolute; inset: -4px 0; }
 .round-btn.finish::after { inset: -3px; }
-.round-btn.sm-round::after { inset: -5px; }
 .sel-circle::after { inset: -7px; }
 .icon-btn:disabled { opacity: 0.3; pointer-events: none; }
 .pill-btn {
@@ -247,6 +253,7 @@ textarea.input { padding: 12px 16px; }
 }
 .seg button[aria-pressed='true'], .seg button[aria-selected='true'] { background: var(--card-3); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 .seg button::after { content: ''; position: absolute; inset: -3px 0; } /* 44px hit area */
+.seg.tabs { margin-top: 4px; }
 .seg.tabs button { min-height: 40px; font-size: var(--fs-13); }
 .seg.tabs button[aria-selected='true'] svg { color: var(--role, var(--accent)); }
 .chip {
@@ -286,6 +293,7 @@ textarea.input { padding: 12px 16px; }
   display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; flex: none;
   color: var(--role); background: color-mix(in srgb, var(--role) 18%, transparent);
 }
+.role-chip.lg { width: 34px; height: 34px; border-radius: 11px; }
 
 /* ---------- images: squircles everywhere ---------- */
 .thumb { width: 48px; height: 48px; border-radius: var(--squircle); object-fit: cover; flex: none; background: var(--card-2); }
@@ -294,22 +302,12 @@ textarea.input { padding: 12px 16px; }
   border: 0; background: var(--card-2); color: var(--text-2); flex: none; overflow: visible;
   box-shadow: 0 0 0 2px transparent; transition: box-shadow 200ms var(--ease-out), transform 140ms var(--ease-out), opacity 200ms;
 }
-.avatar img { width: 100%; height: 100%; border-radius: var(--squircle); object-fit: cover; }
-.avatar-initials { font-weight: 800; font-size: 1rem; letter-spacing: -0.02em; color: var(--text); }
 .avatar.current { box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 5px var(--role, var(--accent)); }
-.avatar.done:not(.current) img, .avatar.done:not(.current) .avatar-initials { opacity: 0.4; }
 .avatar-badge {
   position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
   background: var(--good); color: #000; box-shadow: 0 0 0 2.5px var(--bg);
 }
 .avatar.add { background: transparent; color: var(--role, var(--accent)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--role, var(--accent)) 45%, transparent); }
-.stack-imgs { display: inline-flex; align-items: center; padding: 4px; border-radius: 999px; background: var(--card-2); flex: none; }
-.stack-imgs > img, .stack-imgs > .ini {
-  width: 34px; height: 34px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px var(--card-2); background: var(--card-3);
-  display: grid; place-items: center; font-size: 0.75rem; font-weight: 800;
-}
-.stack-imgs > * + * { margin-left: -10px; }
-.stack-imgs > .more { margin-left: 4px; padding-right: 6px; font-size: 0.8125rem; font-weight: 700; color: var(--text-2); width: auto; box-shadow: none; background: none; }
 
 /* ---------- floating glass tab bar (Home in the middle) ---------- */
 .tabbar {
@@ -372,7 +370,7 @@ textarea.input { padding: 12px 16px; }
 }
 .widget::before { /* soft role glow in the corner: a little depth, not decoration */
   content: ''; position: absolute; inset: -40% -40% auto auto; width: 70%; aspect-ratio: 1; border-radius: 50%;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--role) 22%, transparent), transparent); pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--role) 12%, transparent), transparent); pointer-events: none;
 }
 .widget.wide { grid-column: 1 / -1; }
 .widget-head { position: relative; display: flex; align-items: center; gap: 4px; min-height: 36px; margin-bottom: 6px; }
@@ -385,7 +383,7 @@ textarea.input { padding: 12px 16px; }
 .delta { font-size: 0.8125rem; font-weight: 700; color: var(--text-2); margin-left: 4px; }
 .due { color: var(--c-weight); }
 .week-dots { display: flex; gap: 5px; margin-top: 12px; }
-.week-dots span { flex: 1; height: 26px; border-radius: 999px; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 800; background: var(--card-2); color: var(--text-3); }
+.week-dots span { flex: 1; min-height: 26px; border-radius: 999px; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 800; background: var(--card-2); color: var(--text-3); }
 .week-dots span.on { background: var(--role-solid); color: var(--on-role); box-shadow: 0 3px 10px color-mix(in srgb, var(--role) 45%, transparent); }
 .week-dots span.today:not(.on) { box-shadow: inset 0 0 0 1.5px var(--role); color: var(--role); }
 .mini-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 6px 12px; border: 0; border-radius: 14px; background: var(--card-2); color: var(--text); font-weight: 600; font-size: 0.9375rem; text-align: left; }
@@ -406,34 +404,34 @@ textarea.input { padding: 12px 16px; }
 .cal-dots i { width: 7px; height: 7px; border-radius: 50%; }
 .dot-workout { background: var(--c-gym); }
 .dot-weight { background: transparent; box-shadow: inset 0 0 0 2px var(--c-weight); }
-.dot-food { background: var(--c-food); }
+.dot-food { background: var(--c-food); border-radius: 2px !important; } /* square: workout = dot, weigh-in = ring, goals hit = square */
 
 /* ---------- workout: strip ---------- */
-.strip { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 10px 12px 4px; }
+.strip { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 12px 12px 6px; }
 .strip::-webkit-scrollbar { display: none; }
 .strip > .avatar.add { margin-left: 10px; }
 .strip-slot { flex: none; padding: 4px; margin-left: 6px; }
 .strip-slot:first-child { margin-left: 0; }
 .strip-slot.tube-first, .strip-slot.tube-mid, .strip-slot.tube-last { background: color-mix(in srgb, var(--role, var(--accent)) 18%, transparent); }
-.strip-slot.tube-first { border-radius: 22px 0 0 22px; padding-right: 3px; }
+.strip-slot.tube-first { border-radius: 20px 0 0 20px; padding-right: 3px; }
 .strip-slot.tube-mid { margin-left: 0; padding-left: 3px; padding-right: 3px; }
-.strip-slot.tube-last { margin-left: 0; border-radius: 0 22px 22px 0; padding-left: 3px; }
+.strip-slot.tube-last { margin-left: 0; border-radius: 0 20px 20px 0; padding-left: 3px; }
 
 /* ---------- workout: note ---------- */
 .note-line {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 6px; padding: 4px 2px; border: 0;
-  background: transparent; color: var(--text-2); text-align: left; font-size: 1rem; line-height: 1.4;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 4px 0; border: 0;
+  background: transparent; color: var(--text-2); text-align: left; font-size: var(--fs-17); line-height: 1.4;
 }
 .note-line svg { flex: none; color: var(--role, var(--accent)); }
 .note-line.editing { background: var(--card-2); border-radius: 14px; padding: 10px 12px; }
 .note-line textarea { flex: 1; border: 0; outline: none; background: none; resize: none; padding: 0; color: var(--text); line-height: 1.4; }
 
 /* ---------- workout: set table (next set = pills, later sets = plain text) ---------- */
-.set-grid { display: grid; grid-template-columns: 44px 1fr 1fr 52px; gap: 8px; align-items: center; }
-.set-grid[data-effort='true'] { grid-template-columns: 44px 1fr 1fr 0.8fr 52px; }
-.set-head { padding: 2px 0 6px; font-size: 0.8125rem; font-weight: 650; color: var(--text-3); text-align: center; text-transform: uppercase; letter-spacing: 0.05em; }
-.set-row { min-height: 50px; border-radius: 999px; transition: background-color 220ms var(--ease-out), opacity 220ms; }
-.set-no { display: flex; align-items: center; justify-content: center; gap: 1px; height: 44px; font-weight: 750; font-size: 1.0625rem; color: var(--text-2); }
+.set-grid { display: grid; grid-template-columns: 52px 1fr 1fr 60px; gap: 10px; align-items: center; }
+.set-grid[data-effort='true'] { grid-template-columns: 48px 1fr 1fr 0.8fr 56px; gap: 8px; }
+.set-head { padding: 4px 0 8px; font-size: var(--fs-15); font-weight: 650; color: var(--text-3); text-align: center; text-transform: uppercase; letter-spacing: 0.02em; }
+.set-row { position: relative; min-height: 60px; border-radius: 999px; transition: background-color 220ms var(--ease-out), opacity 220ms; }
+.set-no { display: flex; align-items: center; justify-content: center; gap: 1px; height: 50px; font-weight: 750; font-size: var(--fs-20); color: var(--text-2); }
 .set-no small { font-size: 0.6875rem; font-weight: 800; color: var(--role, var(--accent)); }
 .set-row.warmup .set-no { color: var(--c-warm); }
 .set-row.drop .set-no { color: var(--c-drop); }
@@ -452,6 +450,7 @@ textarea.input { padding: 12px 16px; }
 .set-row.active.warmup .set-no { color: var(--c-warm); }
 .set-row.active .cell:focus { box-shadow: inset 0 0 0 2px var(--role, var(--accent)); }
 button.cell:active { transform: scale(0.96); }
+.set-row .cell { min-height: 50px; font-size: var(--fs-20); }
 /* future rows: quiet text, still tappable (sets can be logged in any order) */
 .set-row.future .cell, .set-row.future .set-no { color: var(--text-3); }
 /* done rows: tappable to edit, quiet */
@@ -469,6 +468,7 @@ button.cell:active { transform: scale(0.96); }
 .set-row .check.ready { background: var(--good); color: #000; box-shadow: 0 4px 14px color-mix(in srgb, var(--good) 40%, transparent); }
 .check.compact { width: 44px; height: 40px; flex: none; }
 .check.later { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1.5px var(--line); }
+.set-row .check { width: 100%; height: 50px; border-radius: 999px; }
 .set-row.shake { animation: shake 320ms; }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 .set-row.ghost { min-height: 32px; }
@@ -476,7 +476,8 @@ button.cell:active { transform: scale(0.96); }
 .set-row.ghost .set-no { height: 30px; font-size: 1rem; font-weight: 600; color: var(--text-3); }
 .set-row.ghost.drop .set-no { color: var(--c-drop); }
 .set-row.ghost.warmup .set-no { color: var(--c-warm); }
-.history-card { background: var(--card); border-radius: var(--r-lg); padding: 12px 10px 8px; margin-top: 14px; display: block; color: inherit; }
+/* last time: a calm card under the table */
+.history-card { background: var(--card); border-radius: var(--r-lg); padding: 14px 12px 10px; margin-top: 18px; display: block; color: inherit; }
 
 /* ---------- rest bar ---------- */
 .restbar {
@@ -497,32 +498,40 @@ button.cell:active { transform: scale(0.96); }
 }
 
 /* photos get a hairline edge so they don't bleed into dark cards (pure white/black, never tinted) */
-.thumb, .avatar img, .ex-hero, .stack-imgs > img { outline: 1px solid rgba(255, 255, 255, 0.1); outline-offset: -1px; }
-.sheet:focus { outline: none; } /* programmatic focus target for the dialog, not a control */
+.thumb { outline: 1px solid rgba(255, 255, 255, 0.1); outline-offset: -1px; }
 
 /* ---------- food ---------- */
-.dot-food { background: var(--c-food); border-radius: 2px !important; } /* square: workout = dot, weigh-in = ring, goals hit = square */
 .date-pill {
   display: flex; align-items: center; justify-content: space-between; padding: 4px; border-radius: 999px; background: var(--card);
 }
 .date-pill-label { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; font-weight: 700; font-size: 1.0625rem; color: var(--text); padding: 6px 14px; border-radius: 999px; }
 .date-pill-label:active { background: var(--card-2); }
-.meal-card { padding: 12px 14px; }
-.round-btn.sm-round { width: 34px; height: 34px; margin-left: 4px; }
-.entry-list { margin-top: 6px; }
-.entry-row {
-  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 2px; border: 0; background: none;
-  color: var(--text); text-align: left; box-shadow: inset 0 1px 0 var(--line);
+/* meals: a calm heading row (icon, name, kcal, +) over a grouped list of what was eaten */
+.meal { margin-top: 20px; scroll-margin-top: calc(var(--safe-t) + 12px); }
+.meal-head { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 2px 6px 4px; }
+.meal-head h2 { margin: 0; font-size: var(--fs-20); font-weight: 700; letter-spacing: -0.015em; }
+.meal-head .num { font-size: var(--fs-15); font-weight: 600; }
+/* a list row with a soft letter / icon tile: food, supplement, weigh-in */
+.fd-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 6px 16px; border: 0; background: none; color: var(--text); text-align: left; }
+.fd-name { display: block; font-weight: 600; font-size: var(--fs-17); line-height: 1.25; }
+.fd-sub { display: block; margin-top: 2px; color: var(--text-2); font-size: var(--fs-15); line-height: 1.3; }
+.fd-kcal { flex: none; font-weight: 700; font-size: var(--fs-17); }
+.tile-ic {
+  flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px;
+  background: color-mix(in srgb, var(--role, var(--accent)) 16%, var(--card-2)); color: var(--role, var(--accent));
+  font-size: var(--fs-20); font-weight: 750; letter-spacing: -0.02em; unicode-bidi: plaintext;
 }
-.entry-macros { display: flex; flex-direction: column; align-items: flex-end; flex: none; line-height: 1.25; }
-.entry-macros b { font-size: 1rem; font-weight: 750; }
-.entry-macros small { font-size: 0.75rem; color: var(--text-2); font-weight: 600; }
+.sheet .tile-ic { background: color-mix(in srgb, var(--role, var(--accent)) 16%, var(--card-3)); }
+.date-tile { display: flex; flex-direction: column; justify-content: center; gap: 0; line-height: 1.05; }
+.date-tile b { font-size: var(--fs-17); font-weight: 750; }
+.date-tile small { font-size: var(--fs-11); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+/* weight: the latest weigh-in, large */
+.wt-hero { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; margin: 0 2px 8px; }
+.wt-value { font-size: 3rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1; color: var(--role); }
+.wt-unit { font-size: var(--fs-20); font-weight: 650; color: var(--text-2); }
+.wt-delta { margin-left: 8px; font-size: var(--fs-17); font-weight: 650; color: var(--text-2); }
 .bar { height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
 .bar > i { display: block; height: 100%; border-radius: 999px; transition: width 500ms var(--ease-out); }
-.macro-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.macro-tiles > div { display: flex; flex-direction: column; align-items: center; padding: 10px 4px; border-radius: 16px; background: var(--card-2); }
-.macro-tiles b { font-size: 1.375rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
-.macro-tiles span { font-size: 0.6875rem; font-weight: 650; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .grid-4 .input { padding: 0 8px; text-align: center; }
@@ -532,15 +541,13 @@ button.cell:active { transform: scale(0.96); }
 .scan-state { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #fff; font-weight: 650; background: rgba(0,0,0,.45); }
 .il-tag { display: inline-flex; align-items: center; min-height: 18px; padding: 0 5px; margin-inline-end: 6px; border-radius: 5px; font-size: var(--fs-11); font-weight: 800; letter-spacing: 0.04em; background: color-mix(in srgb, var(--role, var(--accent)) 18%, transparent); color: var(--role, var(--accent)); vertical-align: 1px; }
 
-/* ---------- macro colours (carbs green, protein purple, fat yellow) ---------- */
-:root { --mc-c: #4cd9a4; --mc-p: #b38cff; --mc-f: #ffd60a; }
 .mc-c { color: var(--mc-c); } .mc-p { color: var(--mc-p); } .mc-f { color: var(--mc-f); }
 .macro-line b { font-weight: 700; }
 .bar.thin { height: 4px; display: block; margin-top: 4px; }
 .picker-value { color: var(--text-2); font-weight: 600; }
 
 /* ---------- food dashboard ---------- */
-.setup-cta { width: 100%; border: 0; color: inherit; text-align: left; margin-top: 12px; padding: 16px; }
+.group.setup-cta { width: 100%; border: 0; color: inherit; text-align: left; margin-top: 12px; padding: 14px 16px; gap: 14px; }
 .dash { margin-top: 12px; padding: 14px 12px 16px; }
 .dash-top { text-align: center; font-size: 0.9375rem; margin-bottom: 6px; }
 .dash-top b { color: var(--text); font-size: 1.375rem; font-weight: 800; letter-spacing: -0.02em; margin-left: 4px; }
@@ -555,7 +562,7 @@ button.cell:active { transform: scale(0.96); }
 .dash-eaten { font-size: 2.125rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1; color: var(--c-food); }
 .dash-left { font-size: 0.8125rem; color: var(--text-2); font-weight: 650; margin-top: 4px; }
 
-/* ---------- floating + and shortcuts ---------- */
+/* ---------- floating + (Food) ---------- */
 .fab {
   position: absolute; z-index: 25; right: 20px; bottom: calc(var(--tab-h) + max(10px, calc(var(--safe-b) - 6px)) + 14px);
   width: 60px; height: 60px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #000;
@@ -564,20 +571,12 @@ button.cell:active { transform: scale(0.96); }
   transition: transform 140ms var(--ease-out);
 }
 .fab:active { transform: scale(0.96); }
-.shortcut-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.shortcut { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 0; background: none; color: var(--text); font-weight: 600; font-size: 0.875rem; }
-.shortcut-circle { width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center; background: var(--card-2); box-shadow: inset 0 1px 0 var(--line); }
-.shortcut-wide { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 0 16px; border: 0; border-radius: 18px; background: var(--card-2); color: var(--text); font-weight: 650; font-size: 1rem; }
-.shortcut-wide svg { color: var(--role, var(--accent)); }
 
 /* ---------- add-food sheet ---------- */
 .add-head { display: flex; justify-content: center; margin: -4px 0 8px; }
 .meal-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--role, var(--accent)) 18%, transparent); color: var(--role, var(--accent)); font-weight: 700; }
-.tabs-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); box-shadow: inset 0 -1px 0 var(--line); }
-.tab-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 9px; border: 0; background: none; color: var(--text-2); font-size: 0.8125rem; font-weight: 650; box-shadow: inset 0 -2.5px 0 transparent; transition: color 160ms, box-shadow 200ms var(--ease-out); }
-.tab-btn.on { color: var(--text); box-shadow: inset 0 -2.5px 0 var(--accent); }
-.food-row { display: flex; align-items: center; gap: 8px; box-shadow: inset 0 -1px 0 var(--line); }
-.food-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 12px 2px; border: 0; background: none; color: var(--text); text-align: left; }
+.food-row { display: flex; align-items: center; gap: 8px; padding-right: 14px; }
+.food-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 8px 0 8px 16px; border: 0; background: none; color: var(--text); text-align: left; }
 .food-row-name { display: block; font-weight: 600; line-height: 1.3; unicode-bidi: plaintext; text-align: left; }
 .food-row-sub { display: block; font-size: 0.8125rem; color: var(--text-2); margin-top: 2px; }
 .food-row-kcal { display: flex; flex-direction: column; align-items: flex-end; flex: none; line-height: 1.25; }
@@ -593,6 +592,8 @@ button.cell:active { transform: scale(0.96); }
   width: 120px; border: 0; border-bottom: 2px solid var(--role, var(--accent)); background: none; color: var(--text); outline: none;
   font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; padding: 0 0 2px; border-radius: 0;
 }
+button.amount-input { width: auto; min-width: 72px; text-align: left; cursor: pointer; }
+button.amount-input:focus-visible { outline: 2px solid var(--role, var(--accent)); outline-offset: 4px; border-radius: 6px; }
 .amount-unit { color: var(--text-2); font-weight: 700; font-size: 1.0625rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .amount-kcal { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; color: var(--role, var(--accent)); line-height: 1; }
 .amount-kcal span { font-size: 0.9375rem; font-weight: 650; }
@@ -617,16 +618,14 @@ button.cell:active { transform: scale(0.96); }
 .food-row-alt + .food-row-sub { margin-top: 1px; }
 
 /* ---------- supplements ---------- */
-.slot-card { margin-top: 12px; padding: 10px 12px 6px; }
-.slot-head { font-size: 0.8125rem; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 4px 6px; }
-.slot-head .num { color: var(--role); margin-right: 4px; }
-.stack-box { border-radius: 16px; background: color-mix(in srgb, var(--c-supp) 9%, transparent); padding: 2px 8px 2px; margin: 4px 0 6px; }
-.stack-head { gap: 8px; min-height: 44px; color: var(--c-supp); font-weight: 700; font-size: 0.9375rem; }
-.supp-row { display: flex; align-items: center; gap: 10px; min-height: 56px; box-shadow: inset 0 -1px 0 var(--line); }
-.stack-box .supp-row:last-child, .slot-card > .supp-row:last-child, .slot-card > div:last-child > .supp-row:last-child { box-shadow: none; }
-.supp-main { display: flex; flex-direction: column; align-items: flex-start; border: 0; background: none; padding: 8px 2px; color: var(--text); text-align: left; min-width: 0; }
-.supp-name { font-weight: 650; font-size: 1rem; }
-.supp-sub { font-size: 0.8125rem; color: var(--text-2); }
+.group.supp-progress { gap: 16px; padding: 12px 16px; margin-top: 12px; }
+/* a stack: its members grouped under a tinted band with one "take all" check */
+.stack-box { margin: 2px 8px; padding: 0 0 2px; border-radius: 18px; background: color-mix(in srgb, var(--c-supp) 10%, transparent); }
+.stack-head { gap: 10px; min-height: 52px; padding: 0 6px 0 12px; color: var(--c-supp); font-weight: 700; font-size: var(--fs-15); }
+.supp-row { display: flex; align-items: center; gap: 10px; min-height: 64px; padding-right: 14px; }
+.stack-box .supp-row { padding-right: 6px; }
+.supp-main { display: flex; align-items: center; gap: 14px; border: 0; background: none; padding: 6px 0 6px 16px; color: var(--text); text-align: left; min-width: 0; }
+.stack-box .supp-main { padding-left: 8px; }
 .check.skipped { background: var(--card-3); color: var(--text-2); }
 .site-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .site-grid .preset { min-height: 44px; font-size: 0.8125rem; }
@@ -693,6 +692,7 @@ button.cell:active { transform: scale(0.96); }
 .np-padonly .np-key { min-height: 60px; }
 .np-field { display: flex; align-items: center; text-align: left; font-weight: 650; cursor: pointer; }
 .np-field.empty { color: var(--text-3); font-weight: 400; }
+div:not(.field) > .np-field { justify-content: center; text-align: center; padding: 0 8px; }
 /* tap list for non-numeric choices (Picker.tsx) */
 .opt-list { display: flex; flex-direction: column; gap: 8px; max-height: min(60dvh, 460px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 2px 0; }
 .opt-row {
@@ -705,40 +705,11 @@ button.cell:active { transform: scale(0.96); }
 .opt-row .opt-sub { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-2); margin-top: 2px; }
 .opt-row .opt-check { margin-left: auto; color: var(--role, var(--accent)); flex: none; }
 @media (prefers-reduced-motion: reduce) { .np-row, .np-key, .np-ok, .opt-row { transition: background-color 140ms; } .np-row:active, .np-key:active, .np-ok:active, .opt-row:active { transform: none; } }
-button.amount-input { width: auto; min-width: 72px; text-align: left; cursor: pointer; }
-button.amount-input:focus-visible { outline: 2px solid var(--role, var(--accent)); outline-offset: 4px; border-radius: 6px; }
 
 /* ---------- workout summary (WorkoutSummary.tsx) ---------- */
 .sum { padding-bottom: 8px; }
 .sum-when { margin: -6px 4px 12px; font-size: 0.875rem; font-weight: 560; }
-.sum-stats { display: grid; grid-template-columns: 1fr 1.45fr 0.8fr; gap: 8px; }
-.sum-stat { background: var(--card-2); border-radius: var(--r); padding: 12px 12px 10px; min-width: 0; }
-.sum-stat-label { font-size: 0.75rem; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
-.sum-stat-value { font-size: 1.625rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sum-stat-unit { font-size: 0.875rem; font-weight: 650; letter-spacing: 0; color: var(--text-2); margin-left: 3px; }
-.sum-delta { font-size: 0.8125rem; font-weight: 650; color: var(--text-2); margin-top: 2px; }
-.sum-delta.good { color: var(--good); }
-.sum-delta.bad { color: var(--warn); }
 .sum-caption { margin: 8px 4px 0; font-size: 0.8125rem; text-align: center; }
-.sum-hl { border-radius: var(--r-lg); padding: 4px 14px; background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 16%, var(--card-2)), var(--card-2) 70%); }
-.sum-hl-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; }
-.sum-hl-row + .sum-hl-row { box-shadow: inset 0 1px 0 var(--line); }
-.sum-hl-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--good-soft); color: var(--good); }
-.sum-hl-icon.pr { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
-.sum-hl-title { display: block; font-weight: 650; }
-.sum-hl-sub { display: block; font-size: 0.875rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.sum-trend { flex: none; min-width: 34px; height: 28px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font-weight: 800; font-size: 1rem; background: var(--card-2); color: var(--text-2); }
-.sum-trend.up { background: var(--good-soft); color: var(--good); }
-.sum-trend.down { background: var(--danger-soft); color: var(--danger); }
-.sum-trend.new { background: var(--accent-soft); color: var(--accent); font-size: 0.75rem; }
-.sum-muscles { padding: 14px 16px; }
-.sum-m-row { display: grid; grid-template-columns: 6.5em 1fr auto; align-items: center; gap: 10px; min-height: 30px; }
-.sum-m-name { font-size: 0.9375rem; font-weight: 560; }
-.sum-m-bar { position: relative; height: 10px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
-.sum-m-bar > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
-.sum-m-bar .wk { background: color-mix(in srgb, var(--c-gym) 35%, transparent); }
-.sum-m-bar .now { background: var(--c-gym); }
-.sum-m-num { font-size: 0.875rem; font-weight: 650; min-width: 3.6em; text-align: right; }
 /* CR-10: 1-10 as a balanced 5 x 2 grid, 0 ("Rest") as a full-width row under it */
 .sum-rpe { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .sum-rpe .zero { grid-column: 1 / -1; }
@@ -764,10 +735,8 @@ button.amount-input:focus-visible { outline: 2px solid var(--role, var(--accent)
 @keyframes sum-fade { from { opacity: 0; } }
 /* the summary lives in a sheet (bg-raised = card colour), so its surfaces step up one level */
 .sum .list, .sum .card { background: var(--card-2); }
-.sum .sum-m-bar, .sum .sum-opt, .sum .sum-trend:not(.up):not(.down):not(.new) { background: var(--card-3); }
+.sum .sum-opt { background: var(--card-3); }
 .sum .sum-opt[aria-pressed='true'] { background: var(--role-solid, var(--accent-solid)); }
-.sum .sum-hl { background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 18%, var(--card-2)), var(--card-2) 70%); }
-div:not(.field) > .np-field { justify-content: center; text-align: center; padding: 0 8px; }
 /* short phones (SE): tighter keypad so list + keypad still fit without the sheet scrolling */
 @media (max-height: 720px) {
   .np-key { min-height: 44px; font-size: 1.375rem; }
@@ -785,7 +754,6 @@ div:not(.field) > .np-field { justify-content: center; text-align: center; paddi
 .tag.prog.down { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .live-stats { display: flex; justify-content: center; gap: 0; white-space: nowrap; }
 .live-stats > span + span::before { content: '·'; margin: 0 5px; color: var(--text-3); }
-.set-row { position: relative; }
 .set-badge {
   position: absolute; top: -4px; right: -3px; z-index: 1; pointer-events: none;
   min-width: 20px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center;
@@ -885,9 +853,10 @@ div:not(.field) > .np-field { justify-content: center; text-align: center; paddi
 
 /* ---------- live workout header / set table extras ---------- */
 .sess-title { margin: 0; font-size: var(--fs-17); font-weight: 650; letter-spacing: -0.01em; line-height: 1.3; }
-.set-head-btn { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 32px; width: 100%; border: 0; background: none; padding: 0;
+.set-head-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 32px; width: 100%; border: 0; background: none; padding: 0;
   color: var(--text-3); font: inherit; text-transform: uppercase; letter-spacing: inherit; cursor: pointer; }
 .set-head-btn svg { opacity: 0.8; }
+.set-head-btn::after { content: ''; position: absolute; inset: -6px 0; } /* 44px hit area */
 
 /* ---------- home widgets: consistent CTAs, empty states, large text ---------- */
 .widget-cta { min-height: 44px; color: var(--text-2); font-weight: 600; }
@@ -895,9 +864,7 @@ div:not(.field) > .np-field { justify-content: center; text-align: center; paddi
 .weight-empty b { font-size: var(--fs-20); font-weight: 750; color: var(--role); }
 .weight-empty-glyph { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; flex: none;
   background: color-mix(in srgb, var(--role) 18%, transparent); color: var(--role); }
-.week-dots span { min-height: 26px; height: auto; }
 /* food dashboard: ring on top, columns below, once text is large enough that three columns collide */
-.page { container-type: inline-size; }
 @container (max-width: 18em) {
   .widgets { grid-template-columns: minmax(0, 1fr); } /* enlarged text: one tile per row */
   .dash-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -905,24 +872,20 @@ div:not(.field) > .np-field { justify-content: center; text-align: center; paddi
 }
 /* mixed Hebrew / English text: letters keep their own order, every line starts at the same edge */
 .bidi-start, .food-row-alt, .supp-name { unicode-bidi: plaintext; text-align: left; }
-.seg.tabs { margin-top: 4px; }
 /* programmatic focus targets (route headings, dialogs) are not controls: no ring */
 h1[tabindex='-1']:focus, [tabindex='-1'].sheet:focus { outline: none; }
 .field > span.mc-c { color: var(--mc-c); } .field > span.mc-p { color: var(--mc-p); } .field > span.mc-f { color: var(--mc-f); }
 .field > span.mc-c, .field > span.mc-p, .field > span.mc-f { font-weight: 650; }
 body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--safe-b) - 6px)) + 88px); } /* clear the food + button */
-.set-head-btn { position: relative; }
-.set-head-btn::after { content: ''; position: absolute; inset: -6px 0; } /* 44px hit area */
 
 /* ============================================================================
    Friendly pass (2026-11-16): calm grouped rows, large titles with a ⋯ pill, plain text links.
    Reference: docs/design-refs (spacing, sizes, density). Shared by every tab.
    ========================================================================== */
-:root { --mm-body: #3a3a3c; --mm-base: #545456; --mm-soft: color-mix(in srgb, var(--role, var(--accent)) 40%, #545456); }
 /* large title + ⋯ pill (plan, workout, exercise) */
 .title-more { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .title-more.lt { min-height: 52px; margin: 6px 0 12px; }
-.title-more.lt h1 { margin: 0; min-width: 0; font-size: var(--fs-28); line-height: 1.12; letter-spacing: -0.025em; font-weight: 750; overflow-wrap: break-word; }
+.title-more.lt h1 { margin: 0; min-width: 0; font-size: 1.875rem; line-height: 1.12; letter-spacing: -0.025em; font-weight: 750; overflow-wrap: break-word; }
 .more-pill {
   position: relative; flex: none; display: inline-grid; place-items: center; width: 48px; height: 36px; border: 0; border-radius: 999px;
   background: var(--card-2); color: var(--role, var(--accent)); transition-property: scale, background-color; transition-duration: 150ms; transition-timing-function: ease-out;
@@ -972,14 +935,25 @@ body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--sa
 .wk-no { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--text-3); color: var(--text-2); font-size: var(--fs-15); font-weight: 500; }
 .wk-no.next { box-shadow: none; background: var(--role-solid, var(--accent-solid)); color: var(--on-role, #fff); font-weight: 700; }
 .wk-name { font-size: var(--fs-17); font-weight: 600; }
+/* "Week 3" at the end of the plan title row (tap = start date) */
+.plan-week { margin-left: auto; flex: none; min-height: 44px; padding: 0 2px; border: 0; background: none; color: var(--role, var(--accent)); font-size: var(--fs-20); font-weight: 650; white-space: nowrap; }
+.plan-week:active, .meta-btn:active { opacity: 0.6; }
+/* plan / workout editor: a quiet meta line under the large title */
+.plan-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-height: 44px; margin: -8px 2px 10px; color: var(--text-2); font-size: var(--fs-17); font-weight: 500; }
+.plan-meta > * { min-width: 0; }
+.meta-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-17); font-weight: 500; }
+.meta-btn.role-text { color: var(--role, var(--accent)); font-weight: 600; }
+/* plan editor rows: number, name over its exercise photos, ▶ */
+.pw-row { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 0; }
+.pw-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 8px 0 8px 16px; color: var(--text); text-decoration: none; }
+.pw-sub { display: block; margin-top: 6px; }
 
 /* ---------- workout preview sheet ---------- */
 .pv-top { display: flex; justify-content: flex-end; margin: -14px -8px 0; }
-.pv-hero { display: flex; align-items: flex-start; gap: 12px; }
+.pv-hero { display: flex; align-items: flex-start; gap: 12px; margin-top: 2px; }
 .pv-head { align-items: flex-start; }
 .pv-head .more-pill { margin-top: 4px; }
 .pv-title { margin: 0; min-width: 0; font-size: var(--fs-34); line-height: 1.1; letter-spacing: -0.03em; font-weight: 800; overflow-wrap: break-word; text-wrap: balance; }
-.pv-hero { margin-top: 2px; }
 .pv-meta { margin-top: 6px; color: var(--text-2); font-size: var(--fs-17); font-weight: 500; }
 .pv-meta + .pv-meta { margin-top: 2px; }
 .pv-start { margin-top: 16px; min-width: 132px; padding: 0 26px; font-size: var(--fs-17); }
@@ -988,14 +962,10 @@ body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--sa
 
 /* ---------- live workout (reference: alpha-live-exercise) ---------- */
 /* strip: 4:3 rounded thumbnails, the current one ringed, done ones dimmed with a ✓ */
-.strip { padding: 12px 12px 6px; }
 .strip .avatar { width: 72px; height: 54px; border-radius: 16px; background: transparent; }
 .strip .avatar .ex-thumb { width: 100%; height: 100%; }
-.avatar.current { box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 5px var(--role, var(--accent)); }
 .avatar.done:not(.current) .ex-thumb { opacity: 0.4; }
 .strip .avatar.add { width: 54px; border-radius: 16px; }
-.strip-slot.tube-first { border-radius: 20px 0 0 20px; }
-.strip-slot.tube-last { border-radius: 0 20px 20px 0; }
 .ex-head { align-items: flex-start; }
 .ex-name { margin: 0; flex: 0 1 auto; font-size: var(--fs-28); line-height: 1.12; letter-spacing: -0.025em; font-weight: 750; color: var(--role, var(--accent)); }
 .ex-head .more-pill { margin-top: 1px; }
@@ -1003,21 +973,8 @@ body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--sa
 .ex-meta-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--text-2); font-size: var(--fs-17); font-weight: 500; }
 .ex-meta-btn svg { color: var(--text-3); }
 .ex-meta .tag { height: 26px; }
-.note-line { margin-top: 0; padding: 4px 0; font-size: var(--fs-17); color: var(--text-2); }
-.note-line svg { color: var(--role, var(--accent)); }
 .warm-chip { margin-top: 8px; gap: 8px; min-height: 44px; padding: 0 18px; font-size: var(--fs-17); font-weight: 600; background: var(--card); color: var(--text-2); }
 .warm-chip svg { color: var(--c-warm); }
-/* set table: bigger pills and a little more air between rows */
-.set-grid { grid-template-columns: 52px 1fr 1fr 60px; gap: 10px; }
-.set-grid[data-effort='true'] { grid-template-columns: 48px 1fr 1fr 0.8fr 56px; gap: 8px; }
-.set-head { padding: 4px 0 8px; font-size: var(--fs-15); letter-spacing: 0.02em; }
-.set-row { min-height: 60px; }
-.set-row .cell { min-height: 50px; font-size: var(--fs-20); }
-.set-no { height: 50px; font-size: var(--fs-20); }
-.set-row .check { width: 100%; height: 50px; border-radius: 999px; }
-.set-row.active .set-no { background: var(--card-2); }
-/* last time: a calm card under the table */
-.history-card { margin-top: 18px; padding: 14px 12px 10px; border-radius: var(--r-lg); }
 .hc-head { padding: 0 6px 6px; gap: 6px; color: var(--text-3); font-size: var(--fs-15); font-weight: 600; }
 .hc-cols .cell, .hc-cols .set-no { color: var(--text-3) !important; font-size: var(--fs-13) !important; text-transform: uppercase; letter-spacing: 0.04em; min-height: 22px !important; height: 22px !important; }
 .history-card .set-row.ghost { min-height: 30px; }
@@ -1072,16 +1029,3 @@ body:has(.fab) .toast-wrap { bottom: calc(var(--tab-h) + max(10px, calc(var(--sa
 .mm-tile .muscle-map { --mm-body: #48484a; --mm-base: #5c5c60; }
 .sum .group { background: var(--card-2); }
 
-/* ---------- one product: shared look for every tab (friendly pass) ---------- */
-.page-head h1 { font-size: 1.875rem; font-weight: 750; letter-spacing: -0.025em; }
-.title-more.lt h1 { font-size: 1.875rem; }
-.page-head { margin-bottom: 12px; }
-/* section labels read like the reference's "6 exercises": sentence case, calm grey */
-.section-title { margin: 24px 4px 8px; font-size: var(--fs-15); font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text-3); }
-/* grouped lists: no hairlines, a little air top and bottom, roomy rows */
-.list { padding: 4px 0; }
-.list > * + * { box-shadow: none; }
-.list-item { min-height: 56px; }
-/* home tiles: a quieter corner glow */
-.widget::before { background: radial-gradient(closest-side, color-mix(in srgb, var(--role) 12%, transparent), transparent); }
-.role-chip.lg { width: 34px; height: 34px; border-radius: 11px; }

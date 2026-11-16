@@ -176,10 +176,10 @@ export const notesDelete = defineCommand({ name: 'notes.delete', kind: 'action',
 export const settingsGet = defineCommand({ name: 'settings.get', kind: 'query', description: 'App settings: units, effort mode, active plan, feature switches, default rests, weigh-in interval.',
   input: z.object({}), run: async () => getSettings() });
 const zFeatures = z.object({ gym: z.boolean(), food: z.boolean(), supplements: z.boolean(), survey: z.boolean(),
-  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean() }).partial();
+  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean(), planWeek: z.boolean() }).partial();
 export const settingsUpdate = defineCommand({ name: 'settings.update', kind: 'action',
   description: 'Change settings; only the fields you pass change. unit kg/lb (display unit, data stays in kg), effortMode rir/rpe, activePlanId (a plan id, or null to clear the active plan), ' +
-    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers). Returns all settings.',
+    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers, planWeek = "Week N" next to the active plan). Returns all settings.',
   input: z.object({ unit: z.enum(['kg', 'lb']).optional(), effortMode: z.enum(['rir', 'rpe']).optional(), activePlanId: zId.nullable().optional(),
     restCompoundSec: z.number().int().min(15).max(600).optional(), restIsolationSec: z.number().int().min(15).max(600).optional(),
     weighInEveryDays: z.number().int().min(1).max(30).optional(), features: zFeatures.optional() }),

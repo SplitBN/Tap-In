@@ -17,6 +17,11 @@ import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { Ring } from './Food';
 import { useToday } from '../lib/today';
 
+const slotIcon = (slot: string) => {
+  if (slot === '--:--') return 'calendar';
+  const h = +slot.slice(0, 2);
+  return h < 11 ? 'sun' : h < 18 ? 'food' : h < 22 ? 'sunset' : 'moon';
+};
 const slotName = (slot: string) => {
   if (slot === '--:--') return 'Any time';
   const h = +slot.slice(0, 2);
@@ -43,6 +48,7 @@ export function SupplementsPage() {
   const [editing, setEditing] = useState<Supplement | 'new' | null>(null);
   const [stackEdit, setStackEdit] = useState<Stack | 'new' | null>(null);
   const [noting, setNoting] = useState(false);
+  const [menu, setMenu] = useState(false);
   // Home's "Add supplement" lands here with ?new=1
   useEffect(() => { if (params.get('new')) { setEditing('new'); setParams({}, { replace: true }); } }, [params, setParams]);
   const asNeeded = sups.filter((s) => !s.archived && s.schedule.kind === 'asNeeded');
@@ -62,10 +68,12 @@ export function SupplementsPage() {
 
   return (
     <div className="page" data-role="supp">
-      <header className="page-head">
-        <h1>Supps</h1>
-        <button className="icon-btn filled" aria-label="Add a note" onClick={() => setNoting(true)}><Icon name="note" /></button>
+      <div className="gym-top">
         <button className="icon-btn filled" aria-label="Add supplement" onClick={() => setEditing('new')}><Icon name="plus" /></button>
+      </div>
+      <header className="title-more lt" style={{ marginTop: 0 }}>
+        <h1>Supps</h1>
+        <button className="more-pill" aria-label="Supplement options" onClick={() => setMenu(true)}><Icon name="more" size={22} stroke={3} /></button>
       </header>
 
       <div className="date-pill">
@@ -79,109 +87,128 @@ export function SupplementsPage() {
           <Icon name="pill" size={40} />
           <h3>Nothing tracked yet</h3>
           <p>Add a supplement, medication or peptide with its dose and schedule.</p>
-          <button className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={18} /> Add supplement</button>
+          <button className="btn primary" onClick={() => setEditing('new')}><Icon name="plus" size={18} /> Supplement</button>
         </div>
       ) : (
         <>
           {total > 0 && (
-            <div className="card row" style={{ marginTop: 12, gap: 16 }}>
+            <div className="group row supp-progress">
               <Ring value={done} max={total} size={64}><span className="num" style={{ fontWeight: 800 }}>{done}/{total}</span></Ring>
               <div className="grow">
-                <div className="w-7 t-17">{done === total ? 'All taken' : `${total - done} to go`}</div>
-                <div className="muted t-13">Tap the check to log the scheduled dose. Tap a row to adjust it.</div>
+                <div className="w-7 t-20">{done === total ? <>All taken <span aria-hidden>✓</span></> : `${total - done} to go`}</div>
+                <div className="muted t-15">✓ logs the dose · tap a row to adjust</div>
               </div>
             </div>
           )}
 
           {day.map((g) => (
-            <section key={g.slot} className="card slot-card">
-              <h2 className="slot-head"><span className="num">{g.slot === '--:--' ? '' : g.slot}</span> {slotName(g.slot)}</h2>
-              {g.stacks.map(({ stack, items }) => (
-                <div key={(stack?.id ?? '') + items[0].sup.id} className={stack ? 'stack-box' : ''}>
-                  {stack && (
-                    <div className="row stack-head">
-                      <Icon name="link" size={14} stroke={2.2} />
-                      <span className="grow bidi-start" dir="auto">{stack.name}</span>
-                      <button className={'check' + (items.every((i) => i.log?.status === 'taken') ? ' on' : '')} aria-pressed={items.every((i) => i.log?.status === 'taken')}
-                        aria-label={items.every((i) => i.log?.status === 'taken') ? `Undo all of ${stack.name}` : `Take all of ${stack.name}`} onClick={() => takeAll(items)}>
-                        <Icon name="check" size={18} stroke={2.8} />
-                      </button>
-                    </div>
-                  )}
-                  {items.map((d) => (
-                    <div key={d.sup.id + d.slot} className="supp-row">
-                      <button className="grow supp-main pressable" onClick={() => setTaking({ sup: d.sup, slot: d.slot === '--:--' ? null : d.slot, log: d.log })}>
-                        <span className="supp-name" dir="auto">{d.sup.name}</span>
-                        <span className="supp-sub num">
-                          {fmtNum(d.log?.amount ?? d.amount)} {d.sup.unit}
-                          {d.log?.status === 'taken' && d.log.takenAt ? ` · ${new Date(d.log.takenAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
-                          {d.log?.site ? ` · ${d.log.site}` : ''}
-                          {d.log?.status === 'skipped' ? ' · skipped' : ''}
-                        </span>
-                      </button>
-                      <button className={'check' + (d.log?.status === 'taken' ? ' on' : d.log?.status === 'skipped' ? ' skipped' : '')}
-                        aria-pressed={d.log?.status === 'taken'} aria-label={d.log ? `Undo ${d.sup.name}` : `Take ${d.sup.name}`} onClick={() => quickToggle(d)}>
-                        <Icon name={d.log?.status === 'skipped' ? 'close' : 'check'} size={18} stroke={2.8} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ))}
+            <section key={g.slot} className="meal" aria-labelledby={`slot-${g.slot}`}>
+              <div className="meal-head">
+                <span className="role-chip" aria-hidden><Icon name={slotIcon(g.slot)} size={16} stroke={2} /></span>
+                <h2 id={`slot-${g.slot}`} className="grow">{slotName(g.slot)}</h2>
+                {g.slot !== '--:--' && <span className="num muted">{g.slot}</span>}
+              </div>
+              <div className="group">
+                {g.stacks.map(({ stack, items }) => (
+                  <div key={(stack?.id ?? '') + items[0].sup.id} className={stack ? 'stack-box' : undefined}>
+                    {stack && (
+                      <div className="row stack-head">
+                        <Icon name="link" size={16} stroke={2.2} />
+                        <span className="grow bidi-start" dir="auto">{stack.name}</span>
+                        <button className={'check' + (items.every((i) => i.log?.status === 'taken') ? ' on' : '')} aria-pressed={items.every((i) => i.log?.status === 'taken')}
+                          aria-label={items.every((i) => i.log?.status === 'taken') ? `Undo all of ${stack.name}` : `Take all of ${stack.name}`} onClick={() => takeAll(items)}>
+                          <Icon name="check" size={18} stroke={2.8} />
+                        </button>
+                      </div>
+                    )}
+                    {items.map((d) => (
+                      <div key={d.sup.id + d.slot} className="supp-row">
+                        <button className="grow supp-main pressable" onClick={() => setTaking({ sup: d.sup, slot: d.slot === '--:--' ? null : d.slot, log: d.log })}>
+                          <SuppTile sup={d.sup} />
+                          <span className="grow" style={{ minWidth: 0 }}>
+                            <span className="fd-name ellipsis supp-name" dir="auto">{d.sup.name}</span>
+                            <span className="fd-sub num">
+                              {fmtNum(d.log?.amount ?? d.amount)} {d.sup.unit}
+                              {d.log?.status === 'taken' && d.log.takenAt ? ` · ${new Date(d.log.takenAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
+                              {d.log?.site ? ` · ${d.log.site}` : ''}
+                              {d.log?.status === 'skipped' ? ' · skipped' : ''}
+                            </span>
+                          </span>
+                        </button>
+                        <button className={'check' + (d.log?.status === 'taken' ? ' on' : d.log?.status === 'skipped' ? ' skipped' : '')}
+                          aria-pressed={d.log?.status === 'taken'} aria-label={d.log ? `Undo ${d.sup.name}` : `Take ${d.sup.name}`} onClick={() => quickToggle(d)}>
+                          <Icon name={d.log?.status === 'skipped' ? 'close' : 'check'} size={18} stroke={2.8} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </section>
           ))}
 
           {asNeeded.length > 0 && (
-            <section className="card slot-card">
-              <h2 className="slot-head">As needed</h2>
-              {asNeeded.map((s) => {
-                const n = asNeededLogs.filter((l) => l.supplementId === s.id);
-                return (
-                  <div key={s.id} className="supp-row">
-                    <button className="grow supp-main pressable" onClick={() => setEditing(s)}>
-                      <span className="supp-name" dir="auto">{s.name}</span>
-                      <span className="supp-sub num">{fmtNum(doseOn(s, date))} {s.unit}{n.length ? ` · ${n.length}× today` : ''}</span>
-                    </button>
-                    <button className="check" aria-label={`Log ${s.name}`} onClick={() => setTaking({ sup: s, slot: null })}><Icon name="plus" size={18} stroke={2.6} /></button>
-                  </div>
-                );
-              })}
+            <section className="meal" aria-labelledby="slot-asneeded">
+              <div className="meal-head">
+                <span className="role-chip" aria-hidden><Icon name="plus" size={16} stroke={2} /></span>
+                <h2 id="slot-asneeded" className="grow">As needed</h2>
+              </div>
+              <div className="group">
+                {asNeeded.map((s) => {
+                  const n = asNeededLogs.filter((l) => l.supplementId === s.id);
+                  return (
+                    <div key={s.id} className="supp-row">
+                      <button className="grow supp-main pressable" onClick={() => setEditing(s)}>
+                        <SuppTile sup={s} />
+                        <span className="grow" style={{ minWidth: 0 }}>
+                          <span className="fd-name ellipsis supp-name" dir="auto">{s.name}</span>
+                          <span className="fd-sub num">{fmtNum(doseOn(s, date))} {s.unit}{n.length ? ` · ${n.length}× today` : ''}</span>
+                        </span>
+                      </button>
+                      <button className="check" aria-label={`Log ${s.name}`} onClick={() => setTaking({ sup: s, slot: null })}><Icon name="plus" size={18} stroke={2.6} /></button>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
           )}
 
-          <div className="section-title">All</div>
-          <div className="list">
+          <h2 className="section-title">All</h2>
+          <div className="group">
             {sups.map((s) => (
-              <button key={s.id} className="list-item pressable" onClick={() => setEditing(s)} style={s.archived ? { opacity: 0.5 } : undefined}>
-                <span className="role-chip"><Icon name={s.form === 'injection' ? 'syringe' : 'pill'} size={16} stroke={2} /></span>
+              <button key={s.id} className="fd-row pressable" onClick={() => setEditing(s)} style={s.archived ? { opacity: 0.5 } : undefined}>
+                <SuppTile sup={s} />
                 <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="title ellipsis bidi-start" dir="auto" style={{ display: 'block' }}>{s.name}</span>
-                  <span className="sub">{fmtNum(doseOn(s, today))} {s.unit} · {scheduleText(s.schedule)}{s.stock != null ? ` · ${fmtNum(s.stock)} left` : ''}{s.archived ? ' · stopped' : ''}</span>
+                  <span className="fd-name ellipsis supp-name" dir="auto">{s.name}</span>
+                  <span className="fd-sub">{fmtNum(doseOn(s, today))} {s.unit} · {scheduleText(s.schedule)}{s.stock != null ? ` · ${fmtNum(s.stock)} left` : ''}{s.archived ? ' · stopped' : ''}</span>
                 </span>
                 <Icon name="chevronRight" className="chev" size={18} />
               </button>
             ))}
           </div>
 
-          <div className="section-title">Stacks</div>
-          <div className="list">
-            {stacks.map((st) => (
-              <button key={st.id} className="list-item pressable" onClick={() => setStackEdit(st)}>
-                <Icon name="link" size={18} />
-                <span className="grow" style={{ minWidth: 0 }}><span className="title bidi-start" dir="auto" style={{ display: 'block' }}>{st.name}</span>
-                  <span className="sub ellipsis" style={{ display: 'block' }}>{st.supplementIds.map((id) => sups.find((s) => s.id === id)?.name).filter(Boolean).join(' · ')}</span></span>
-                <Icon name="chevronRight" className="chev" size={18} />
-              </button>
-            ))}
-            <button className="list-item pressable role-text" onClick={() => setStackEdit('new')}><Icon name="plus" size={18} /><span className="title">New stack</span></button>
-          </div>
+          {stacks.length > 0 && <>
+            <h2 className="section-title">Stacks</h2>
+            <div className="group">
+              {stacks.map((st) => (
+                <button key={st.id} className="fd-row pressable" onClick={() => setStackEdit(st)}>
+                  <span className="tile-ic" aria-hidden><Icon name="link" size={20} stroke={2} /></span>
+                  <span className="grow" style={{ minWidth: 0 }}><span className="fd-name bidi-start" dir="auto">{st.name}</span>
+                    <span className="fd-sub ellipsis">{st.supplementIds.map((id) => sups.find((s) => s.id === id)?.name).filter(Boolean).join(' · ')}</span></span>
+                  <Icon name="chevronRight" className="chev" size={18} />
+                </button>
+              ))}
+            </div>
+          </>}
 
           {notes.length > 0 && <>
-            <div className="section-title">Notes</div>
-            <div className="list">
+            <h2 className="section-title">Notes</h2>
+            <div className="group">
               {notes.map((n) => (
-                <div key={n.id} className="list-item" style={{ alignItems: 'flex-start' }}>
-                  <span className="grow"><span className="title bidi-start" dir="auto" style={{ fontWeight: 500, display: 'block' }}>{n.text}</span>
-                    <span className="sub" style={{ display: 'block' }}>{new Date(n.at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}{n.tags.includes('side-effect') ? ' · side effect' : ''}</span></span>
+                <div key={n.id} className="fd-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="tile-ic" aria-hidden><Icon name="note" size={20} stroke={2} /></span>
+                  <span className="grow" style={{ minWidth: 0 }}><span className="fd-name bidi-start" dir="auto" style={{ fontWeight: 500 }}>{n.text}</span>
+                    <span className="fd-sub">{new Date(n.at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}{n.tags.includes('side-effect') ? ' · side effect' : ''}</span></span>
                   <button className="icon-btn sm" aria-label="Delete note" onClick={async () => {
                     await run(notesDelete, { id: n.id });
                     toast('Note deleted', () => run(recordsRestore, { table: 'notes', id: n.id }));
@@ -190,15 +217,36 @@ export function SupplementsPage() {
               ))}
             </div>
           </>}
+
+          <nav className="text-links" aria-label="Supps">
+            <button className="text-link" onClick={() => setEditing('new')}>Add supplement</button>
+            <button className="text-link" onClick={() => setStackEdit('new')}>New stack</button>
+            <button className="text-link" onClick={() => setNoting(true)}>Add note</button>
+          </nav>
         </>
       )}
 
+      <Sheet open={menu} onClose={() => setMenu(false)} title="Supps">
+        <div className="am">
+          <div className="group">
+            <button className="am-row pressable" onClick={() => { setMenu(false); setEditing('new'); }}><Icon name="plus" /><span className="grow">Add supplement</span></button>
+            <button className="am-row pressable" onClick={() => { setMenu(false); setStackEdit('new'); }}><Icon name="link" /><span className="grow">New stack<span className="am-sub">Taken together, checked off together</span></span></button>
+            <button className="am-row pressable" onClick={() => { setMenu(false); setNoting(true); }}><Icon name="note" /><span className="grow">Add note<span className="am-sub">Side effects, sleep, energy</span></span></button>
+          </div>
+          {date !== today && <nav className="text-links" aria-label="Day"><button className="text-link" onClick={() => { setMenu(false); setDate(today); }}>Go to today</button></nav>}
+        </div>
+      </Sheet>
       <TakeSheet t={taking} date={date} onClose={() => setTaking(null)} />
       <SupplementEditor open={!!editing} sup={editing === 'new' ? undefined : editing ?? undefined} onClose={() => setEditing(null)} />
       <StackEditor open={!!stackEdit} stack={stackEdit === 'new' ? undefined : stackEdit ?? undefined} sups={sups.filter((s) => !s.archived)} onClose={() => setStackEdit(null)} />
       <NoteSheet open={noting} sups={sups} onClose={() => setNoting(false)} />
     </div>
   );
+}
+
+/** Soft tile with the form's icon: syringe for injections, pill for the rest. */
+function SuppTile({ sup }: { sup: Supplement }) {
+  return <span className="tile-ic" aria-hidden><Icon name={sup.form === 'injection' ? 'syringe' : 'pill'} size={20} stroke={2} /></span>;
 }
 
 /** Timestamp for back-filling a past day: the scheduled time on that date (noon if none). */
@@ -248,9 +296,9 @@ function TakeSheet({ t, date, onClose }: { t: { sup: Supplement; slot: string | 
           </div>
         )}
         <button className="btn primary lg block" onClick={() => go('taken')}><Icon name="check" size={20} stroke={2.6} /> Taken</button>
-        <div className="row">
-          <button className="btn grow" onClick={() => go('skipped')}><Icon name="close" size={16} /> Skipped</button>
-          {t.log && <button className="btn danger grow" onClick={async () => { await run(suppUnlog, { logId: t.log!.id }); onClose(); }}><Icon name="trash" size={16} /> Clear</button>}
+        <div className="group">
+          <button className="am-row pressable" onClick={() => go('skipped')}><Icon name="close" /><span className="grow">Skipped</span></button>
+          {t.log && <button className="am-row pressable danger" onClick={async () => { await run(suppUnlog, { logId: t.log!.id }); onClose(); }}><Icon name="trash" /><span className="grow">Clear</span></button>}
         </div>
       </div>
     </Sheet>
@@ -328,17 +376,17 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={sup ? 'Edit' : 'New supplement'} full>
+    <Sheet open={open} onClose={onClose} title={sup ? sup.name : 'New supplement'} full>
       <div className="stack" style={{ gap: 12 }}>
         <label className="field"><span>Name</span><input id={ids.name} className="input" dir="auto" value={name} placeholder="Creatine, Retatrutide, Vitamin D…" {...errFor('name')} onChange={(e) => { setName(e.target.value); setErr(null); }} /></label>
-        <div className="list" style={{ background: 'var(--card-2)' }}>
+        <div className="group">
           <PickerRow label="Form" options={FORM_OPTS} value={form} onChange={setForm} />
           <PickerRow label="Unit" options={UNIT_OPTS} value={unit} onChange={setUnit} />
         </div>
 
         {doses.length ? (
           <div className="field"><span>Dose history</span>
-            <div className="list" style={{ background: 'var(--card-2)' }}>
+            <div className="group">
               {[...doses].sort((a, b) => b.from.localeCompare(a.from)).map((d, i) => (
                 <div key={d.from + i} className="list-item">
                   <span className="grow num"><b>{fmtNum(d.amount)} {unit}</b> <span className="muted">from {keyToDate(d.from).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></span>
@@ -363,7 +411,7 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
           <div id={ids.dose}><NumberField label={`Dose (${unit})`} spec={doseSpec(unit)} placeholder="Set dose" value={parseFloat(amount) > 0 ? parseFloat(amount) : null} invalid={err?.field === 'dose' ? ids.err : undefined} onChange={(v) => { setAmount(String(v)); setErr(null); }} /></div>
         )}
 
-        <div className="list" style={{ background: 'var(--card-2)' }}>
+        <div className="group">
           <PickerRow label="How often" options={KINDS} value={s.kind} onChange={(kind) => setS({ kind, days: kind === 'weekdays' ? s.days ?? [1, 3, 5] : s.days, every: kind === 'interval' ? s.every ?? 2 : s.every })} />
           {s.kind === 'interval' && <NumberRow label="Interval" spec={EVERY} value={s.every ?? 2} onChange={(every) => setS({ every })} />}
         </div>
@@ -390,39 +438,41 @@ function SupplementEditor({ open, sup, onClose }: { open: boolean; sup?: Supplem
           </div>
         )}
         {s.kind !== 'asNeeded' && <>
-          <div className="list" style={{ background: 'var(--card-2)' }}>
+          <div className="group">
             <label className="list-item">
               <span className="grow"><span className="title">{s.kind === 'weekly' ? 'First day' : 'Starts'}</span>{s.kind === 'weekly' && <span className="sub" style={{ display: 'block' }}>Repeats on that weekday</span>}</span>
               <input className="inline-input num" type="date" value={s.startDate} onChange={(e) => setS({ startDate: e.target.value || today })} />
             </label>
           </div>
-          <label className="card row" style={{ background: 'var(--card-2)', cursor: 'pointer' }}>
-            <span className="grow"><b style={{ fontWeight: 650 }}>On/off cycle</b><br /><span className="muted" style={{ fontSize: '0.8125rem' }}>e.g. 8 weeks on, 4 off</span></span>
-            <span className="switch"><input type="checkbox" checked={!!s.cycle} onChange={(e) => setS({ cycle: e.target.checked ? { onDays: 56, offDays: 28 } : null })} /><span /></span>
-          </label>
+          <div className="group">
+            <label className="am-row" style={{ cursor: 'pointer' }}>
+              <Icon name="history" />
+              <span className="grow">On/off cycle<span className="am-sub">e.g. 8 weeks on, 4 off</span></span>
+              <span className="switch"><input type="checkbox" checked={!!s.cycle} onChange={(e) => setS({ cycle: e.target.checked ? { onDays: 56, offDays: 28 } : null })} /><span /></span>
+            </label>
+          </div>
           {s.cycle && (
-            <div className="list" style={{ background: 'var(--card-2)' }}>
+            <div className="group">
               <NumberRow label="On for" spec={CYCLE} value={s.cycle.onDays} onChange={(onDays) => setS({ cycle: { ...s.cycle!, onDays } })} />
               <NumberRow label="Off for" spec={CYCLE} value={s.cycle.offDays} onChange={(offDays) => setS({ cycle: { ...s.cycle!, offDays } })} />
             </div>
           )}
         </>}
 
-        <div className="grid-2">
-          <label className="field"><span>Stock left (optional)</span><input className="input num" inputMode="decimal" value={stock} placeholder={unit} onChange={(e) => setStock(e.target.value)} /></label>
-          <div />
-        </div>
+        <label className="field"><span>Stock left (optional)</span><input className="input num" inputMode="decimal" value={stock} placeholder={unit} onChange={(e) => setStock(e.target.value)} style={{ maxWidth: 200 }} /></label>
         <label className="field"><span>Notes</span><textarea className="input" rows={2} dir="auto" value={notes} placeholder="Brand, with food, reconstitution…" onChange={(e) => setNotes(e.target.value)} /></label>
 
         <p id={ids.err} className="field-err" role="status">{err?.msg ?? ''}</p>
         <button className="btn primary lg block" onClick={go}><Icon name="check" size={20} stroke={2.6} /> Save</button>
         {sup && (
-          <div className="row">
-            <button className="btn grow" onClick={async () => { await run(suppSave, { id: sup.id, archived: !sup.archived }); onClose(); }}>{sup.archived ? 'Resume' : 'Stop taking'}</button>
-            <button className="btn danger grow" onClick={async () => {
+          <div className="group">
+            <button className="am-row pressable" onClick={async () => { await run(suppSave, { id: sup.id, archived: !sup.archived }); onClose(); }}>
+              <Icon name={sup.archived ? 'play' : 'close'} /><span className="grow">{sup.archived ? 'Resume' : 'Stop taking'}<span className="am-sub">{sup.archived ? 'Back on the schedule' : 'Hidden from the checklist, history kept'}</span></span>
+            </button>
+            <button className="am-row pressable danger" onClick={async () => {
               if (!(await confirmDialog({ title: `Delete “${sup.name}”?`, message: 'It disappears from your list and schedule. Its log history is kept. To pause it instead, use Stop taking.', confirm: 'Delete supplement', danger: true }))) return;
               await run(suppDelete, { id: sup.id }); onClose();
-            }}><Icon name="trash" size={16} /> Delete</button>
+            }}><Icon name="trash" /><span className="grow">Delete</span></button>
           </div>
         )}
       </div>
@@ -450,7 +500,7 @@ function StackEditor({ open, stack, sups, onClose }: { open: boolean; stack?: St
         <label className="field"><span>Name</span><input id={nameId} className="input" dir="auto" value={name} placeholder="Morning stack"
           aria-invalid={err?.field === 'name'} aria-describedby={err?.field === 'name' ? errId : undefined} onChange={(e) => { setName(e.target.value); setErr(null); }} /></label>
         <p className="faint" style={{ margin: 0, fontSize: '0.8125rem' }}>Members due at the same time are grouped and checked off together.</p>
-        <div id={listId} className="list" style={{ background: 'var(--card-2)' }} role="group" aria-label="Supplements in this stack" aria-describedby={err?.field === 'members' ? errId : undefined}>
+        <div id={listId} className="group" role="group" aria-label="Supplements in this stack" aria-describedby={err?.field === 'members' ? errId : undefined}>
           {sups.map((s) => {
             const on = ids.includes(s.id);
             return (
@@ -463,10 +513,10 @@ function StackEditor({ open, stack, sups, onClose }: { open: boolean; stack?: St
         </div>
         <p id={errId} className="field-err" role="status">{err?.msg ?? ''}</p>
         <button className="btn primary lg block" onClick={go}><Icon name="check" size={20} stroke={2.6} /> Save</button>
-        {stack && <button className="btn danger block" onClick={async () => {
+        {stack && <div className="group"><button className="am-row pressable danger" onClick={async () => {
           await run(stackDelete, { id: stack.id }); onClose();
           toast(`Stack “${stack.name}” deleted`, () => run(recordsRestore, { table: 'stacks', id: stack.id }));
-        }}><Icon name="trash" size={16} /> Delete stack</button>}
+        }}><Icon name="trash" /><span className="grow">Delete stack</span></button></div>}
       </div>
     </Sheet>
   );

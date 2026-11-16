@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router';
-import { AddFoodSheet, EntrySheet, MacroLine, RecipeEditor } from '../components/FoodSheets';
+import { AddFoodSheet, EntrySheet, FoodTile, MacroLine, RecipeEditor } from '../components/FoodSheets';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { daysComplete } from '../api/food';
@@ -37,9 +37,11 @@ export function FoodPage() {
   const { entries, goal, status, total } = useDay(date);
   const [adding, setAdding] = useState<{ meal: Meal; tab: Tab } | null>(null);
   const [shortcuts, setShortcuts] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [recipe, setRecipe] = useState(false);
   const [editing, setEditing] = useState<FoodEntry | null>(null);
   const byMeal = (m: Meal) => entries.filter((e) => e.meal === m);
+  const log = (tab: Tab) => { setShortcuts(false); setAdding({ meal: mealNow(), tab }); };
 
   const label = date === today ? 'Today' : date === shiftDate(today, -1) ? 'Yesterday'
     : keyToDate(date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
@@ -47,9 +49,9 @@ export function FoodPage() {
 
   return (
     <div className="page" data-role="food">
-      <header className="page-head">
+      <header className="title-more lt">
         <h1>Food</h1>
-        <button className="icon-btn filled" aria-label="Goals" onClick={() => nav('/nutrition')}><Icon name="target" /></button>
+        <button className="more-pill" aria-label="Food options" onClick={() => setMenu(true)}><Icon name="more" size={22} stroke={3} /></button>
       </header>
 
       <div className="date-pill">
@@ -59,9 +61,9 @@ export function FoodPage() {
       </div>
 
       {goal === undefined ? null : !goal && !entries.length ? (
-        <button className="card pressable row setup-cta" onClick={() => nav('/nutrition')}>
-          <span className="role-chip" style={{ width: 44, height: 44, borderRadius: 14 }}><Icon name="target" size={22} stroke={2} /></span>
-          <span className="grow"><b className="t-17">Set up your goals</b><br /><span className="muted t-15">7 quick questions, or just start logging</span></span>
+        <button className="group pressable row setup-cta" onClick={() => nav('/nutrition')}>
+          <span className="tile-ic" aria-hidden><Icon name="target" size={22} stroke={2} /></span>
+          <span className="grow"><b className="t-17">Set up your goals</b><span className="muted t-15" style={{ display: 'block' }}>7 quick questions, or just start logging</span></span>
           <Icon name="chevronRight" className="chev" size={18} />
         </button>
       ) : null}
@@ -69,60 +71,79 @@ export function FoodPage() {
       <Dashboard total={total} goal={goal ?? null} meals={MEALS.map((m) => ({ ...m, kcal: sum(byMeal(m.id).map((e) => e.n)).kcal }))}
         onMeal={(m) => document.getElementById(`meal-${m}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
-      <div className="stack" style={{ gap: 12, marginTop: 12 }}>
-        {MEALS.map((m) => {
-          const list = byMeal(m.id);
-          const mt = sum(list.map((e) => e.n));
-          return (
-            <section key={m.id} id={`meal-${m.id}`} className="card meal-card" style={{ scrollMarginTop: 'calc(var(--safe-t) + 12px)' }}>
-              <div className="row" style={{ minHeight: 40 }}>
-                <span className="role-chip"><Icon name={m.icon} size={16} stroke={2} /></span>
-                <span className="grow">
-                  <h2 className="w-7 t-17" style={{ margin: 0 }}>{m.label}</h2>
-                  {list.length > 0 && <span className="food-row-sub"><MacroLine m={mt} /></span>}
-                </span>
-                {mt.kcal > 0 && <span className="num" style={{ fontWeight: 750 }}>{k(mt.kcal)}<span className="sr-only"> kcal</span></span>}
-                <button className="round-btn sm-round" aria-label={`Add to ${m.label}`} onClick={() => setAdding({ meal: m.id, tab: 'search' })}><Icon name="plus" size={18} stroke={2.4} /></button>
+      {MEALS.map((m) => {
+        const list = byMeal(m.id);
+        const mt = sum(list.map((e) => e.n));
+        return (
+          <section key={m.id} id={`meal-${m.id}`} className="meal" aria-labelledby={`meal-h-${m.id}`}>
+            <div className="meal-head">
+              <span className="role-chip" aria-hidden><Icon name={m.icon} size={16} stroke={2} /></span>
+              <h2 id={`meal-h-${m.id}`} className="grow">{m.label}</h2>
+              {mt.kcal > 0 && <span className="num muted">{k(mt.kcal)} kcal</span>}
+              <button className="icon-btn sm tint" aria-label={`Add to ${m.label}`} onClick={() => setAdding({ meal: m.id, tab: 'search' })}><Icon name="plus" size={18} stroke={2.4} /></button>
+            </div>
+            {list.length > 0 && (
+              <div className="group">
+                {list.map((e) => (
+                  <button key={e.id} className="fd-row pressable" onClick={() => setEditing(e)}>
+                    <FoodTile name={e.name} quick={e.source === 'quick'} />
+                    <span className="grow" style={{ minWidth: 0 }}>
+                      <span className="fd-name ellipsis bidi-start" dir="auto">{e.name}</span>
+                      <span className="fd-sub">{e.source === 'quick' ? 'Quick add · ' : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
+                    </span>
+                    <span className="fd-kcal num">{k(e.n.kcal)}<span className="sr-only"> kcal</span></span>
+                  </button>
+                ))}
               </div>
-              {list.length > 0 && (
-                <div className="entry-list">
-                  {list.map((e) => (
-                    <button key={e.id} className="entry-row pressable" onClick={() => setEditing(e)}>
-                      <span className="grow" style={{ minWidth: 0 }}>
-                        <span className="ellipsis bidi-start" dir="auto" style={{ display: 'block', fontWeight: 560 }}>{e.name}</span>
-                        <span className="food-row-sub">{e.source === 'quick' ? <><Icon name="bolt" size={11} /> Quick add · </> : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
-                      </span>
-                      <span className="num" style={{ fontWeight: 750, flex: 'none' }}>{k(e.n.kcal)}<span className="sr-only"> kcal</span></span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+            )}
+          </section>
+        );
+      })}
+
+      <div className="group" style={{ marginTop: 24 }}>
+        <label className="am-row" style={{ cursor: 'pointer' }}>
+          <Icon name="check" />
+          <span className="grow">Day fully logged<span className="am-sub">Only full days count toward your maintenance estimate</span></span>
+          <span className="switch"><input type="checkbox" checked={!!status?.complete}
+            onChange={(e) => run(daysComplete, { date, complete: e.target.checked })} /><span /></span>
+        </label>
       </div>
 
-      <label className="card row" style={{ marginTop: 12, cursor: 'pointer' }}>
-        <span className="grow"><b style={{ fontWeight: 650 }}>Day fully logged</b><br /><span className="muted t-13">Only full days count toward your maintenance estimate</span></span>
-        <span className="switch"><input type="checkbox" checked={!!status?.complete}
-          onChange={(e) => run(daysComplete, { date, complete: e.target.checked })} /><span /></span>
-      </label>
+      <nav className="text-links" aria-label="Food">
+        <button className="text-link" onClick={() => nav('/nutrition')}>Goals</button>
+        <button className="text-link" onClick={() => setAdding({ meal: mealNow(), tab: 'mine' })}>My foods</button>
+        <button className="text-link" onClick={() => setRecipe(true)}>New recipe</button>
+      </nav>
 
       {/* floating + (lives in the app frame, above the tab bar) */}
       {shell && createPortal(
         <button className="fab" aria-label="Log food" onClick={() => setShortcuts(true)}><Icon name="plus" size={28} stroke={2.4} /></button>, shell)}
 
-      <Sheet open={shortcuts} onClose={() => setShortcuts(false)} title="Log">
-        <div className="shortcut-grid">
-          {/* one food-green tint: per-shortcut colours collided with the macro colours (yellow = fat, purple = protein) */}
-          <Shortcut icon="search" label="Search" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'search' }); }} />
-          <Shortcut icon="barcode" label="Scan" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'scan' }); }} />
-          <Shortcut icon="bolt" label="Quick add" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'quick' }); }} />
-          <Shortcut icon="food" label="Mine" onClick={() => { setShortcuts(false); setAdding({ meal: mealNow(), tab: 'mine' }); }} />
+      <Sheet open={shortcuts} onClose={() => setShortcuts(false)} title="Log food">
+        <div className="am">
+          <div className="tile-pair">
+            <button className="tile pressable" onClick={() => log('search')}><Icon name="search" size={22} /><span>Search</span></button>
+            <button className="tile pressable" onClick={() => log('scan')}><Icon name="barcode" size={22} /><span>Scan</span></button>
+          </div>
+          <div className="group">
+            <button className="am-row pressable" onClick={() => log('quick')}><Icon name="bolt" /><span className="grow">Quick add<span className="am-sub">Calories and macros only</span></span></button>
+            <button className="am-row pressable" onClick={() => log('mine')}><Icon name="food" /><span className="grow">My foods<span className="am-sub">Yours, scanned and recipes</span></span></button>
+          </div>
+          <nav className="text-links" aria-label="More">
+            <button className="text-link" onClick={() => { setShortcuts(false); setRecipe(true); }}>New recipe</button>
+            <button className="text-link" onClick={() => { setShortcuts(false); nav('/nutrition'); }}>Goals</button>
+          </nav>
         </div>
-        <div className="grid-2" style={{ marginTop: 14 }}>
-          <button className="shortcut-wide pressable" onClick={() => { setShortcuts(false); setRecipe(true); }}><Icon name="note" size={22} />New recipe</button>
-          <button className="shortcut-wide pressable" onClick={() => { setShortcuts(false); nav('/nutrition'); }}><Icon name="target" size={22} />Goals</button>
+      </Sheet>
+
+      <Sheet open={menu} onClose={() => setMenu(false)} title="Food">
+        <div className="am">
+          <div className="group">
+            <button className="am-row pressable" onClick={() => { setMenu(false); nav('/nutrition'); }}><Icon name="target" /><span className="grow">Goals</span></button>
+            <button className="am-row pressable" onClick={() => { setMenu(false); setAdding({ meal: mealNow(), tab: 'mine' }); }}><Icon name="food" /><span className="grow">My foods</span></button>
+            <button className="am-row pressable" onClick={() => { setMenu(false); setRecipe(true); }}><Icon name="note" /><span className="grow">New recipe</span></button>
+          </div>
+          {date !== today && <nav className="text-links" aria-label="Day"><button className="text-link" onClick={() => { setMenu(false); setDate(today); }}>Go to today</button></nav>}
         </div>
       </Sheet>
 
@@ -130,15 +151,6 @@ export function FoodPage() {
       <RecipeEditor open={recipe} onClose={() => setRecipe(false)} />
       <EntrySheet entry={editing} onClose={() => setEditing(null)} />
     </div>
-  );
-}
-
-function Shortcut({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button className="shortcut pressable" onClick={onClick}>
-      <span className="shortcut-circle role-text"><Icon name={icon} size={28} stroke={2} /></span>
-      <span>{label}</span>
-    </button>
   );
 }
 

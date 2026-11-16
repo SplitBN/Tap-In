@@ -308,14 +308,6 @@ function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, 
   );
 }
 
-/** Exercise image, or its initials when there is none. */
-export function Avatar({ ex }: { ex?: Exercise }) {
-  const src = exerciseImage(ex);
-  if (src) return <img src={src} alt="" loading="lazy" />;
-  const initials = (ex?.name ?? '?').split(/[\s-]+/).filter((w) => /^[a-z0-9]/i.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-  return <span className="avatar-initials">{initials || '?'}</span>;
-}
-
 function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, replaced, progress, onReplace, live }: {
   session: Session; item: WorkoutItem; ex: Exercise; sets: SetLog[]; settings: Settings; onMenu: (sub?: 'reps') => void; onSetDone: (r: Row) => void;
   onReplace: () => void; live: boolean;

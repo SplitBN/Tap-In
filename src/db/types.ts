@@ -56,6 +56,7 @@ export interface WorkoutItem {
 export interface Plan extends Base {
   name: string;
   workoutIds: string[]; // ordered rotation, not tied to weekdays
+  startDate?: string; // YYYY-MM-DD the plan's "Week N" counts from; unset = the day it was created
 }
 
 export interface Workout extends Base {
@@ -127,6 +128,7 @@ export interface Settings {
     effort: boolean;
     warmups: boolean;
     progression?: boolean; // progression targets (greyed "today" numbers) instead of last time's; undefined = on
+    planWeek?: boolean; // "Week N" next to the active plan; undefined = on
   };
 }
 

@@ -34,7 +34,7 @@ export function itemExtras(it: WorkoutItem, warmupsOn: boolean, inSuperset: bool
   return out;
 }
 
-export function WorkoutPreview({ workoutId, planName, onClose }: { workoutId: string | null; planName?: string; onClose: () => void }) {
+export function WorkoutPreview({ workoutId, planName, planWeek, onClose }: { workoutId: string | null; planName?: string; planWeek?: number; onClose: () => void }) {
   const nav = useNavigate();
   const settings = useSettings();
   const headId = useId();
@@ -74,7 +74,7 @@ export function WorkoutPreview({ workoutId, planName, onClose }: { workoutId: st
             </div>
             <div className="pv-hero">
               <div className="grow" style={{ minWidth: 0 }}>
-                {planName && <div className="pv-meta ellipsis">{planName}</div>}
+                {planName && <div className="pv-meta row" style={{ gap: 0 }}><span className="ellipsis">{planName}</span>{planWeek ? <span className="num" style={{ flex: 'none', whiteSpace: 'pre' }}> · Week {planWeek}</span> : null}</div>}
                 <div className="pv-meta num">{plural(items.length, 'exercise', 'exercises')} · {plural(totalSets, 'set', 'sets')}</div>
                 <button className="btn primary lg pv-start" onClick={start} disabled={!items.length && !resume}>
                   <Icon name="play" size={20} />{resume ? 'Resume' : 'Start'}
