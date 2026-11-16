@@ -13,7 +13,7 @@ const ALIASES: Record<string, string> = {
   pullup: 'pullups', chinup: 'chinups', pushup: 'pushups', situp: 'situps', db: 'dumbbell', bb: 'barbell', kb: 'kettlebell',
   tricep: 'triceps', bicep: 'biceps', ab: 'abs',
   // gym shorthand expands to several words
-  ohp: 'shoulder press', rdl: 'romanian deadlift', sldl: 'stiff legged deadlift', bss: 'bulgarian split squat',
+  ohp: 'overhead press', military: 'overhead', rdl: 'romanian deadlift', sldl: 'stifflegged deadlift', bss: 'bulgarian split squat',
   pec: 'chest', delt: 'shoulder', delts: 'shoulders',
 };
 

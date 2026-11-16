@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog } from '../components/Dialog';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ExercisePicker, ExerciseThumb } from '../components/ExercisePicker';
+import { ExName, ExercisePicker, ExerciseThumb } from '../components/ExercisePicker';
+import { exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ItemSettings } from '../components/ItemSettings';
 import { Sheet } from '../components/Sheet';
@@ -53,7 +54,7 @@ export function WorkoutEditorPage() {
                   style={{ width: '100%', border: 0, textAlign: 'left', color: 'inherit', ...groupStyle(g) }}>
                   <ExerciseThumb ex={ex} />
                   <span className="grow">
-                    <span style={{ fontWeight: 600, display: 'block' }} className="ellipsis">{ex?.name ?? '…'}</span>
+                    <span style={{ fontWeight: 600, display: 'block' }} className="ellipsis"><ExName ex={ex} /></span>
                     <span className="muted" style={{ fontSize: '0.8125rem' }}>{summary(it, ex, settings)}</span>
                   </span>
                   {g === 'first' && <span className="badge accent">Superset</span>}
@@ -82,7 +83,7 @@ export function WorkoutEditorPage() {
           else if (exs.length) run(itemsAdd, { ...t, exerciseIds: exs.map((e) => e.id) });
         }} />
 
-      <Sheet open={!!editing} onClose={() => setEditKey(undefined)} title={editing ? exMap[editing.exerciseId]?.name : ''}>
+      <Sheet open={!!editing} onClose={() => setEditKey(undefined)} title={editing ? exerciseLabel(exMap[editing.exerciseId], '') : ''}>
         {editing && (
           <>
             <ItemSettings item={editing} exercise={exMap[editing.exerciseId]} settings={settings}
@@ -91,7 +92,7 @@ export function WorkoutEditorPage() {
               {editIdx < workout.items.length - 1 && (
                 <button className="menu-item" onClick={() => run(itemsSuperset, { ...t, itemKey: editing.key })}>
                   <Icon name={editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'unlink' : 'link'} />
-                  <span className="grow ellipsis">{editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'Unlink superset' : `Superset + ${exMap[workout.items[editIdx + 1].exerciseId]?.name ?? 'next'}`}</span>
+                  <span className="grow ellipsis">{editing.supersetId && editing.supersetId === workout.items[editIdx + 1]?.supersetId ? 'Unlink superset' : `Superset + ${exerciseLabel(exMap[workout.items[editIdx + 1].exerciseId], 'next')}`}</span>
                 </button>
               )}
               {editIdx > 0 && <button className="menu-item" onClick={() => reorder(moveItem(workout.items, editIdx, -1))}><Icon name="chevronUp" />Move up</button>}

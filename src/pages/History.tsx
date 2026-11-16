@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ExerciseThumb } from '../components/ExercisePicker';
+import { ExName, ExerciseThumb } from '../components/ExercisePicker';
+import { exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { alive, db } from '../db/db';
@@ -68,7 +69,7 @@ export function ExerciseHistoryPage() {
     <div className="page">
       <header className="page-head">
         <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" /></button>
-        <h1 className="small ellipsis">{ex.name}</h1>
+        <h1 className="small ellipsis"><ExName ex={ex} /></h1>
         <button className="icon-btn" aria-label="How to do it" onClick={() => setInfo(true)}><Icon name="info" size={20} /></button>
       </header>
       <div className="row card" style={{ marginBottom: 12 }}>
@@ -100,7 +101,7 @@ export function ExerciseHistoryPage() {
         })}
         {!groups.length && <p className="empty">No sets logged for this exercise yet.</p>}
       </div>
-      <Sheet open={info} onClose={() => setInfo(false)} title={ex.name}><ExerciseInfo ex={ex} /></Sheet>
+      <Sheet open={info} onClose={() => setInfo(false)} title={exerciseLabel(ex)}><ExerciseInfo ex={ex} /></Sheet>
     </div>
   );
 }

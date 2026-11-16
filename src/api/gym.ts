@@ -8,6 +8,7 @@ import { normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSe
 import { e1rm, rirToRpe, rpeToRir, totalLoadKg } from '../lib/science';
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
+import { exerciseLabel } from '../lib/equipment';
 
 const zLoadType = z.enum(['weighted', 'bodyweight', 'assisted']);
 const zItemPatch = z.object({
@@ -19,7 +20,8 @@ const zItemPatch = z.object({
 }).describe('Fields of an exercise slot to change');
 
 const need = async <T>(p: Promise<T | undefined>, what: string) => { const v = await p; if (!v || (v as { deletedAt?: number | null }).deletedAt) throw new Error(`${what} not found`); return v; };
-const exName = async (id: string) => (await db.exercises.get(id))?.name ?? id;
+// name + equipment ("Bench Press · Dumbbell") so same-named variants are distinguishable to the agent
+const exName = async (id: string) => { const e = await db.exercises.get(id); return e ? exerciseLabel(e) : id; };
 const applyPatch = (it: WorkoutItem, p: z.infer<typeof zItemPatch>): WorkoutItem => ({
   ...it, ...p, repsMin: p.repsMin === null ? undefined : p.repsMin ?? it.repsMin, repsMax: p.repsMax === null ? undefined : p.repsMax ?? it.repsMax,
   notes: p.notes === null ? undefined : p.notes ?? it.notes, rest: p.rest ?? it.rest,
@@ -52,6 +54,20 @@ export const exercisesUpdate = defineCommand({
     loadType: zLoadType.optional(), unilateral: z.boolean().optional(), muscles: z.array(z.string()).optional(),
     stepKg: z.number().positive().optional().describe('Weight step in kg used by the weight picker for this exercise') }),
   run: async ({ id, ...p }) => { const e = await need(db.exercises.get(id), 'Exercise'); return save('exercises', { ...e, ...p } as Exercise); },
+});
+
+export const exercisesDuplicate = defineCommand({
+  name: 'exercises.duplicate', kind: 'action',
+  description: 'Make a custom copy of an exercise (same type, equipment, load type, one-side flag, muscles, images and instructions) with its own separate history. Use it when the user has two versions of the same exercise whose loads are not comparable, e.g. two different chest press machines at different gyms ("Chest Press · Gym A"). name defaults to "<original name> (copy)". Returns the new exercise record.',
+  input: z.object({ id: zId, name: z.string().trim().min(1).optional().describe('Name for the copy; defaults to "<original name> (copy)"') }),
+  run: async ({ id, name }) => {
+    const e = await need(db.exercises.get(id), 'Exercise');
+    return save('exercises', newRecord({
+      name: name ?? `${e.name} (copy)`, mechanic: e.mechanic, equipment: e.equipment, loadType: e.loadType, unilateral: e.unilateral,
+      muscles: [...e.muscles], secondary: [...e.secondary], images: [...e.images], instructions: e.instructions && [...e.instructions],
+      stepKg: e.stepKg, custom: true,
+    }) as Exercise);
+  },
 });
 
 // ---------------- plans & workouts ----------------

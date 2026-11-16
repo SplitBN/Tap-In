@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { createPortal } from 'react-dom';
 import { ExercisePicker, ExerciseEditor, ExerciseThumb } from '../components/ExercisePicker';
+import { equipmentLabel, equipmentTag, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ItemSettings } from '../components/ItemSettings';
 import { EffortSheet, WeightSheet } from '../components/SetInputs';
@@ -105,7 +106,7 @@ export function SessionPage() {
       {live && settings.features.restTimer && <RestBar />}
 
       {/* item menu: everything editable in a plan is editable here */}
-      <Sheet open={menu === 'item' && !!current} onClose={() => setMenu(null)} title={ex?.name}>
+      <Sheet open={menu === 'item' && !!current} onClose={() => setMenu(null)} title={ex && exerciseLabel(ex)}>
         {current && (
           <>
             <ItemSettings item={current} exercise={ex} settings={settings} onChange={(n) => run(itemsUpdate, { ...t, itemKey: n.key, patch: itemPatch(current, n) })} />
@@ -113,7 +114,7 @@ export function SessionPage() {
               {curIdx < items.length - 1 && (() => {
                 const linked = !!current.supersetId && current.supersetId === items[curIdx + 1]?.supersetId;
                 return <button className="menu-item" onClick={() => run(itemsSuperset, { ...t, itemKey: current.key })}>
-                  <Icon name={linked ? 'unlink' : 'link'} /><span className="grow ellipsis">{linked ? 'Unlink superset' : `Superset + ${exMap[items[curIdx + 1].exerciseId]?.name ?? 'next'}`}</span>
+                  <Icon name={linked ? 'unlink' : 'link'} /><span className="grow ellipsis">{linked ? 'Unlink superset' : `Superset + ${exerciseLabel(exMap[items[curIdx + 1].exerciseId], 'next')}`}</span>
                 </button>;
               })()}
               <button className="menu-item" onClick={() => { setMenu(null); setPicking('replace'); }}><Icon name="swap" />Replace</button>
@@ -126,7 +127,7 @@ export function SessionPage() {
                 const doneN = mine.filter((x) => x.doneAt).length;
                 if (doneN) {
                   setMenu(null);
-                  if (!(await confirmDialog({ title: `Remove ${ex?.name ?? 'exercise'}?`, message: `Its ${doneN} logged set${doneN === 1 ? '' : 's'} will be deleted.`, confirm: 'Remove exercise', danger: true }))) return;
+                  if (!(await confirmDialog({ title: `Remove ${exerciseLabel(ex, 'exercise')}?`, message: `Its ${doneN} logged set${doneN === 1 ? '' : 's'} will be deleted.`, confirm: 'Remove exercise', danger: true }))) return;
                 }
                 await run(itemsRemove, { ...t, itemKey: current.key }); setMenu(null);
               }}><Icon name="trash" />Remove</button>
@@ -135,7 +136,7 @@ export function SessionPage() {
         )}
       </Sheet>
 
-      <Sheet open={menu === 'info'} onClose={() => setMenu(null)} title={ex?.name}>
+      <Sheet open={menu === 'info'} onClose={() => setMenu(null)} title={ex && exerciseLabel(ex)}>
         {ex && <ExerciseInfo ex={ex} />}
       </Sheet>
       <ExerciseEditor open={menu === 'editEx'} exercise={ex} onClose={() => setMenu(null)} />
@@ -185,7 +186,7 @@ function afterSetDone(row: Row, it: WorkoutItem, idx: number, items: WorkoutItem
   if (!s.features.restTimer) return;
   const ex = exMap[it.exerciseId];
   const sec = it.rest.mode === 'countup' ? undefined : it.rest.sec ?? (ex ? defaultRestSec(ex.mechanic, s.restCompoundSec, s.restIsolationSec) : 120);
-  rest.start(sec, ex?.name);
+  rest.start(sec, ex && exerciseLabel(ex));
 }
 
 function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, onAdd }: {
@@ -206,7 +207,7 @@ function ExerciseStrip({ items, exMap, currentKey, isDone, onSelect, onReorder, 
           return (
             <SortableItem key={it.key} id={it.key} className={'strip-slot tube-' + g}>
               <button data-current={cur} onClick={() => onSelect(it.key)} aria-current={cur ? 'step' : undefined}
-                aria-label={(ex?.name ?? 'Exercise') + (isDone(it) ? ', done' : '')}
+                aria-label={exerciseLabel(ex) + (isDone(it) ? ', done' : '')}
                 className={'avatar pressable' + (cur ? ' current' : '') + (isDone(it) ? ' done' : '')}>
                 <Avatar ex={ex} />
                 {isDone(it) && <span className="avatar-badge"><Icon name="check" size={11} stroke={3.2} /></span>}
@@ -319,7 +320,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone }:
         ) : <ExerciseThumb ex={ex} size={96} />}
         <div className="grow" style={{ paddingTop: 2, minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.12, letterSpacing: '-0.025em', fontWeight: 800, color: 'var(--accent)' }}>{ex.name}</h2>
-          <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{titleCase(ex.muscles.join(', '))}</div>
+          <div className="muted" style={{ fontSize: '0.8125rem', marginTop: 3 }}>{equipmentTag(ex) && <>{equipmentTag(ex)} · </>}{titleCase(ex.muscles.join(', '))}</div>
           <div className="tags">
             {item.repsMin != null && <span className="tag"><Icon name="flag" size={12} stroke={2.2} />{item.repsMin}{item.repsMax && item.repsMax !== item.repsMin ? `–${item.repsMax}` : ''}</span>}
             {ex.unilateral && <span className="tag">L | R</span>}
@@ -533,7 +534,7 @@ export function ExerciseInfo({ ex }: { ex: Exercise }) {
         </div>
       )}
       <div className="chips" style={{ flexWrap: 'wrap' }}>
-        <span className="badge">{titleCase(ex.mechanic)}</span><span className="badge">{titleCase(ex.equipment)}</span>
+        <span className="badge">{titleCase(ex.mechanic)}</span><span className="badge">{equipmentLabel(ex.equipment)}</span>
         {ex.muscles.map((m) => <span key={m} className="badge accent">{titleCase(m)}</span>)}
         {ex.secondary.map((m) => <span key={m} className="badge">{titleCase(m)}</span>)}
       </div>

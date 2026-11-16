@@ -7,6 +7,7 @@ import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { moveItem } from './Session';
+import { equipmentTag } from '../lib/equipment';
 import { useSettings } from '../db/settings';
 import { run } from '../api/registry';
 import { plansCreate, plansDelete, plansRename, plansReorder, plansSetActive, sessionsStart, workoutsCreate } from '../api/gym';
@@ -59,7 +60,8 @@ export function PlanPage() {
   const exNames = useLiveQuery(async () => {
     const ids = [...new Set(workouts.flatMap((w) => w.items.map((i) => i.exerciseId)))];
     const ex = await db.exercises.bulkGet(ids);
-    return Object.fromEntries(ex.filter(Boolean).map((e) => [e!.id, e!.name]));
+    // "Bench Press (Dumbbell)": the list is joined with " · ", so the equipment tag goes in brackets here
+    return Object.fromEntries(ex.filter(Boolean).map((e) => { const tag = equipmentTag(e); return [e!.id, tag ? `${e!.name} (${tag})` : e!.name]; }));
   }, [workouts]) ?? {};
   const [naming, setNaming] = useState<'workout' | 'rename' | null>(null);
   const [ordering, setOrdering] = useState(false);

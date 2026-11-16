@@ -2,10 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useMemo, useState } from 'react';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
-import { exercisesCreate, exercisesUpdate } from '../api/gym';
+import { exercisesCreate, exercisesDuplicate, exercisesUpdate } from '../api/gym';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
+import { EQUIPMENT, equipmentLabel, equipmentTag } from '../lib/equipment';
 import { usageBoost } from '../lib/search';
 import { searchExercises } from '../db/exerciseSearch';
 import { Icon } from './Icon';
@@ -81,7 +82,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
               onClick={() => (multi ? setSel(on ? sel.filter((x) => x !== e.id) : [...sel, e.id]) : done([e.id]))}>
               <ExerciseThumb ex={e} />
               <span className="grow">
-                <span className="title" style={{ display: 'block' }}>{e.name}</span>
+                <span className="title" style={{ display: 'block' }}><ExName ex={e} /></span>
                 <span className="sub">{titleCase(e.muscles.join(', '))}{e.unilateral ? ' · one side' : ''}{e.custom ? ' · custom' : ''}</span>
               </span>
               {multi && (
@@ -108,10 +109,15 @@ export function ExerciseThumb({ ex, size = 44 }: { ex?: Exercise; size?: number 
     : <span className="thumb" style={{ width: size, height: size, display: 'grid', placeItems: 'center', color: 'var(--text-3)' }}><Icon name="dumbbell" /></span>;
 }
 
-const EQUIPMENT = ['barbell', 'dumbbell', 'machine', 'cable', 'body only', 'kettlebells', 'bands', 'e-z curl bar', 'other'];
+/** Exercise name with a muted equipment tag ("Bench Press · Dumbbell"), so same-named variants can be told apart. */
+export function ExName({ ex, fallback = '…' }: { ex?: Exercise; fallback?: string }) {
+  if (!ex) return <>{fallback}</>;
+  const tag = equipmentTag(ex);
+  return <>{ex.name}{tag && <span className="eq"> · {tag}</span>}</>;
+}
 
-export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exercise }: {
-  open: boolean; onClose: () => void; onSaved?: (ex: Exercise) => void; initialName?: string; exercise?: Exercise;
+export function ExerciseEditor({ open, onClose, onSaved, onDuplicated, initialName = '', exercise }: {
+  open: boolean; onClose: () => void; onSaved?: (ex: Exercise) => void; onDuplicated?: (copy: Exercise) => void; initialName?: string; exercise?: Exercise;
 }) {
   const [name, setName] = useState(exercise?.name ?? initialName);
   const [mechanic, setMechanic] = useState<Mechanic>(exercise?.mechanic ?? 'compound');
@@ -137,6 +143,15 @@ export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exerc
     onClose();
   };
 
+  // a copy with its own history (e.g. a second chest press machine); a name typed here names the copy, the original is unchanged
+  const duplicate = async () => {
+    if (!exercise) return;
+    const typed = name.trim();
+    const copy = await run(exercisesDuplicate, { id: exercise.id, name: typed && typed !== exercise.name ? typed : undefined });
+    onDuplicated?.(copy);
+    onClose();
+  };
+
   return (
     <Sheet open={open} onClose={onClose} title={exercise ? 'Edit exercise' : 'New exercise'}>
       <div className="stack" style={{ gap: 16 }}>
@@ -156,7 +171,7 @@ export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exerc
         </div>
         <label className="field"><span>Equipment</span>
           <select className="input" value={equipment} onChange={(e) => setEquipment(e.target.value)}>
-            {EQUIPMENT.map((x) => <option key={x} value={x}>{titleCase(x)}</option>)}
+            {EQUIPMENT.map((x) => <option key={x} value={x}>{equipmentLabel(x)}</option>)}
           </select>
         </label>
         <label className="field"><span>Main muscle</span>
@@ -169,6 +184,12 @@ export function ExerciseEditor({ open, onClose, onSaved, initialName = '', exerc
           <span className="switch"><input type="checkbox" checked={unilateral} onChange={(e) => setUnilateral(e.target.checked)} /><span /></span>
         </label>
         <button className="btn primary lg block" onClick={submit} disabled={!name.trim()}>Save</button>
+        {exercise && (
+          <div className="stack" style={{ gap: 6 }}>
+            <button className="btn block" onClick={duplicate}><Icon name="copy" size={18} />Duplicate</button>
+            <span className="faint" style={{ fontSize: '0.8125rem', textAlign: 'center' }}>Separate copy with its own history, e.g. another machine. A name typed above names the copy.</span>
+          </div>
+        )}
       </div>
     </Sheet>
   );
