@@ -14,6 +14,7 @@ import { run } from '../api/registry';
 import { dataExport, dataImport, settingsUpdate } from '../api/body';
 import { viewportInfo } from '../lib/viewport';
 import { AccountSection } from '../components/Account';
+import { AgentSettings } from '../components/AgentSettings';
 
 function Toggle({ label, sub, on, onChange, disabled, icon, role }: { label: string; sub?: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean;
   /** module rows get their area's icon + colour */ icon?: string; role?: string }) {
@@ -63,6 +64,7 @@ export function SettingsPage() {
         <Toggle label="Gym" icon="dumbbell" role="gym" on={f.gym} onChange={feat('gym')} />
         <Toggle label="Food" icon="food" role="food" on={f.food} onChange={feat('food')} />
         <Toggle label="Supps" icon="pill" role="supp" sub="Supplements, medications and peptides" on={f.supplements} onChange={feat('supplements')} />
+        <Toggle label="Agent" icon="sparkle" role="gym" sub="Ask, log and plan by chatting" on={f.agent !== false} onChange={feat('agent')} />
       </div>
       {f.gym && <>
         <div className="section-title">Workout</div>
@@ -89,6 +91,11 @@ export function SettingsPage() {
           <Line label="Compound"><Stepper label="Compound rest" value={s.restCompoundSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restCompoundSec: v })} /></Line>
           <Line label="Isolation"><Stepper label="Isolation rest" value={s.restIsolationSec} min={15} max={600} step={15} format={(v) => fmtDuration(v * 1000)} onChange={(v) => set({ restIsolationSec: v })} /></Line>
         </div>
+      </>}
+
+      {f.agent !== false && <>
+        <div className="section-title">Agent</div>
+        <AgentSettings />
       </>}
 
       <div className="section-title">Body</div>

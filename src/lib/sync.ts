@@ -6,7 +6,7 @@ import { db, onLocalChange } from '../db/db';
 
 /** Production API. Set after `wrangler deploy` (also overridable in Settings → Account for dev). */
 export const DEFAULT_API = 'https://tap-in.tap-in-server.workers.dev';
-const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const;
+const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories'] as const;
 
 interface Account { api: string; token: string; user: { id: string; name: string } }
 export interface SyncState { account: Account | null; status: 'off' | 'idle' | 'syncing' | 'offline' | 'error'; pending: number; lastSync: number | null; error?: string }
@@ -27,6 +27,12 @@ async function api<T>(path: string, init: RequestInit & { token?: string; keepal
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error((body as { error?: string }).error ?? `HTTP ${res.status}`), { status: res.status });
   return body as T;
+}
+
+/** API base + bearer token for other Worker clients (the agent). Null when not signed in. */
+export async function apiAuth(): Promise<{ api: string; token: string } | null> {
+  const acc = state.account ?? (await meta<Account>('account'));
+  return acc ? { api: acc.api, token: acc.token } : null;
 }
 
 // ---------------- account ----------------

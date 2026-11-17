@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
-  Base, BodyweightEntry, DayStatus, Exercise, Food, FoodEntry, Note, NutritionGoal, OutboxEntry, Plan, Session, SetLog, Settings, Stack, SuppLog, Supplement, Workout,
+  Base, BodyweightEntry, DayStatus, Exercise, Food, FoodEntry, Memory, Note, NutritionGoal, OutboxEntry, Plan, Session, SetLog, Settings, Stack, SuppLog, Supplement, Workout,
 } from './types';
 
 export class TapInDB extends Dexie {
@@ -21,6 +21,9 @@ export class TapInDB extends Dexie {
   stacks!: Table<Stack, string>;
   supplogs!: Table<SuppLog, string>;
   notes!: Table<Note, string>;
+  memories!: Table<Memory, string>;
+  /** Agent chats: local only, never synced (see lib/agent/chats.ts). */
+  chats!: Table<import('../lib/agent/types').Chat, string>;
 
   constructor() {
     super('tapin-db'); // namespaced: all apps share the github.io origin
@@ -47,12 +50,16 @@ export class TapInDB extends Dexie {
       supplogs: 'id, date, supplementId, [supplementId+date], takenAt, updatedAt',
       notes: 'id, at, updatedAt',
     });
+    this.version(4).stores({
+      memories: 'id, name, updatedAt',
+      chats: 'id, updatedAt',
+    });
   }
 }
 
 export const db = new TapInDB();
 
-export type SyncedTable = 'settings' | 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals' | 'supplements' | 'stacks' | 'supplogs' | 'notes';
+export type SyncedTable = 'settings' | 'exercises' | 'plans' | 'workouts' | 'sessions' | 'sets' | 'bodyweight' | 'foods' | 'entries' | 'days' | 'goals' | 'supplements' | 'stacks' | 'supplogs' | 'notes' | 'memories';
 
 export const uuid = () => crypto.randomUUID();
 

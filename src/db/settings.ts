@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
     progression: true,
     planWeek: true,
     adaptiveMaintenance: true,
+    agent: true,
   },
 };
 

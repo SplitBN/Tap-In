@@ -20,6 +20,13 @@ import { SupplementsPage } from './pages/Supplements';
 import { StatsPage } from './pages/Stats';
 import { ExercisesPage } from './pages/Exercises';
 import { CalendarPage } from './pages/Calendar';
+import { AgentChatPage, AgentFab, AgentNewPage, AgentPage, QuickChatHost } from './pages/Agent';
+import { purgeChats } from './lib/agent/chats';
+
+function Fab() {
+  const s = useSettings();
+  return <AgentFab hidden={s.features.agent === false} />;
+}
 
 type Tab = { to: string; icon: string; label: string; home?: boolean };
 
@@ -28,7 +35,7 @@ type Tab = { to: string; icon: string; label: string; home?: boolean };
 function TabBar() {
   const { pathname } = useLocation();
   const s = useSettings();
-  if (pathname.startsWith('/session/')) return null;
+  if (pathname.startsWith('/session/') || /^\/agent\/./.test(pathname)) return null; // the chat has its own composer at the bottom
   const left: Tab[] = [
     ...(s.features.gym ? [{ to: '/plans', icon: 'dumbbell', label: 'Gym' }] : []),
     ...(s.features.food ? [{ to: '/food', icon: 'food', label: 'Food' }] : []),
@@ -60,7 +67,7 @@ function TabBar() {
 const TITLES: [string, string][] = [ // longest prefix first
   ['/plans/all', 'Plans'], ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
   ['/exercises', 'Exercises'], ['/exercise/', 'Exercise'], ['/stats', 'Stats'], ['/weight', 'Weight'], ['/settings', 'Settings'],
-  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'], ['/calendar', 'Calendar'],
+  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'], ['/calendar', 'Calendar'], ['/agent', 'Agent'],
 ];
 
 /** .app is the scroll container (see index.css), so reset it to the top on every route change.
@@ -84,7 +91,7 @@ function ScrollReset() {
 export default function App() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    seedIfNeeded().finally(() => { setReady(true); void startSync(); });
+    seedIfNeeded().finally(() => { setReady(true); void startSync(); void purgeChats(); });
     navigator.storage?.persist?.().catch(() => {}); // ask the browser not to evict our data
   }, []);
   if (!ready) return <div className="app" />;
@@ -113,12 +120,17 @@ export default function App() {
           <Route path="/nutrition" element={<NutritionPage />} />
           <Route path="/supps" element={<SupplementsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/agent" element={<AgentPage />} />
+          <Route path="/agent/new" element={<AgentNewPage />} />
+          <Route path="/agent/:id" element={<AgentChatPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
         </main>
         <ScrollReset />
       </div>
       <TabBar />
+      <Fab />
+      <QuickChatHost />
       <DialogHost />
       <ToastHost />
       </div>

@@ -61,3 +61,33 @@ CREATE TABLE IF NOT EXISTS sent_reminders (
   sent_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, key)
 );
+
+-- ---- AI agent (docs/agent-contract.md). Credentials are AES-GCM encrypted with the AI_ENC_KEY secret. ----
+CREATE TABLE IF NOT EXISTS ai_config (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  config TEXT NOT NULL DEFAULT '{}', -- AIConfig JSON (merged over server defaults)
+  openrouter_key TEXT,               -- encrypted OpenRouter API key, NULL = none
+  updated_at INTEGER NOT NULL
+);
+
+-- Index of ChatGPT (SIWC) connections; the tokens themselves live encrypted in the per-user AiAuth Durable Object.
+CREATE TABLE IF NOT EXISTS ai_chatgpt (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  host_id TEXT NOT NULL,            -- ext_agent_host_id, stable per user (kept across disconnects)
+  client_id TEXT,                   -- issued oaiapp_… client id (kept across disconnects)
+  email TEXT,
+  connected_at INTEGER,             -- NULL = not connected
+  refreshed_at INTEGER,             -- last successful token refresh (cron refreshes after 20 days)
+  attempt_at INTEGER                -- last refresh attempt (cron retries at most hourly)
+);
+CREATE INDEX IF NOT EXISTS ai_chatgpt_stale ON ai_chatgpt (refreshed_at) WHERE connected_at IS NOT NULL;
+
+-- PKCE state for the paste-the-URL sign-in, single use, ~10 min.
+CREATE TABLE IF NOT EXISTS ai_oauth_pending (
+  state TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  verifier TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  client_id TEXT NOT NULL,          -- client id used in the authorize URL
+  expires_at INTEGER NOT NULL
+);

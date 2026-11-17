@@ -1,7 +1,7 @@
 import { changed, db, type SyncedTable } from '../db/db';
 
 // Every table in a backup is a synced table, so imported rows are queued for sync like any local write.
-export const BACKUP_TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const satisfies readonly SyncedTable[];
+export const BACKUP_TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'settings', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories'] as const satisfies readonly SyncedTable[];
 
 export interface Backup { app: 'tap-in'; version: number; exportedAt: string; data: Record<string, { id: string }[]> }
 

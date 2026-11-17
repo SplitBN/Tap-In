@@ -22,6 +22,7 @@ import { calendarRangeCmd } from '../api/calendar';
 import { DayDots, markerWords, mondayOf } from './Calendar';
 import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
+import { useChats } from '../lib/agent/chats';
 
 const DAY = 86400000;
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -48,6 +49,7 @@ export function HomePage() {
         <WeightWidget onLog={() => setWeighing(true)} />
         {settings.features.gym && <WeekWidget />}
         <CalendarWidget />
+        {settings.features.agent !== false && <AgentWidget />}
       </div>
       <WeighInSheet open={weighing} onClose={() => setWeighing(false)} />
     </div>
@@ -278,6 +280,23 @@ function SuppWidget() {
           )) : <span className="muted">{total ? <>All taken today <span aria-hidden>✓</span></> : 'Nothing scheduled today'}</span>}
         </div>
       </div>
+    </Widget>
+  );
+}
+
+/** Agent: one tap to ask; the latest chat underneath. */
+function AgentWidget() {
+  const nav = useNavigate();
+  const last = useChats()?.find((c) => c.messages.length);
+  return (
+    <Widget role="neutral" icon="sparkle" wide title="Agent" onOpen={() => nav('/agent')}>
+      <button className="agent-ask pressable" onClick={() => nav('/agent/new?from=%2F')}><Icon name="sparkle" size={18} stroke={2} /><span className="grow">Ask anything</span></button>
+      {last && (
+        <button className="row pressable plain widget-cta" style={{ marginTop: 8 }} onClick={() => nav(`/agent/${last.id}`)}>
+          <span className="grow ellipsis muted" dir="auto">{last.pending?.status === 'pending' && <span className="badge accent" style={{ marginRight: 6 }}>Waiting</span>}{last.title}</span>
+          <Icon name="chevronRight" size={18} className="chev" />
+        </button>
+      )}
     </Widget>
   );
 }

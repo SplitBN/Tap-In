@@ -130,7 +130,14 @@ export interface Settings {
     progression?: boolean; // progression targets (greyed "today" numbers) instead of last time's; undefined = on
     planWeek?: boolean; // "Week N" next to the active plan; undefined = on
     adaptiveMaintenance?: boolean; // maintenance estimated from logs + weight trend; undefined = on
+    agent?: boolean; // in-app AI agent (floating button, /agent, Home widget); undefined = on
   };
+  /** Agent preferences. Changed only from Settings (agentPrefs.update is never offered to the agent). */
+  agent?: AgentPrefs;
+}
+export interface AgentPrefs {
+  ask?: boolean; // "Ask before changes": request cards need Apply; undefined = on
+  web?: boolean; // web_answer / web_read tools; undefined = on
 }
 
 export interface OutboxEntry {
@@ -259,4 +266,12 @@ export interface Note extends Base {
   at: number;
   text: string;
   tags: string[]; // e.g. supplement ids, 'side-effect'
+}
+
+// ---------------- Agent ----------------
+/** The agent's notebook (synced). Name + description go in every prompt; content is read on demand. */
+export interface Memory extends Base {
+  name: string;
+  description: string;
+  content: string;
 }

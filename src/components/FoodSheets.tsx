@@ -16,6 +16,9 @@ import { OptionSheet, PickerRow } from './Picker';
 import { Sheet } from './Sheet';
 import { hasHebrew, unitLabel } from "../lib/units";
 import { plural } from '../lib/format';
+import { useSettings } from '../db/settings';
+import { downscaleImage } from '../lib/agent/image';
+import { openQuickChat } from '../lib/agent/quick';
 
 const baseUnit = (it: { unitBase?: 'g' | 'ml' }) => it.unitBase ?? 'g';
 
@@ -86,6 +89,7 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
   const frequent = useLiveQuery(() => (open ? frequentFor(meal) : Promise.resolve([])), [open, meal]) ?? [];
   const mine = useLiveQuery(() => db.foods.filter(alive).sortBy('name'), []) ?? [];
   const mealLabel = MEALS.find((m) => m.id === meal)!.label;
+  const agentOn = useSettings().features.agent !== false;
 
   useEffect(() => {
     let live = true;
@@ -126,6 +130,19 @@ export function AddFoodSheet({ open, onClose, meal: meal0, date, initialTab = 's
       {mode === 'log' && (
         <div className="add-head">
           <MealPill meal={meal} onChange={setMeal} />
+          {agentOn && (
+            <label className="icon-btn tint add-photo" aria-label={`Log ${mealLabel} from a photo`}>
+              <Icon name="camera" size={22} />
+              <input type="file" accept="image/*" className="sr-only" onChange={async (e) => {
+                const f = e.target.files?.[0]; e.target.value = '';
+                if (!f) return;
+                let img;
+                try { img = await downscaleImage(f); } catch { toast('Couldn’t read that photo'); return; }
+                close();
+                await openQuickChat([img, { type: 'text', text: `Log this to ${mealLabel.toLowerCase()} on ${date}.` }], { route: `/food?d=${date}`, date }, `food:${meal}:${date}`);
+              }} />
+            </label>
+          )}
         </div>
       )}
       <div className="seg tabs" role="tablist" aria-label="Add from">

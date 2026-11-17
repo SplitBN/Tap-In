@@ -25,3 +25,13 @@ class_name = "RestAlarm"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RestAlarm"]
+
+# AI agent: one SQLite-backed Durable Object per user holds the ChatGPT tokens and serialises their (rotating) refresh.
+# Secret: AI_ENC_KEY (base64 of 32 random bytes) encrypts AI credentials at rest.
+[[durable_objects.bindings]]
+name = "AI_AUTH"
+class_name = "AiAuth"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AiAuth"]

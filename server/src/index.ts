@@ -1,4 +1,7 @@
 // Tap In backend — Cloudflare Worker + D1.
+import { AiAuth } from './ai/auth';
+import { handleAi, refreshStaleChatgpt } from './ai/routes';
+import { HttpError, json } from './http';
 import { runReminders, sendPush } from './reminders';
 import { RestAlarm } from './restAlarm';
 // Routes:
@@ -12,8 +15,14 @@ import { RestAlarm } from './restAlarm';
 //   POST /sync/push       (auth) {changes:[{tbl,id,data,updatedAt}]} → {accepted, cursor}
 //   GET  /sync/pull?since=N&limit=500 (auth)        → {changes:[{tbl,id,data,updatedAt}], cursor, more}
 //   GET  /push/key · POST /push/subscribe {subscription, tz} · /push/unsubscribe {endpoint} · /push/test  (auth except key)
-// Secrets: BOOTSTRAP_INVITE (first sign-up), VAPID_PRIVATE_KEY. Vars: ALLOWED_ORIGINS, VAPID_SUBJECT, VAPID_PUBLIC_KEY.
-// Cron: every minute → reminders (src/reminders.ts).
+//   POST /push/rest {endpoint, at, title, body} · /push/rest/cancel {endpoint}  (auth)  rest-over alert for one device
+//   AI agent (auth; contract in docs/agent-contract.md, code in src/ai/):
+//   GET  /ai/status · POST /ai/config {Partial<AIConfig>} · POST /ai/openrouter/key {key|null}
+//   POST /ai/chatgpt/start → {url} · /ai/chatgpt/finish {pastedUrl} · /ai/chatgpt/disconnect · GET /ai/models?provider=chatgpt|openrouter
+//   POST /ai/turn {instructions, messages, tools, tier} → SSE · POST /ai/web/answer {query} · /ai/web/read {url, prompt?}
+// Secrets: BOOTSTRAP_INVITE (first sign-up), VAPID_PRIVATE_KEY, AI_ENC_KEY (base64 32 bytes; encrypts AI credentials).
+// Vars: ALLOWED_ORIGINS, VAPID_SUBJECT, VAPID_PUBLIC_KEY.
+// Cron: every minute → reminders (src/reminders.ts) + refresh ChatGPT sign-ins older than 20 days (src/ai/routes.ts).
 
 export interface Env {
   DB: D1Database;
@@ -23,18 +32,20 @@ export interface Env {
   VAPID_PUBLIC_KEY: string; // public by design (var)
   VAPID_PRIVATE_KEY?: string; // secret
   REST_ALARM: DurableObjectNamespace<RestAlarm>; // one per push endpoint (device)
+  AI_AUTH: DurableObjectNamespace<AiAuth>; // one per user: holds + refreshes ChatGPT tokens
+  AI_ENC_KEY?: string; // secret
 }
-export { RestAlarm };
+export { RestAlarm, AiAuth };
 
 type User = { id: string; name: string };
 
-const SYNC_TABLES = new Set(['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'settings']);
+const SYNC_TABLES = new Set(['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'settings', 'memories']);
 const MAX_BATCH = 500;
 const MAX_RECORD_BYTES = 64 * 1024;
 
 export default {
-  async scheduled(_c: ScheduledController, env: Env, ctx: ExecutionContext) { ctx.waitUntil(runReminders(env)); },
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async scheduled(_c: ScheduledController, env: Env, ctx: ExecutionContext) { ctx.waitUntil(runReminders(env)); ctx.waitUntil(refreshStaleChatgpt(env)); },
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = req.headers.get('Origin') ?? '';
     const allowed = env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
     const cors: Record<string, string> = allowed.includes(origin)
@@ -42,23 +53,19 @@ export default {
       : {};
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     try {
-      const res = await route(req, env);
+      const res = await route(req, env, ctx);
       for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
       return res;
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
       const message = e instanceof HttpError ? e.message : 'Server error';
       if (status === 500) console.error(e);
-      return json({ error: message }, status, cors);
+      return json({ error: message, ...(e instanceof HttpError ? e.extra : {}) }, status, cors);
     }
   },
 };
 
-class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
-
-async function route(req: Request, env: Env): Promise<Response> {
+async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
   const p = url.pathname.replace(/\/+$/, '');
   const body = async <T>() => { try { return (await req.json()) as T; } catch { throw new HttpError(400, 'Invalid JSON'); } };
@@ -104,6 +111,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   const user = await authenticate(req, env);
 
   if (req.method === 'GET' && p === '/me') return json({ user });
+  const ai = await handleAi(req, env, ctx, user.id, p, url);
+  if (ai) return ai;
   if (req.method === 'POST' && p === '/auth/logout') {
     await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(bearer(req)!)).run();
     return json({ ok: true });
