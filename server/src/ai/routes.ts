@@ -55,7 +55,9 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
     const clientId = row?.client_id || SIWC.dynamicClient;
     const state = randomToken(24), nonce = randomToken(24), verifier = randomToken(48);
     await env.DB.batch([
-      env.DB.prepare('DELETE FROM ai_oauth_pending WHERE expires_at < ? OR user_id = ?').bind(now, userId), // one attempt at a time per user
+      // keep this user's other open attempts (iOS may reload the app while the sign-in tab is open and start a new one;
+      // the pasted code must still match the attempt it came from) — just drop expired rows
+      env.DB.prepare('DELETE FROM ai_oauth_pending WHERE expires_at < ?').bind(now),
       env.DB.prepare('INSERT INTO ai_oauth_pending (state, user_id, verifier, nonce, client_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)').bind(state, userId, verifier, nonce, clientId, now + PENDING_MS),
     ]);
     return json({ url: authorizeUrl({ clientId, hostId: row!.host_id, state, nonce, challenge: await pkceChallenge(verifier) }) });

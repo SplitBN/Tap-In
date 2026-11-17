@@ -175,6 +175,8 @@ function OpenRouterRow({ hasKey, onChange }: { hasKey: boolean; onChange: () => 
   );
 }
 
+const SIGNIN_KEY = 'tapin:chatgptSignin';
+
 /** Paste-the-URL sign-in: the phone can't receive the OAuth redirect, so the user copies the "can't connect" page's address. */
 function ConnectSheet({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -183,12 +185,23 @@ function ConnectSheet({ open, onClose, onDone }: { open: boolean; onClose: () =>
   const [err, setErr] = useState('');
   useEffect(() => {
     if (!open) return;
-    setUrl(null); setPasted(''); setErr('');
-    chatgptStart().then((r) => setUrl(r.url)).catch((e) => setErr((e as Error).message));
+    setPasted(''); setErr('');
+    // Reuse the sign-in started in the last 8 min: iOS often reloads the app while the OpenAI tab is open, and a fresh
+    // start would make the pasted code belong to a different attempt.
+    let saved: { url: string; at: number } | null = null;
+    try { saved = JSON.parse(localStorage.getItem(SIGNIN_KEY) ?? 'null'); } catch { /* ignore */ }
+    if (saved && Date.now() - saved.at < 8 * 60_000) { setUrl(saved.url); return; }
+    setUrl(null);
+    chatgptStart().then((r) => { setUrl(r.url); try { localStorage.setItem(SIGNIN_KEY, JSON.stringify({ url: r.url, at: Date.now() })); } catch { /* ignore */ } })
+      .catch((e) => setErr((e as Error).message));
   }, [open]);
   const finish = async () => {
     setBusy(true); setErr('');
-    try { await chatgptFinish(pasted.trim()); onClose(); onDone(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    try { await chatgptFinish(pasted.trim()); try { localStorage.removeItem(SIGNIN_KEY); } catch { /* ignore */ } onClose(); onDone(); }
+    catch (e) {
+      setErr((e as Error).message);
+      if (/start again|try again/i.test((e as Error).message)) try { localStorage.removeItem(SIGNIN_KEY); } catch { /* ignore */ } // next open starts fresh
+    } finally { setBusy(false); }
   };
   return (
     <Sheet open={open} onClose={onClose} title="Connect ChatGPT">
