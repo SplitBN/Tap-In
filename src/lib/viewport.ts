@@ -27,10 +27,25 @@ function apply() {
   document.documentElement.style.setProperty('--app-h', `${h}px`);
 }
 
+/** On-screen keyboard: how much of the layout it covers, as --kb (0 when closed), plus html.kb-open.
+ *  --app-h is left alone (it is the screen frame); screens that have an input at the bottom (the agent chat) lift
+ *  themselves by --kb. Below 120 px is noise (toolbar/status bar differences), not a keyboard. */
+function keyboard() {
+  const vv = window.visualViewport;
+  const kb = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+  const open = kb > 120;
+  document.documentElement.style.setProperty('--kb', `${open ? kb : 0}px`);
+  document.documentElement.classList.toggle('kb-open', open);
+  // iOS scrolls the (non-scrolling) document to reveal the input; the chat screen lifts itself instead. Elsewhere (sheets)
+  // leave iOS's own scroll-into-view alone.
+  if (open && document.querySelector('.chat-screen')) window.scrollTo(0, 0);
+}
+
 export function installViewportFix() {
-  apply();
+  apply(); keyboard();
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', () => setTimeout(apply, 300));
-  window.visualViewport?.addEventListener('resize', apply);
+  window.visualViewport?.addEventListener('resize', () => { apply(); keyboard(); });
+  window.visualViewport?.addEventListener('scroll', keyboard);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && apply());
 }

@@ -1,28 +1,38 @@
 // Neutral AI types — mirror of app/src/lib/agent/types.ts (see docs/agent-contract.md). Keep in sync.
-export type AIPart = { type: 'text'; text: string } | { type: 'image'; mime: string; base64: string };
+export type AIPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mime: string; base64: string }
+  | { type: 'file'; mime: string; name: string; base64: string } // PDF ≤ 10 MB
+  | { type: 'video'; mime: string; base64: string };             // ≤ 20 MB, only for providers with video:true
 export type AIToolCall = { id: string; name: string; args: Record<string, unknown> };
 export type AIMessage =
   | { role: 'user'; content: AIPart[] }
   | { role: 'assistant'; text?: string; toolCalls?: AIToolCall[]; opaque?: unknown }
   | { role: 'tool'; toolCallId: string; name: string; content: string };
 export type AITool = { name: string; description: string; parameters: Record<string, unknown> };
-export type Tier = 'smart' | 'cheap';
+export type Effort = 'low' | 'medium' | 'high';
+export const EFFORTS: Effort[] = ['low', 'medium', 'high'];
 export type ProviderId = 'chatgpt' | 'openrouter';
 
-export type AIConfig = {
-  primary: ProviderId;
-  fallback: ProviderId | null;
-  models: { chatgpt: { smart: string | null; cheap: string | null }; openrouter: { smart: string; cheap: string } }; // null = first listed model
+/** Per user: which provider to prefer when both are connected. */
+export type AIConfig = { primary: ProviderId; fallback: ProviderId | null };
+
+/** Global (admin-only) config, one row in D1 ai_global. */
+export type AIGlobal = {
+  models: { chatgpt: string; openrouter: string }; // chatgpt: if not in the account's list → first listed
+  openrouterProvider: { order: string[]; allow_fallbacks: boolean } | null; // sent as OpenRouter `provider`
+  defaultEffort: Effort;
+  helperEffort: Effort; // titles, web/read extract
   webModel: string;
 };
 
-export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; tier: Tier };
+export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; effort: Effort };
 
 export type ErrorCode = 'no_provider' | 'auth' | 'limit' | 'provider' | 'bad_request';
 export type TurnEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; call: AIToolCall }
-  | { type: 'done'; provider: string; model: string; opaque?: unknown; usage?: { input: number; output: number } }
+  | { type: 'done'; provider: string; model: string; effort?: Effort; opaque?: unknown; usage?: { input: number; output: number } }
   | { type: 'error'; code: ErrorCode; message: string };
 
 /** Provider failure. `fallback` = eligible for retrying on the backup provider (auth / 429 / 5xx / network). */
@@ -33,7 +43,7 @@ export class ProviderError extends Error {
 /** One adapter = one provider. `turn` streams one model step; it throws ProviderError on failure. */
 export interface Provider {
   id: ProviderId;
-  model(tier: Tier): Promise<string>;
+  model(): Promise<string>;
   turn(req: TurnRequest, model: string, signal?: AbortSignal): AsyncGenerator<TurnEvent>;
 }
 

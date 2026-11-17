@@ -20,7 +20,7 @@ import { SupplementsPage } from './pages/Supplements';
 import { StatsPage } from './pages/Stats';
 import { ExercisesPage } from './pages/Exercises';
 import { CalendarPage } from './pages/Calendar';
-import { AgentChatPage, AgentFab, AgentNewPage, AgentPage, QuickChatHost } from './pages/Agent';
+import { AgentChatPage, AgentFab, AgentMemoryPage, AgentNewPage, AgentPage, QuickChatHost } from './pages/Agent';
 import { purgeChats } from './lib/agent/chats';
 
 function Fab() {
@@ -35,7 +35,7 @@ type Tab = { to: string; icon: string; label: string; home?: boolean };
 function TabBar() {
   const { pathname } = useLocation();
   const s = useSettings();
-  if (pathname.startsWith('/session/') || /^\/agent\/./.test(pathname)) return null; // the chat has its own composer at the bottom
+  if (pathname.startsWith('/session/') || /^\/agent\/(?!memory$)./.test(pathname)) return null; // the chat has its own composer at the bottom
   const left: Tab[] = [
     ...(s.features.gym ? [{ to: '/plans', icon: 'dumbbell', label: 'Gym' }] : []),
     ...(s.features.food ? [{ to: '/food', icon: 'food', label: 'Food' }] : []),
@@ -122,6 +122,7 @@ export default function App() {
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/agent" element={<AgentPage />} />
           <Route path="/agent/new" element={<AgentNewPage />} />
+          <Route path="/agent/memory" element={<AgentMemoryPage />} />
           <Route path="/agent/:id" element={<AgentChatPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>

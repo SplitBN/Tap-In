@@ -3,13 +3,30 @@ import type { Env } from '../index';
 import { HttpError, json } from '../http';
 import { authorizeUrl, exchangeCode, jwtClaims, pkceChallenge, randomToken, SIWC, toMs } from './auth';
 import { encrypt } from './crypto';
+import { resolveChatgptModel } from './chatgpt';
 import { listOpenRouterModels, validateKey } from './openrouter';
-import { completeText, loadState, mergeConfig, providerChain, runTurn, saveConfig } from './provider';
-import { ProviderError, type AIMessage, type AITool, type TurnEvent, type TurnRequest } from './types';
+import { completeText, isAdmin, isEffort, loadState, mergeConfig, mergeGlobal, PROVIDERS, prettyModel, providerChain, runTurn, saveConfig, saveGlobal, type AiState } from './provider';
+import { ProviderError, type AIMessage, type AITool, type Effort, type ProviderId, type TurnEvent, type TurnRequest } from './types';
 import { EXTRACT_INSTRUCTIONS, extractPrompt, WebError, webAnswer, webRead } from './web';
 
 const PENDING_MS = 10 * 60_000;
 const STALE_MS = 20 * 86400_000;
+const MAX_FILE_B64 = Math.ceil((10 * 1024 * 1024) / 3) * 4; // 10 MB PDF
+const MAX_VIDEO_B64 = Math.ceil((20 * 1024 * 1024) / 3) * 4; // 20 MB video
+
+/** What the client shows/uses per provider: model, label, and which attachment kinds it takes. */
+async function providerInfo(env: Env, userId: string, s: AiState) {
+  const gptModel = s.chatgpt.connected ? await resolveChatgptModel(env, userId, s.global.models.chatgpt).catch(() => null) : null;
+  const orList = await listOpenRouterModels().catch(() => null);
+  const orId = s.global.models.openrouter;
+  const or = orList?.find((m) => m.id === orId);
+  return [
+    { id: 'chatgpt' as const, connected: s.chatgpt.connected, model: gptModel?.id ?? s.global.models.chatgpt,
+      label: gptModel?.name || prettyModel(gptModel?.id ?? s.global.models.chatgpt), video: false, files: true },
+    { id: 'openrouter' as const, connected: !!s.orKey, model: orId,
+      label: or ? or.name.replace(/^[^:]{1,40}:\s*/, '') : prettyModel(orId), video: !!or?.input.includes('video'), files: true }, // OpenRouter parses PDFs for any model
+  ];
+}
 
 /** Provider failure → HTTP error for the JSON routes. Never 401 (that means "sign in to Tap In" to the client). */
 const providerHttp = (e: ProviderError) => new HttpError(e.code === 'limit' ? 429 : e.code === 'bad_request' ? 400 : 502, e.message, { code: e.code });
@@ -21,7 +38,16 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
 
   if (req.method === 'GET' && p === '/ai/status') {
     const s = await loadState(env, userId);
-    return json({ chatgpt: s.chatgpt, openrouter: { hasKey: !!s.orKey }, config: s.config });
+    return json({ isAdmin: isAdmin(env, userId), global: s.global, config: s.config, chatgpt: s.chatgpt, openrouter: { hasKey: !!s.orKey }, providers: await providerInfo(env, userId, s) });
+  }
+
+  if (req.method === 'POST' && p === '/ai/global') {
+    if (!isAdmin(env, userId)) throw new HttpError(403, 'Only an admin can change this');
+    const patch = await body<unknown>();
+    const s = await loadState(env, userId);
+    const global = mergeGlobal(s.global, patch);
+    await saveGlobal(env, userId, global);
+    return json({ global });
   }
 
   if (req.method === 'POST' && p === '/ai/config') {
@@ -131,7 +157,7 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
     if (typeof query !== 'string' || !query.trim()) throw new HttpError(400, 'query is required');
     const s = await loadState(env, userId);
     if (!s.orKey) throw new HttpError(409, 'Web answers need an OpenRouter key', { code: 'no_key' });
-    try { return json(await webAnswer(s.orKey, s.config.webModel, query.trim().slice(0, 2000))); }
+    try { return json(await webAnswer(s.orKey, s.global.webModel, query.trim().slice(0, 2000))); }
     catch (e) { if (e instanceof ProviderError) throw providerHttp(e); throw e; }
   }
 
@@ -139,9 +165,10 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
     const { url: target, prompt } = await body<{ url?: string; prompt?: string | null }>();
     if (typeof target !== 'string' || !target || target.length > 2048) throw new HttpError(400, 'url is required');
     const extract = async (page: string, question: string) => {
-      const chain = providerChain(env, userId, await loadState(env, userId));
+      const s = await loadState(env, userId);
+      const chain = providerChain(env, userId, s);
       if (!chain.length) return null;
-      return (await completeText(chain, EXTRACT_INSTRUCTIONS, extractPrompt(page, question))).trim() || null;
+      return (await completeText(chain, EXTRACT_INSTRUCTIONS, extractPrompt(page, question), s.global.helperEffort)).trim() || null;
     };
     try { return json(await webRead(target, typeof prompt === 'string' ? prompt : null, extract)); }
     catch (e) { if (e instanceof WebError) throw new HttpError(e.status, e.message); throw e; }
@@ -159,26 +186,39 @@ function parsePasted(s: unknown): URLSearchParams | null {
 }
 
 // ---------------- /ai/turn ----------------
-function validTurn(b: any): TurnRequest | null {
+type TurnBody = Omit<TurnRequest, 'effort'> & { effort: Effort | null; provider: ProviderId | null };
+const TIER_EFFORT: Record<string, Effort> = { cheap: 'low', smart: 'high' }; // v1 alias
+
+function validPart(c: any) {
+  if (c?.type === 'text') return typeof c.text === 'string';
+  if (typeof c?.base64 !== 'string' || typeof c.mime !== 'string') return false;
+  if (c.type === 'image') return /^image\/[\w.+-]+$/.test(c.mime);
+  if (c.type === 'file') return c.mime === 'application/pdf' && c.base64.length <= MAX_FILE_B64 && (c.name == null || typeof c.name === 'string');
+  if (c.type === 'video') return /^video\/[\w.+-]+$/.test(c.mime) && c.base64.length <= MAX_VIDEO_B64;
+  return false;
+}
+
+function validTurn(b: any): TurnBody | null {
   if (!b || typeof b !== 'object') return null;
-  const tier = b.tier ?? 'smart';
-  if (tier !== 'smart' && tier !== 'cheap') return null;
+  const effort = b.effort != null ? b.effort : b.tier != null ? TIER_EFFORT[b.tier] : null;
+  if (effort !== null && !isEffort(effort)) return null;
+  if (b.provider != null && !PROVIDERS.includes(b.provider)) return null;
   if (typeof (b.instructions ?? '') !== 'string' || !Array.isArray(b.messages) || !b.messages.length || !Array.isArray(b.tools ?? [])) return null;
   for (const m of b.messages as AIMessage[]) {
     if (!m || typeof m !== 'object') return null;
-    if (m.role === 'user') { if (!Array.isArray(m.content) || !m.content.every((c) => (c?.type === 'text' && typeof c.text === 'string') || (c?.type === 'image' && typeof c.mime === 'string' && /^image\/[\w.+-]+$/.test(c.mime) && typeof c.base64 === 'string'))) return null; }
+    if (m.role === 'user') { if (!Array.isArray(m.content) || !m.content.every(validPart)) return null; }
     else if (m.role === 'assistant') { if ((m.text != null && typeof m.text !== 'string') || (m.toolCalls != null && !(Array.isArray(m.toolCalls) && m.toolCalls.every((c) => typeof c?.id === 'string' && typeof c.name === 'string')))) return null; }
     else if (m.role === 'tool') { if (typeof m.toolCallId !== 'string' || typeof m.content !== 'string') return null; }
     else return null;
   }
   for (const t of (b.tools ?? []) as AITool[]) if (typeof t?.name !== 'string' || !/^[\w-]{1,64}$/.test(t.name) || typeof t.parameters !== 'object') return null;
-  return { instructions: b.instructions ?? '', messages: b.messages, tools: (b.tools ?? []).map((t: AITool) => ({ name: t.name, description: String(t.description ?? ''), parameters: t.parameters })), tier };
+  return { instructions: b.instructions ?? '', messages: b.messages, tools: (b.tools ?? []).map((t: AITool) => ({ name: t.name, description: String(t.description ?? ''), parameters: t.parameters })), effort, provider: b.provider ?? null };
 }
 
 /** Always answers with SSE (errors included), one JSON object per `data:` line. `: ping` comments keep the stream alive. */
 async function turn(req: Request, env: Env, ctx: ExecutionContext, userId: string): Promise<Response> {
   // read the body before responding: the request stream can't be read after the response has started
-  let parsed: TurnRequest | null = null;
+  let parsed: TurnBody | null = null;
   try { parsed = validTurn(await req.json()); } catch { /* invalid JSON */ }
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const w = writable.getWriter();
@@ -192,8 +232,10 @@ async function turn(req: Request, env: Env, ctx: ExecutionContext, userId: strin
     try {
       await write(': open\n\n');
       if (!parsed) { await send({ type: 'error', code: 'bad_request', message: 'Invalid turn request' }); return; }
-      const chain = providerChain(env, userId, await loadState(env, userId));
-      for await (const ev of runTurn(chain, parsed, abort.signal)) {
+      const s = await loadState(env, userId);
+      const chain = providerChain(env, userId, s, parsed.provider); // the chat's pick first, then the user's fallback
+      const { provider: _p, ...rest } = parsed;
+      for await (const ev of runTurn(chain, { ...rest, effort: parsed.effort ?? s.global.defaultEffort }, abort.signal)) {
         if (abort.signal.aborted) break; // client went away
         await send(ev);
       }

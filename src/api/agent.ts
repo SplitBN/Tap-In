@@ -1,15 +1,20 @@
-// Agent preferences. Never offered to the agent itself (see AGENT_BLOCKED in lib/agent/tools.ts): a web page
-// must not be able to talk the agent into turning off "Ask before changes".
+// Agent preferences. Never offered to the agent itself (blocked in lib/agent/tools.ts): a web page must not be able
+// to talk the agent into switching a category to auto-apply.
 import { z } from 'zod';
 import { defineCommand } from './registry';
 import { getSettings, updateSettings } from '../db/settings';
 
+const zPerm = z.enum(['ask', 'auto']);
+
 export const agentPrefsUpdate = defineCommand({ name: 'agentPrefs.update', kind: 'action',
-  description: 'Settings-only: change the assistant preferences ask (ask before changes) and web (web tools). Not available to the assistant.',
-  input: z.object({ ask: z.boolean().optional(), web: z.boolean().optional() }),
-  run: async (p) => {
+  description: 'Settings-only: change the assistant preferences — permissions per category (ask / auto) and web (web tools). Not available to the assistant.',
+  input: z.object({
+    permissions: z.object({ food: zPerm, gym: zPerm, supplements: zPerm, body: zPerm, settings: zPerm }).partial().optional(),
+    web: z.boolean().optional(),
+  }),
+  run: async ({ permissions, web }) => {
     const s = await getSettings();
-    const agent = { ...s.agent, ...Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) };
+    const agent = { ...s.agent, ...(web !== undefined ? { web } : {}), permissions: { ...s.agent?.permissions, ...permissions } };
     await updateSettings({ agent });
     return agent;
   } });

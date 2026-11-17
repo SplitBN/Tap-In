@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS sent_reminders (
 -- ---- AI agent (docs/agent-contract.md). Credentials are AES-GCM encrypted with the AI_ENC_KEY secret. ----
 CREATE TABLE IF NOT EXISTS ai_config (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  config TEXT NOT NULL DEFAULT '{}', -- AIConfig JSON (merged over server defaults)
+  config TEXT NOT NULL DEFAULT '{}', -- per-user prefs JSON {primary, fallback} (merged over server defaults)
   openrouter_key TEXT,               -- encrypted OpenRouter API key, NULL = none
   updated_at INTEGER NOT NULL
 );
@@ -81,6 +81,14 @@ CREATE TABLE IF NOT EXISTS ai_chatgpt (
   attempt_at INTEGER                -- last refresh attempt (cron retries at most hourly)
 );
 CREATE INDEX IF NOT EXISTS ai_chatgpt_stale ON ai_chatgpt (refreshed_at) WHERE connected_at IS NOT NULL;
+
+-- Global AI config (admin only, one row): models per provider, OpenRouter routing, effort defaults, web model.
+CREATE TABLE IF NOT EXISTS ai_global (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  config TEXT NOT NULL,             -- AIGlobal JSON (merged over server defaults)
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT
+);
 
 -- PKCE state for the paste-the-URL sign-in, single use, ~10 min.
 CREATE TABLE IF NOT EXISTS ai_oauth_pending (

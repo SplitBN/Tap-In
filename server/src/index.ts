@@ -17,10 +17,11 @@ import { RestAlarm } from './restAlarm';
 //   GET  /push/key · POST /push/subscribe {subscription, tz} · /push/unsubscribe {endpoint} · /push/test  (auth except key)
 //   POST /push/rest {endpoint, at, title, body} · /push/rest/cancel {endpoint}  (auth)  rest-over alert for one device
 //   AI agent (auth; contract in docs/agent-contract.md, code in src/ai/):
-//   GET  /ai/status · POST /ai/config {Partial<AIConfig>} · POST /ai/openrouter/key {key|null}
+//   GET  /ai/status · POST /ai/config {primary, fallback} · POST /ai/global {Partial<AIGlobal>} (admin) · POST /ai/openrouter/key {key|null}
 //   POST /ai/chatgpt/start → {url} · /ai/chatgpt/finish {pastedUrl} · /ai/chatgpt/disconnect · GET /ai/models?provider=chatgpt|openrouter
-//   POST /ai/turn {instructions, messages, tools, tier} → SSE · POST /ai/web/answer {query} · /ai/web/read {url, prompt?}
-// Secrets: BOOTSTRAP_INVITE (first sign-up), VAPID_PRIVATE_KEY, AI_ENC_KEY (base64 32 bytes; encrypts AI credentials).
+//   POST /ai/turn {instructions, messages, tools, effort?, provider?} → SSE · POST /ai/web/answer {query} · /ai/web/read {url, prompt?}
+// Secrets: BOOTSTRAP_INVITE (first sign-up), VAPID_PRIVATE_KEY, AI_ENC_KEY (base64 32 bytes; encrypts AI credentials),
+//   ADMIN_USER_IDS (comma list; may POST /ai/global).
 // Vars: ALLOWED_ORIGINS, VAPID_SUBJECT, VAPID_PUBLIC_KEY.
 // Cron: every minute → reminders (src/reminders.ts) + refresh ChatGPT sign-ins older than 20 days (src/ai/routes.ts).
 
@@ -34,6 +35,7 @@ export interface Env {
   REST_ALARM: DurableObjectNamespace<RestAlarm>; // one per push endpoint (device)
   AI_AUTH: DurableObjectNamespace<AiAuth>; // one per user: holds + refreshes ChatGPT tokens
   AI_ENC_KEY?: string; // secret
+  ADMIN_USER_IDS?: string; // secret: comma list of user ids allowed to change the global AI config
 }
 export { RestAlarm, AiAuth };
 

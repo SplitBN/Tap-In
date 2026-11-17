@@ -20,20 +20,17 @@ export async function newChat(context?: AgentContext, quickKey?: string): Promis
   await db.chats.put(chat);
   return chat;
 }
+/** Change only these fields (never a whole-record put: the loop, the title helper and the UI write concurrently). */
+export const patchChat = (id: string, patch: Partial<Chat>) => db.chats.update(id, { ...patch, updatedAt: Date.now() });
+/** Same, without bumping updatedAt (UI settings like the model pick shouldn't reorder the list). */
+export const setChatFields = (id: string, patch: Partial<Chat>) => db.chats.update(id, patch);
 export const deleteChat = (id: string) => db.chats.delete(id);
-export async function setChatContext(id: string, context: AgentContext) {
-  const c = await db.chats.get(id);
-  if (c) await db.chats.put({ ...c, context });
-}
+export const setChatContext = (id: string, context: AgentContext) => setChatFields(id, { context });
 export async function renameChat(id: string, title: string) {
-  const c = await db.chats.get(id);
-  if (c && title.trim()) await db.chats.put({ ...c, title: title.trim().slice(0, 80), renamed: true });
+  if (title.trim()) await setChatFields(id, { title: title.trim().slice(0, 80), renamed: true });
 }
 /** Keep a quick chat: it becomes a normal chat (shown in the list, never auto-deleted). */
-export async function keepChat(id: string) {
-  const c = await db.chats.get(id);
-  if (c) await db.chats.put({ ...c, kind: 'normal' });
-}
+export const keepChat = (id: string) => setChatFields(id, { kind: 'normal' });
 /** The quick chat to continue for this purpose, if one was active in the last 15 minutes. */
 export async function recentQuickChat(quickKey: string) {
   const since = Date.now() - QUICK_REUSE;

@@ -2,8 +2,8 @@
 // Fake mode (localStorage['tapin:fakeAI'] set): no network at all — a scripted model and canned data (see fake.ts),
 // so the UI and the loop can be tested without credentials.
 import { apiAuth } from '../sync';
-import { fakeConfig, fakeModels, fakeStatus, fakeTurn, fakeWebAnswer, fakeWebRead } from './fake';
-import type { AIConfig, AIModel, AIStatus, ProviderId, TurnEvent, TurnRequest } from './types';
+import { fakeConfig, fakeGlobal, fakeModels, fakeStatus, fakeTurn, fakeWebAnswer, fakeWebRead } from './fake';
+import type { AIConfig, AIGlobal, AIModel, AIProviderInfo, AIStatus, ProviderId, TurnEvent, TurnRequest } from './types';
 
 export const isFake = () => { try { return !!localStorage.getItem('tapin:fakeAI'); } catch { return false; } };
 
@@ -30,8 +30,26 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 const post = <T>(path: string, body: unknown = {}) => req<T>(path, { method: 'POST', body: JSON.stringify(body) });
 
-export const getStatus = (): Promise<AIStatus> => (isFake() ? Promise.resolve(fakeStatus()) : req('/ai/status'));
+export const DEFAULT_GLOBAL: AIGlobal = {
+  models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' }, openrouterProvider: { order: ['river'], allow_fallbacks: true },
+  defaultEffort: 'medium', helperEffort: 'low', webModel: 'perplexity/sonar',
+};
+/** One place that turns whatever /ai/status returns (v2, or a lagging v1 Worker) into the v2 shape. */
+export function normalizeStatus(raw: Partial<AIStatus> & { config?: Partial<AIConfig> }): AIStatus {
+  const chatgpt = { connected: !!raw.chatgpt?.connected, ...(raw.chatgpt?.email ? { email: raw.chatgpt.email } : {}) };
+  const openrouter = { hasKey: !!raw.openrouter?.hasKey };
+  const global: AIGlobal = { ...DEFAULT_GLOBAL, ...raw.global, models: { ...DEFAULT_GLOBAL.models, ...raw.global?.models } };
+  const providers: AIProviderInfo[] = Array.isArray(raw.providers) && raw.providers.length ? raw.providers : [
+    { id: 'chatgpt', connected: chatgpt.connected, model: global.models.chatgpt, label: 'ChatGPT', video: false, files: true },
+    { id: 'openrouter', connected: openrouter.hasKey, model: global.models.openrouter, label: 'OpenRouter', video: false, files: true },
+  ];
+  return { isAdmin: !!raw.isAdmin, global, chatgpt, openrouter, providers,
+    config: { primary: raw.config?.primary ?? 'chatgpt', fallback: raw.config?.fallback === undefined ? 'openrouter' : raw.config.fallback } };
+}
+export const getStatus = async (): Promise<AIStatus> => normalizeStatus(isFake() ? fakeStatus() : await req('/ai/status'));
 export const setConfig = (patch: Partial<AIConfig>): Promise<{ config: AIConfig }> => (isFake() ? Promise.resolve({ config: fakeConfig(patch) }) : post('/ai/config', patch));
+/** Admin only (403 otherwise). */
+export const setGlobal = (patch: Partial<AIGlobal>): Promise<{ global: AIGlobal }> => (isFake() ? Promise.resolve({ global: fakeGlobal(patch) }) : post('/ai/global', patch));
 export const setOpenRouterKey = (key: string | null): Promise<{ hasKey: boolean }> => (isFake() ? Promise.resolve({ hasKey: !!key }) : post('/ai/openrouter/key', { key }));
 export const chatgptStart = (): Promise<{ url: string }> => (isFake() ? Promise.resolve({ url: 'https://example.com/fake-sign-in' }) : post('/ai/chatgpt/start'));
 export const chatgptFinish = (pastedUrl: string): Promise<{ connected: true; email?: string }> =>

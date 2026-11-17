@@ -135,9 +135,13 @@ export interface Settings {
   /** Agent preferences. Changed only from Settings (agentPrefs.update is never offered to the agent). */
   agent?: AgentPrefs;
 }
+export type AgentCategory = 'food' | 'gym' | 'supplements' | 'body' | 'settings';
 export interface AgentPrefs {
-  ask?: boolean; // "Ask before changes": request cards need Apply; undefined = on
+  /** per category: 'ask' = request cards need Apply (default), 'auto' = applied at once */
+  permissions?: Partial<Record<AgentCategory, 'ask' | 'auto'>>;
   web?: boolean; // web_answer / web_read tools; undefined = on
+  /** v1 single switch, ignored since v2 */
+  ask?: boolean;
 }
 
 export interface OutboxEntry {

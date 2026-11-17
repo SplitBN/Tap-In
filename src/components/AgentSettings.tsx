@@ -8,9 +8,11 @@ import { memoryDelete, memoryGet, memoryList, memorySave } from '../api/memory';
 import { agentPrefsUpdate } from '../api/agent';
 import { useSettings } from '../db/settings';
 import { useSync } from '../lib/sync';
-import { chatgptDisconnect, chatgptFinish, chatgptStart, getModels, getStatus, isFake, setConfig, setOpenRouterKey } from '../lib/agent/client';
+import { chatgptDisconnect, chatgptFinish, chatgptStart, getModels, getStatus, isFake, setConfig, setGlobal, setOpenRouterKey } from '../lib/agent/client';
 import { invalidateAgentStatus } from '../lib/agent/loop';
-import type { AIConfig, AIModel, AIStatus, ProviderId } from '../lib/agent/types';
+import type { AIConfig, AIGlobal, AIModel, AIStatus, Effort, ProviderId } from '../lib/agent/types';
+import type { AgentCategory } from '../db/types';
+import { Link } from 'react-router';
 
 const NAMES: Record<ProviderId, string> = { chatgpt: 'ChatGPT', openrouter: 'OpenRouter' };
 
@@ -23,7 +25,16 @@ function Toggle({ label, sub, on, onChange }: { label: string; sub?: string; on:
   );
 }
 
-/** Settings → Agent: accounts, models, web, approvals, memory. Credentials go to the server only. */
+
+const CATS: { id: AgentCategory; label: string; icon: string; role: string }[] = [
+  { id: 'food', label: 'Food', icon: 'food', role: 'food' }, { id: 'gym', label: 'Gym', icon: 'dumbbell', role: 'gym' },
+  { id: 'supplements', label: 'Supps', icon: 'pill', role: 'supp' }, { id: 'body', label: 'Weight & notes', icon: 'scale', role: 'weight' },
+  { id: 'settings', label: 'Settings', icon: 'settings', role: 'neutral' },
+];
+const EFFORTS: { id: Effort; label: string }[] = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }];
+
+/** Settings → Agent. Everyone: accounts, preferred provider, permissions, memory, web. Admin: "For everyone" defaults.
+ *  Credentials go to the server only. */
 export function AgentSettings() {
   const s = useSettings();
   const sync = useSync();
@@ -31,7 +42,7 @@ export function AgentSettings() {
   const [st, setSt] = useState<AIStatus | null>(null);
   const [err, setErr] = useState('');
   const [connect, setConnect] = useState(false);
-  const [models, setModels] = useState<Partial<Record<ProviderId, AIModel[]>>>({});
+  const [perms, setPerms] = useState(false);
   const canTalk = fake || !!sync.account;
 
   const refresh = useCallback(async () => {
@@ -39,18 +50,14 @@ export function AgentSettings() {
     try { const r = await getStatus(); setSt(r); setErr(''); invalidateAgentStatus(); } catch (e) { setErr((e as Error).message); }
   }, [canTalk]);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => {
-    if (!st) return;
-    for (const p of ['chatgpt', 'openrouter'] as const) {
-      const ok = p === 'chatgpt' ? st.chatgpt.connected : st.openrouter.hasKey;
-      if (ok && !models[p]) getModels(p).then((m) => setModels((x) => ({ ...x, [p]: m }))).catch(() => {});
-    }
-  }, [st]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cfg = async (patch: Partial<AIConfig>) => {
-    try { const { config } = await setConfig(patch); setSt((x) => (x ? { ...x, config } : x)); } catch (e) { await notice('Couldn’t save', (e as Error).message); }
+    try { const { config } = await setConfig(patch); setSt((x) => (x ? { ...x, config } : x)); invalidateAgentStatus(); } catch (e) { await notice('Couldn’t save', (e as Error).message); }
   };
-  const ask = s.agent?.ask !== false, web = s.agent?.web !== false;
+  const web = s.agent?.web !== false;
+  const p = s.agent?.permissions ?? {};
+  const autoCats = CATS.filter((c) => p[c.id] === 'auto');
+  const both = !!st?.chatgpt.connected && !!st?.openrouter.hasKey;
 
   return (
     <>
@@ -77,64 +84,117 @@ export function AgentSettings() {
               </button>
             )}
             <OpenRouterRow hasKey={!!st?.openrouter.hasKey} onChange={refresh} />
+            {both && st && (
+              <div className="list-item"><span className="grow title">Use first</span>
+                <div className="seg" style={{ width: 210 }}>
+                  {(['chatgpt', 'openrouter'] as const).map((id) => <button key={id} aria-pressed={st.config.primary === id} onClick={() => cfg({ primary: id, fallback: id === 'chatgpt' ? 'openrouter' : 'chatgpt' })}>{NAMES[id]}</button>)}
+                </div>
+              </div>
+            )}
           </div>
-
-          {st && (
-            <>
-              <div className="section-title">Provider</div>
-              <div className="list">
-                <div className="list-item"><span className="grow title">Primary</span>
-                  <div className="seg" style={{ width: 210 }}>
-                    {(['chatgpt', 'openrouter'] as const).map((p) => <button key={p} aria-pressed={st.config.primary === p} onClick={() => cfg({ primary: p, fallback: st.config.fallback === p ? null : st.config.fallback })}>{NAMES[p]}</button>)}
-                  </div>
-                </div>
-                <div className="list-item"><span className="grow title">Backup</span>
-                  <div className="seg" style={{ width: 210 }}>
-                    {([null, st.config.primary === 'chatgpt' ? 'openrouter' : 'chatgpt'] as const).map((p) => <button key={p ?? 'none'} aria-pressed={st.config.fallback === p} onClick={() => cfg({ fallback: p })}>{p ? NAMES[p] : 'None'}</button>)}
-                  </div>
-                </div>
-                {(['chatgpt', 'openrouter'] as const).filter((p) => models[p]?.length).flatMap((p) => (['smart', 'cheap'] as const).map((tier) => (
-                  <ModelRow key={p + tier} label={`${NAMES[p]} · ${tier === 'smart' ? 'Smart' : 'Fast'}`} models={models[p]!} allowDefault={p === 'chatgpt'}
-                    value={st.config.models[p][tier]} onChange={(v) => cfg({ models: { ...st.config.models, [p]: { ...st.config.models[p], [tier]: v } } as AIConfig['models'] })} />
-                )))}
-              </div>
-
-              <div className="section-title">Web</div>
-              <div className="list">
-                <Toggle label="Web search" sub={st.openrouter.hasKey ? 'Search and read pages when it helps' : 'Reading pages works; search needs an OpenRouter key'} on={web} onChange={(v) => run(agentPrefsUpdate, { web: v })} />
-                {web && st.openrouter.hasKey && models.openrouter?.length && (
-                  <ModelRow label="Search model" models={models.openrouter} value={st.config.webModel} onChange={(v) => v && cfg({ webModel: v })} />
-                )}
-              </div>
-            </>
-          )}
+          {both && <p className="faint t-13" style={{ margin: '6px 4px 0' }}>The other one takes over if the first fails. Pick per chat from the model chip.</p>}
         </>
       )}
 
-      <div className="section-title">Changes</div>
-      <div className="list">
-        <Toggle label="Ask before changes" sub="Every change shows a card to Apply or Reject" on={ask} onChange={async (v) => {
-          if (!v && !(await confirmDialog({ title: 'Apply changes without asking?', message: 'The assistant will change your data right away. A web page it reads could trick it into changes you didn’t want.', confirm: 'Turn off', danger: true }))) return;
-          await run(agentPrefsUpdate, { ask: v });
-        }} />
+      <div className="list" style={{ marginTop: 12 }}>
+        <button className="list-item pressable" onClick={() => setPerms(true)}>
+          <span className="role-chip" aria-hidden><Icon name="check" size={16} stroke={2.2} /></span>
+          <span className="grow"><span className="title">Permissions</span><span className="sub" style={{ display: 'block' }}>{autoCats.length ? `Auto: ${autoCats.map((c) => c.label).join(', ')}` : 'Asks before every change'}</span></span>
+          <Icon name="chevronRight" className="chev" size={18} />
+        </button>
+        <Link to="/agent/memory" className="list-item pressable">
+          <span className="role-chip" aria-hidden><Icon name="note" size={16} stroke={2} /></span>
+          <span className="grow title">Memory</span>
+          <Icon name="chevronRight" className="chev" size={18} />
+        </Link>
+        <Toggle label="Web" sub={!st || st.openrouter.hasKey ? 'Search and read pages when it helps' : 'Reading pages works; search needs an OpenRouter key'} on={web} onChange={(v) => run(agentPrefsUpdate, { web: v })} />
       </div>
-      {!ask && <p className="agent-warn">Changes apply without asking. A web page could trick the assistant into changes.</p>}
 
-      <div className="section-title">Memory</div>
-      <MemoryList />
+      {st?.isAdmin && <AdminSection st={st} onSaved={(global) => { setSt((x) => (x ? { ...x, global } : x)); invalidateAgentStatus(); }} />}
 
+      <PermissionsSheet open={perms} onClose={() => setPerms(false)} />
       <ConnectSheet open={connect} onClose={() => setConnect(false)} onDone={refresh} />
     </>
   );
 }
 
-function ModelRow({ label, models, value, onChange, allowDefault }: { label: string; models: AIModel[]; value: string | null; onChange: (v: string | null) => void; allowDefault?: boolean }) {
+/** One row per category: Ask / Auto. Only the user changes these (agentPrefs.update is never offered to the agent). */
+function PermissionsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const s = useSettings();
+  const p = s.agent?.permissions ?? {};
+  return (
+    <Sheet open={open} onClose={onClose} title="Permissions">
+      <p className="muted t-15" style={{ margin: '0 2px 12px' }}>When the assistant wants to change something:</p>
+      <div className="list perm-list">
+        {CATS.map((c) => (
+          <div key={c.id} className="list-item" data-role={c.role}>
+            <span className="role-chip" aria-hidden><Icon name={c.icon} size={16} stroke={2} /></span>
+            <span className="grow title">{c.label}</span>
+            <div className="seg" style={{ width: 132 }} role="radiogroup" aria-label={`${c.label} changes`}>
+              {(['ask', 'auto'] as const).map((v) => (
+                <button key={v} role="radio" aria-checked={(p[c.id] ?? 'ask') === v} aria-pressed={(p[c.id] ?? 'ask') === v}
+                  onClick={() => run(agentPrefsUpdate, { permissions: { [c.id]: v } })}>{v === 'ask' ? 'Ask' : 'Auto'}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="agent-warn">Auto applies changes without a card. A web page the assistant reads could trigger them.</p>
+    </Sheet>
+  );
+}
+
+/** Admin only: defaults for every user (models, routing, effort, web model). */
+function AdminSection({ st, onSaved }: { st: AIStatus; onSaved: (g: AIGlobal) => void }) {
+  const [models, setModels] = useState<Partial<Record<ProviderId, AIModel[]>>>({});
+  const [order, setOrder] = useState((st.global.openrouterProvider?.order ?? []).join(', '));
+  useEffect(() => {
+    for (const id of ['chatgpt', 'openrouter'] as const) getModels(id).then((m) => setModels((x) => ({ ...x, [id]: m }))).catch(() => {});
+  }, []);
+  const g = st.global;
+  const save = async (patch: Partial<AIGlobal>) => {
+    try { const { global } = await setGlobal(patch); onSaved(global); } catch (e) { await notice('Couldn’t save', (e as Error).message); }
+  };
+  const routing = g.openrouterProvider;
+  const saveOrder = () => {
+    const list = order.split(',').map((x) => x.trim()).filter(Boolean);
+    void save({ openrouterProvider: list.length ? { order: list, allow_fallbacks: routing?.allow_fallbacks ?? true } : null });
+  };
+  return (
+    <>
+      <div className="section-title">For everyone <span className="badge accent" style={{ marginLeft: 6 }}>Admin</span></div>
+      <div className="list">
+        {(['chatgpt', 'openrouter'] as const).map((id) => (
+          <ModelRow key={id} label={NAMES[id]} models={models[id] ?? []} value={g.models[id]} onChange={(v) => v && save({ models: { ...g.models, [id]: v } })} />
+        ))}
+        <div className="list-item" style={{ flexWrap: 'wrap' }}>
+          <span className="grow title">OpenRouter routing</span>
+          <input className="input" style={{ width: '100%' }} placeholder="Providers in order, e.g. river" aria-label="OpenRouter provider order" value={order}
+            onChange={(e) => setOrder(e.target.value)} onBlur={saveOrder} onKeyDown={(e) => e.key === 'Enter' && saveOrder()} />
+        </div>
+        {routing && <Toggle label="Fall back to other providers" on={routing.allow_fallbacks} onChange={(v) => save({ openrouterProvider: { ...routing, allow_fallbacks: v } })} />}
+        <div className="list-item"><span className="grow title">Thinking</span><EffortSeg value={g.defaultEffort} onChange={(v) => save({ defaultEffort: v })} /></div>
+        <div className="list-item"><span className="grow"><span className="title">Helpers</span><span className="sub" style={{ display: 'block' }}>Titles, page extracts</span></span><EffortSeg value={g.helperEffort} onChange={(v) => save({ helperEffort: v })} /></div>
+        <ModelRow label="Web search model" models={models.openrouter ?? []} value={g.webModel} onChange={(v) => v && save({ webModel: v })} />
+      </div>
+      <p className="faint t-13" style={{ margin: '6px 4px 0' }}>Applies to every account. OpenRouter lists models without tool support too: pick one that supports tools.</p>
+    </>
+  );
+}
+function EffortSeg({ value, onChange }: { value: Effort; onChange: (v: Effort) => void }) {
+  return (
+    <div className="seg" style={{ width: 200 }} role="radiogroup">
+      {EFFORTS.map((e) => <button key={e.id} role="radio" aria-checked={value === e.id} aria-pressed={value === e.id} onClick={() => onChange(e.id)}>{e.label}</button>)}
+    </div>
+  );
+}
+
+function ModelRow({ label, models, value, onChange }: { label: string; models: AIModel[]; value: string | null; onChange: (v: string | null) => void }) {
   const known = !value || models.some((m) => m.id === value);
   return (
     <label className="list-item">
       <span className="grow title">{label}</span>
       <select className="inline-select" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
-        {allowDefault && <option value="">Default ({models[0]?.name})</option>}
         {!known && <option value={value!}>{value}</option>}
         {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
       </select>
@@ -228,7 +288,7 @@ function ConnectSheet({ open, onClose, onDone }: { open: boolean; onClose: () =>
   );
 }
 
-function MemoryList() {
+export function MemoryList() {
   const list = useLiveQuery(() => run(memoryList, {}), []);
   const [open, setOpen] = useState<string | null>(null);
   return (

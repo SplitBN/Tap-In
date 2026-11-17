@@ -1,36 +1,68 @@
-// Neutral agent types (docs/agent-contract.md). Mirrored in server/src/ai/types.ts — keep in sync.
+// Neutral agent types (docs/agent-contract.md, incl. "# v2 changes"). Mirrored in server/src/ai/types.ts — keep in sync.
 
-export type AIPart = { type: 'text'; text: string } | { type: 'image'; mime: string; base64: string };
+export type AIPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mime: string; base64: string }
+  | { type: 'file'; mime: string; name: string; base64: string } // PDF ≤ 10 MB
+  | { type: 'video'; mime: string; base64: string }; // ≤ 20 MB, only for providers with video:true
 export type AIToolCall = { id: string; name: string; args: Record<string, unknown> };
 export type AIMessage =
   | { role: 'user'; content: AIPart[] }
   | { role: 'assistant'; text?: string; toolCalls?: AIToolCall[]; opaque?: unknown }
   | { role: 'tool'; toolCallId: string; name: string; content: string };
 export type AITool = { name: string; description: string; parameters: Record<string, unknown> };
-export type Tier = 'smart' | 'cheap';
+export type Effort = 'low' | 'medium' | 'high';
 export type ProviderId = 'chatgpt' | 'openrouter';
 
-export type AIConfig = {
-  primary: ProviderId;
-  fallback: ProviderId | null;
-  models: { chatgpt: { smart: string | null; cheap: string | null }; openrouter: { smart: string; cheap: string } };
+/** Per user: which provider first when both are connected. */
+export type AIConfig = { primary: ProviderId; fallback: ProviderId | null };
+/** Admin-only global settings (apply to everyone). */
+export type AIGlobal = {
+  models: { chatgpt: string; openrouter: string };
+  openrouterProvider: { order: string[]; allow_fallbacks: boolean } | null;
+  defaultEffort: Effort;
+  helperEffort: Effort;
   webModel: string;
 };
-export type AIStatus = { chatgpt: { connected: boolean; email?: string }; openrouter: { hasKey: boolean }; config: AIConfig };
+export type AIProviderInfo = { id: ProviderId; connected: boolean; model: string; label: string; video: boolean; files: boolean };
+export type AIStatus = {
+  isAdmin: boolean;
+  global: AIGlobal;
+  config: AIConfig;
+  chatgpt: { connected: boolean; email?: string };
+  openrouter: { hasKey: boolean };
+  providers: AIProviderInfo[];
+};
 export type AIModel = { id: string; name: string };
 
 export type TurnEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; call: AIToolCall }
-  | { type: 'done'; provider: string; model: string; opaque?: unknown; usage?: { input: number; output: number } }
+  | { type: 'done'; provider: string; model: string; effort?: Effort; opaque?: unknown; usage?: { input: number; output: number } }
   | { type: 'error'; code: 'no_provider' | 'auth' | 'limit' | 'provider' | 'bad_request' | 'network'; message: string };
 
-export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; tier: Tier };
+export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; effort?: Effort; provider?: ProviderId };
 
-export type RequestAction = { name: string; input: Record<string, unknown> };
+export type RequestAction = {
+  name: string;
+  input: Record<string, unknown>;
+  /** food requests: alternative food keys (entries.log: string[]; entries.logMany: one list per item) */
+  alternatives?: string[] | string[][];
+  /** food requests: items the user unchecked on the card (by item index) */
+  off?: boolean[];
+};
 export type PendingStatus = 'pending' | 'applying';
-/** A request card waiting for the user. `applying` = Apply was tapped; if the app died mid-apply we never re-run it. */
-export type PendingRequest = { toolCallId: string; summary: string; actions: RequestAction[]; status: PendingStatus };
+export type AskQuestion = { id: string; question: string; options: string[]; multi?: boolean; other?: boolean };
+/** A card waiting for the user. kind 'request' (default, also for old chats) = request_changes; 'ask' = ask_user.
+ *  `applying` = Apply was tapped; if the app died mid-apply we never re-run it. */
+export type PendingRequest = {
+  kind?: 'request' | 'ask';
+  toolCallId: string;
+  summary: string;
+  actions: RequestAction[];
+  questions?: AskQuestion[];
+  status: PendingStatus;
+};
 
 /** Where the user opened the agent from (route + date shown in that screen). */
 export type AgentContext = { route: string; date?: string };
@@ -46,10 +78,18 @@ export interface Chat {
   quickKey?: string;
   /** the user renamed it: never auto-titled */
   renamed?: boolean;
+  /** titled by the helper call already */
+  titled?: boolean;
+  /** this chat's model pick (header chip); undefined = the user's preferred provider / global default effort */
+  provider?: ProviderId;
+  effort?: Effort;
+  /** what actually ran last (from `done`) */
+  ran?: { provider: string; model: string; effort?: Effort };
   messages: AIMessage[];
   pending?: PendingRequest | null;
-  /** past request cards by toolCallId, so the chat can still render them after they were answered */
-  cards?: Record<string, { summary: string; actions: RequestAction[]; outcome: 'applied' | 'rejected' | 'comment' | 'failed'; comment?: string }>;
+  /** past cards by toolCallId, so the chat can still render them after they were answered */
+  cards?: Record<string, { summary: string; actions: RequestAction[]; outcome: 'applied' | 'rejected' | 'comment' | 'failed' | 'answered'; comment?: string;
+    kind?: 'request' | 'ask'; questions?: AskQuestion[]; answers?: Record<string, string | string[]> }>;
   context?: AgentContext;
   /** last error shown under the chat (cleared on the next send) */
   error?: string | null;

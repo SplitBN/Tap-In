@@ -77,10 +77,10 @@ export const entriesList = defineCommand({ name: 'entries.list', kind: 'query', 
     const days = new Map<string, FoodEntry[]>(); list.forEach((e) => days.set(e.date, [...(days.get(e.date) ?? []), e]));
     return [...days].map(([date, es]) => { const t = sum(es.map((e) => e.n)); return { date, totals: { kcal: Math.round(t.kcal), p: r1(t.p), c: r1(t.c), f: r1(t.f) }, entries: es.map(entryView) }; });
   } });
-const isBaseUnit = (u: string | undefined, base: string) => u === base || u === 'g' || u === 'ml';
-const findPortion = (it: FoodItem, label: string) => it.portions.find((x) => x.label === label || x.label === `1 ${label}`);
+export const isBaseUnit = (u: string | undefined, base: string) => u === base || u === 'g' || u === 'ml';
+export const findPortion = (it: FoodItem, label: string) => it.portions.find((x) => x.label === label || x.label === `1 ${label}`);
 /** Amount -> grams for nutrition + the qty/unit label stored on the entry. grams (if given) always drives nutrition. */
-function resolveAmount(it: FoodItem, a: { grams?: number; qty?: number; unit?: string }) {
+export function resolveAmount(it: FoodItem, a: { grams?: number; qty?: number; unit?: string }) {
   const base = it.unitBase ?? 'g';
   if (a.qty != null && a.unit) {
     if (isBaseUnit(a.unit, base)) return { g: a.grams ?? a.qty, q: a.qty, u: base };
@@ -176,7 +176,7 @@ export const entriesDeleteMany = defineCommand({ name: 'entries.deleteMany', kin
   input: z.object({ ids: zIds }), run: async ({ ids }) => { for (const id of ids) await remove('entries', id); return { ok: true, deleted: ids.length }; } });
 
 /** Amount for a food with none given: the amount you used last time, else its first unit × 1, else 100 g/ml. */
-async function defaultAmount(it: FoodItem) {
+export async function defaultAmount(it: FoodItem) {
   const last = await db.entries.orderBy('at').reverse().filter((e) => alive(e) && e.foodId === it.key && !!e.grams).first();
   if (last?.grams) {
     const b = it.unitBase ?? 'g';

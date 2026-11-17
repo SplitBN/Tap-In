@@ -1,9 +1,9 @@
 // Offline self-test for the pure parts of src/ai (no network, no Workers runtime).
 // Run: npm run test:ai   (bundles with esbuild, runs in Node)
-import { parseResponsesStream, toInput } from '../src/ai/chatgpt';
+import { chatgptProvider, parseResponsesStream, toInput } from '../src/ai/chatgpt';
 import { decrypt, encrypt } from '../src/ai/crypto';
-import { parseChatStream, toChat } from '../src/ai/openrouter';
-import { DEFAULT_CONFIG, mergeConfig, runTurn } from '../src/ai/provider';
+import { openrouterProvider, parseChatStream, toChat } from '../src/ai/openrouter';
+import { DEFAULT_CONFIG, DEFAULT_GLOBAL, mergeConfig, mergeGlobal, prettyModel, runTurn } from '../src/ai/provider';
 import { ProviderError, type Provider, type TurnEvent } from '../src/ai/types';
 import { checkUrl, htmlToText } from '../src/ai/web';
 
@@ -84,19 +84,57 @@ ok(chat[0].role === 'system' && chat[1].tool_calls[0].function.arguments === '{"
 // ---- fallback ----
 const failing = (code: 'auth' | 'bad_request'): Provider => ({ id: 'chatgpt', model: async () => 'm', async *turn() { throw new ProviderError(code, 'nope', code === 'auth'); } });
 const good: Provider = { id: 'openrouter', model: async () => 'm2', async *turn() { yield { type: 'text', delta: 'ok' }; yield { type: 'done', provider: 'openrouter', model: 'm2' }; } };
-const fb = await collect(runTurn([failing('auth'), good], { instructions: '', messages: [], tools: [], tier: 'smart' }));
-ok(fb[0].type === 'text' && (fb[1] as any).provider === 'openrouter', 'falls back on auth');
-const nofb = await collect(runTurn([failing('bad_request'), good], { instructions: '', messages: [], tools: [], tier: 'smart' }));
+const fb = await collect(runTurn([failing('auth'), good], { instructions: '', messages: [], tools: [], effort: 'medium' }));
+ok(fb[0].type === 'text' && (fb[1] as any).provider === 'openrouter' && (fb[1] as any).effort === 'medium', 'falls back on auth, done carries effort');
+const nofb = await collect(runTurn([failing('bad_request'), good], { instructions: '', messages: [], tools: [], effort: 'medium' }));
 ok(nofb.length === 1 && nofb[0].type === 'error' && (nofb[0] as any).code === 'bad_request', 'no fallback on bad_request');
-const none = await collect(runTurn([], { instructions: '', messages: [], tools: [], tier: 'smart' }));
+const none = await collect(runTurn([], { instructions: '', messages: [], tools: [], effort: 'medium' }));
 ok((none[0] as any).code === 'no_provider', 'no_provider');
 
 // ---- config + crypto ----
-const c = mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter', fallback: 'openrouter', models: { chatgpt: { cheap: 'gpt-mini' }, openrouter: { smart: '' } }, webModel: 5, junk: 1 });
-ok(c.primary === 'openrouter' && c.fallback === null && mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter' }).fallback === 'chatgpt' && c.models.chatgpt.cheap === 'gpt-mini' && c.models.chatgpt.smart === null && c.models.openrouter.smart === DEFAULT_CONFIG.models.openrouter.smart && c.webModel === 'perplexity/sonar', 'mergeConfig');
+const c = mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter', fallback: 'openrouter', models: { x: 1 }, junk: 1 });
+ok(c.primary === 'openrouter' && c.fallback === null && mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter' }).fallback === 'chatgpt' && Object.keys(c).length === 2, 'mergeConfig');
+const g = mergeGlobal(DEFAULT_GLOBAL, { models: { openrouter: 'anthropic/claude-haiku-5.5', chatgpt: '' }, defaultEffort: 'high', helperEffort: 'max', openrouterProvider: { order: ['river', 5] }, webModel: null });
+ok(g.models.openrouter === 'anthropic/claude-haiku-5.5' && g.models.chatgpt === 'gpt-6.1-sol' && g.defaultEffort === 'high' && g.helperEffort === 'low'
+  && g.openrouterProvider?.order.join() === 'river' && g.openrouterProvider.allow_fallbacks === true && g.webModel === 'perplexity/sonar', 'mergeGlobal');
+ok(mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: null }).openrouterProvider === null && mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: { order: [] } }).openrouterProvider === null, 'mergeGlobal routing off');
+ok(prettyModel('gpt-6.1-sol') === 'GPT-6.1 Sol' && prettyModel('z-ai/glm-5.3-flash') === 'GLM 5.3 Flash', 'prettyModel');
+
+// ---- attachments ----
+const att = [{ role: 'user' as const, content: [{ type: 'file' as const, mime: 'application/pdf', name: 'a.pdf', base64: 'UERG' }] }];
+const gi = toInput(att) as any[];
+ok(gi[0].content[0].type === 'input_file' && gi[0].content[0].filename === 'a.pdf' && gi[0].content[0].file_data === 'data:application/pdf;base64,UERG', 'chatgpt input_file');
+try { toInput([{ role: 'user', content: [{ type: 'video', mime: 'video/mp4', base64: 'AAA' }] }]); ok(false, 'chatgpt video rejected'); }
+catch (e) { ok(e instanceof ProviderError && e.code === 'bad_request', 'chatgpt video → bad_request'); }
+const oc = toChat('', [...att, { role: 'user', content: [{ type: 'video', mime: 'video/mp4', base64: 'AAA' }] }]) as any[];
+ok(oc[0].content[0].type === 'file' && oc[0].content[0].file.file_data.startsWith('data:application/pdf') && oc[1].content[0].type === 'video_url' && oc[1].content[0].video_url.url === 'data:video/mp4;base64,AAA', 'openrouter file + video parts');
 const key = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
 const sealed = await encrypt(key, 'sk-or-secret');
 ok(sealed !== 'sk-or-secret' && (await decrypt(key, sealed)) === 'sk-or-secret', 'crypto round trip');
+
+// ---- request bodies (fetch stubbed) ----
+const sent: { url: string; body: any }[] = [];
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (url: string, init: RequestInit) => {
+  sent.push({ url, body: JSON.parse(String(init.body)) });
+  const sse = url.includes('openrouter')
+    ? `data: ${JSON.stringify({ choices: [{ delta: { content: 'x' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+    : `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'x' })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: {} })}\n\n`;
+  return new Response(stream(sse), { status: 200 });
+}) as typeof fetch;
+const fakeEnv = { AI_AUTH: { idFromName: () => 'id', get: () => ({ models: async () => ({ ok: true, models: [{ id: 'gpt-x', name: 'GPT X' }] }), access: async () => ({ ok: true, token: 't' }) }) } } as any;
+const gptP = chatgptProvider(fakeEnv, 'u', DEFAULT_GLOBAL);
+const gm = await gptP.model();
+ok(gm === 'gpt-x', 'chatgpt model falls back to first listed when gpt-6.1-sol is missing');
+const req = { instructions: 'i', messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }], tools: [], effort: 'high' as const };
+await collect(gptP.turn(req, gm));
+ok(sent[0].body.reasoning?.effort === 'high' && sent[0].body.store === false && sent[0].body.model === 'gpt-x', 'chatgpt body: reasoning effort');
+await collect(openrouterProvider('k', DEFAULT_GLOBAL).turn({ ...req, effort: 'low' }, DEFAULT_GLOBAL.models.openrouter));
+const ob = sent[1].body;
+ok(ob.reasoning?.effort === 'low' && ob.provider?.order?.[0] === 'river' && ob.provider.allow_fallbacks === true && ob.model === 'z-ai/glm-5.3-flash', 'openrouter body: reasoning + provider routing');
+await collect(openrouterProvider('k', { ...DEFAULT_GLOBAL, openrouterProvider: null }).turn(req, 'm'));
+ok(!('provider' in sent[2].body), 'openrouter body: no routing when off');
+globalThis.fetch = realFetch;
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

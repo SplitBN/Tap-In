@@ -162,3 +162,124 @@ Providers cache identical prompt prefixes, so the client keeps the prefix byte-s
 - Settings → Agent: Connect ChatGPT (paste-the-URL flow with clear steps), OpenRouter key, primary/backup, models
   (picker from `/ai/models`), web search on/off, web model, "Ask before changes" toggle (warn: with it off, a web page
   could trick the agent into changes), Memory list (view/edit/delete).
+
+---
+
+# v2 changes (2026-11-17, from the user's first real use) — these override v1 where they differ
+
+## Models, effort, admin
+- **No smart/cheap models.** One model per provider; "smart" = higher **reasoning effort**. `/ai/turn` takes
+  `effort?: 'low' | 'medium' | 'high'` (accept old `tier` as alias: cheap→low, smart→high). ChatGPT: `reasoning: { effort }`.
+  OpenRouter: `reasoning: { effort }`.
+- **Global config, admin only** (D1 `ai_global`, one row). Admin = user ids in secret `ADMIN_USER_IDS` (comma list; already set).
+  ```ts
+  type AIGlobal = {
+    models: { chatgpt: string; openrouter: string };          // defaults: 'gpt-6.1-sol' (if not in the account's list → first listed), 'z-ai/glm-5.3-flash'
+    openrouterProvider: { order: string[]; allow_fallbacks: boolean } | null; // default { order: ['river'], allow_fallbacks: true } → sent as OpenRouter `provider`
+    defaultEffort: 'low' | 'medium' | 'high';                 // default 'medium'
+    helperEffort: 'low' | 'medium' | 'high';                  // titles, web/read extract — default 'low'
+    webModel: string;                                         // default 'perplexity/sonar'
+  };
+  ```
+  `POST /ai/global` (admin only, 403 otherwise) `Partial<AIGlobal>` → `{ global }`.
+- **Per user** only: preferred provider when both are connected (`primary`, `fallback`). Old per-user `models` ignored.
+- `GET /ai/status` → `{ isAdmin, global, config: { primary, fallback }, chatgpt: { connected, email? }, openrouter: { hasKey },
+  providers: { id: 'chatgpt'|'openrouter', connected: boolean, model: string, label: string, video: boolean, files: boolean }[] }`
+  (label e.g. "GPT-6.1 Sol" / "GLM 5.3 Flash"; video true for openrouter GLM 5.3 Flash, false for chatgpt).
+- `/ai/turn` body adds optional `provider` (the chat's pick; used first, then the user's fallback) and `effort`.
+  `done` carries `provider`, `model`, `effort`.
+- `GET /ai/models` stays (admin uses it for pickers).
+
+## Attachments
+`AIPart` adds:
+```ts
+| { type: 'file'; mime: string; name: string; base64: string }   // PDF (≤ 10 MB). ChatGPT: input_file {filename, file_data:'data:…'}; OpenRouter: {type:'file', file:{filename, file_data}}
+| { type: 'video'; mime: string; base64: string }                // ≤ 20 MB, only when the provider has video:true. OpenRouter: {type:'video_url', video_url:{url:'data:…'}}
+```
+Client: text/CSV/JSON/MD files are inlined as text parts (capped ~30k chars, say so). Video on a provider without video →
+client extracts ~6 frames (canvas) and sends them as images with a note. Images still ≤1024 px JPEG.
+
+## Client tools (changes)
+- **Batch:** `run_query` takes `{ queries: [{ name, input }] }` (1–8, run in parallel, results in order). The loop also runs
+  several tool calls from one step in parallel. Instructions: batch independent lookups in one step.
+- **Commands in the prompt:** full description + schema for a curated core set (the commands the agent uses most: food
+  search/get/log/logMany/list, goals, sessions/plans/exercise search & history, bodyweight, supplements day/log, calendar),
+  budget ≈ 6k tokens, the rest as the one-line index; `describe_commands` only for those. Order fixed (cache).
+- **`ask_user({ questions: [{ id, question, options: string[], multi?: boolean, other?: boolean }] })`**: one card with all
+  questions as tappable chips (+ optional free text when `other`), one Send. Result `{ answers: { [id]: string | string[] } }`.
+  Pending like a request card (survives reload). Text typed in the composer while it's open answers it as free text.
+- **Food requests:** an action `entries.log` / `entries.logMany` item may carry `alternatives?: string[]` (food keys).
+  The card can swap the food (keeping grams) and change the amount before Apply; the applied input is what the user saw.
+- **Photo logging instructions:** work out as much as possible from the image (items, cooking method, portion from visual
+  cues: plate/hand/utensil size, count pieces), search candidates in one batched step, prefer the user's own/frequent foods,
+  ask only what truly changes the numbers and **all in one `ask_user`**, then one food request with alternatives. Never
+  drip questions over several turns.
+- **Chat titles:** after the first assistant reply, one helper call (helperEffort, no tools) → 2–5 word title (unless renamed).
+
+## Permissions (replaces the single "Ask before changes")
+`Settings.agent.permissions: Record<Category, 'ask' | 'auto'>`, all default `ask`. Categories from command name prefix:
+- `food` (foods, entries, recipes, goals, maintenance), `gym` (plans, workouts, sessions, sets, exercises),
+  `supplements` (supplements, stacks, supplogs), `body` (bodyweight, notes, days), `settings` (settings, features).
+A request mixing categories auto-applies only if every action's category is `auto`. Managed in a **Permissions** sheet
+(Settings → Agent → Permissions), one row per category with an Ask / Auto segmented control, and a one-line warning that Auto
+lets a web page the agent read trigger changes. Still only changeable by the user (`agentPrefs.update`), never the agent.
+
+## UI changes
+- **Chat**: friendlier, bubblier "liquid" look (glass header, soft gradient bubbles, rounded 22–26px, springy appear
+  animations, typing indicator), consistent with the rest of the app and `docs/design-refs`. **Header is sticky** (title,
+  back, ⋯ always visible). **Composer is pinned to the bottom** respecting the safe area exactly like the tab-bar fix
+  (`--app-h` / `env(safe-area-inset-bottom)`), not floating high. Header shows a **model chip** ("Sol · Medium") → sheet to
+  pick provider (only connected ones) and effort (Low / Medium / High) for this chat (stored on the chat).
+- **Food request card** in the style of the user's reference: "Total Calories — 830 cals / 46 g Protein" header; one rounded
+  row per food: emoji (by food name keywords), name, macros `117C 10P 1F` in role colours, right side calories + amount in
+  the food's unit when it has portions ("2.2 cups", "3 drumsticks") in blue (tap → number picker), a green check to
+  include/exclude, alternatives as horizontal chips below the row; bottom: secondary "Change" (focuses composer for a
+  comment) + primary green "Log (N)". Other request kinds get the same friendly row style (icon, title, short detail).
+- **ask_user card**: question text + chip options, Send.
+- **Memory** gets its own page (`/agent/memory`), linked from Settings → Agent; not stacked in Settings.
+- **Settings → Agent** for everyone: Connect ChatGPT, OpenRouter key, preferred provider (when both), Permissions, Memory,
+  web on/off. **Admin only**: "For everyone" section — model per provider (pickers from /ai/models), OpenRouter provider
+  routing, default effort, helper effort, web model.
+- Attach menu in the composer: Photo, Camera, Video, File.
+
+## v2 server notes (implementation details / small deviations)
+- `/ai/turn`: `effort` falls back to old `tier` (cheap→low, smart→high), then to `global.defaultEffort`. Unknown `provider`
+  or effort values → `bad_request`. `done.effort` = the effort actually used.
+- Part validation: `file` must be `application/pdf`, base64 ≤ 10 MB decoded; `video` must be `video/*`, ≤ 20 MB decoded.
+- ChatGPT + `video` part → `bad_request` "ChatGPT can't watch videos…", but marked fallback-eligible, so if the user's
+  backup provider (e.g. OpenRouter GLM) is connected it takes the turn instead.
+- ChatGPT: if the model rejects `reasoning` (400 mentioning reasoning/effort) the server retries once without it.
+- ChatGPT model: `global.models.chatgpt` if the account's `/v1/models` list (visibility=list, cached 6 h) has it, else
+  the first listed model. If the list can't be loaded, the configured id is tried as is.
+- OpenRouter: `reasoning: { effort }` always sent; `provider` = `global.openrouterProvider` when not null (an empty `order`
+  in `POST /ai/global` sets it to null = OpenRouter's own routing). Reasoning output isn't replayed (no `opaque`).
+- `providers[].files` is true for both (OpenRouter parses PDFs for any model). `video` for OpenRouter comes from the
+  model's `architecture.input_modalities` in OpenRouter's public model list; `label` = that list's name without the
+  "Vendor: " prefix, or for ChatGPT the account list's `display_name`; else a prettified id ("GPT-6.1 Sol").
+- `GET /ai/models?provider=openrouter` items also carry `input: string[]` (input modalities) for the admin picker.
+- `POST /ai/config` only accepts `primary` / `fallback`; any stored v1 `models` / `webModel` are ignored.
+
+## v2 client notes (as built)
+- Permission categories by prefix: food = foods, entries, recipes, goals, maintenance; gym = plans, workouts, sessions,
+  sets, exercises, **items**; supplements = supplements, stacks, supplogs; body = bodyweight, notes, days; settings =
+  settings, features. Any other prefix (e.g. `records.restore`) always asks. The v1 `Settings.agent.ask` is ignored.
+- Core commands in the prompt (fixed order, ≈5.9k tokens measured as chars/4): foods.search/get, entries.list/log/logMany/
+  update/delete/quickAdd/copy/move/deleteMany, foods.create, goals.get/set, days.setComplete, stats.dailyNutrition,
+  sessions.list/get/active/summary, plans.list, exercises.search/history/nextTarget, progress.exercise, bodyweight.list/log,
+  supplements.day/log/list, notes.add/list, calendar.range (`CORE` in src/lib/agent/tools.ts). Index ≈1.9k tokens.
+- `run_query` still accepts the v1 `{ name, input }` (old chats). In a batch each query gets an equal share of the 12k cap.
+  Read-only tools in one step run in parallel; writes and cards run in call order; results are appended in call order.
+  One card per step: the first `request_changes` / `ask_user` wins, the others get an error result.
+- Food requests: when validated, `alternatives` are moved out of the input into `RequestAction.alternatives` (unknown keys
+  dropped) and every item gets explicit `grams` + `qty` + `unit`. Card edits (swap keeps grams, amount, uncheck →
+  `RequestAction.off[]`) are written to the stored pending request. Apply drops unchecked items and the tool result is
+  `{status:'applied', results, applied:[{name,input}]}`, where `applied` holds the inputs as they were run.
+- `ask_user` result: `{ answers: {[id]: string | string[]}, text? }`. `text` is what was typed in the composer instead.
+- Chat fields added: `provider?`, `effort?` (the model chip; sent as `/ai/turn` `provider` / `effort`; omitted = the
+  user's preferred provider / global default effort), `ran?` (from `done`), `titled?`. Chat writes are field patches
+  (`db.chats.update`), never whole-record puts.
+- Title: after the loop's first assistant reply, one `/ai/turn` with `TITLE_INSTRUCTIONS`, no tools, `effort =
+  global.helperEffort`. Never added to the chat.
+- Keyboard: `lib/viewport.ts` sets `--kb` from `visualViewport` (and `html.kb-open`); the chat screen sits on `bottom: var(--kb)`.
+- Fake provider (v2): admin status with both providers (GLM has video), photo + "log this…" → ask_user → batched
+  run_query → food request with alternatives; "log X" → batched search → food request; title calls answered.

@@ -1,19 +1,20 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { AskCard, RequestBlockCard } from '../components/AgentCards';
+import { MemoryList } from '../components/AgentSettings';
 import { confirmDialog, notice } from '../components/Dialog';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { useSync } from '../lib/sync';
 import { isFake } from '../lib/agent/client';
-import { deleteChat, getChat, keepChat, newChat, renameChat, setChatContext, useChat, useChats } from '../lib/agent/chats';
-import { describeAction, type Described } from '../lib/agent/describe';
-import { downscaleImage } from '../lib/agent/image';
+import { AttachError, fileToParts } from '../lib/agent/attach';
+import { deleteChat, getChat, keepChat, newChat, renameChat, setChatContext, setChatFields, useChat, useChats } from '../lib/agent/chats';
 import { isContextPart } from '../lib/agent/instructions';
-import { needsReply, recoverChat, resolvePending, runLoop, sendMessage, stop, useLive } from '../lib/agent/loop';
+import { cachedStatus, needsReply, recoverChat, runLoop, sendMessage, stop, useLive } from '../lib/agent/loop';
 import { setQuickChat, useQuickChat } from '../lib/agent/quick';
 import { chipLabel } from '../lib/agent/tools';
-import type { AIMessage, AIPart, AIToolCall, AgentContext, Chat, PendingRequest, RequestAction } from '../lib/agent/types';
+import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, Effort, ProviderId } from '../lib/agent/types';
 import { dateKey } from '../lib/nutrition';
 
 const ago = (ts: number) => {
@@ -24,6 +25,7 @@ const lastText = (c: Chat) => {
   for (let i = c.messages.length - 1; i >= 0; i--) { const m = c.messages[i]; if (m.role === 'assistant' && m.text) return m.text; }
   return '';
 };
+const spring = { type: 'spring', bounce: 0, duration: 0.35 } as const;
 
 /** /agent — chat history. Quick chats (photo logging etc.) sit behind the Quick filter and expire after 3 days. */
 export function AgentPage() {
@@ -78,11 +80,27 @@ export function AgentPage() {
         <div className="empty">
           <Icon name="sparkle" size={44} stroke={1.6} />
           <h3>Ask Tap In</h3>
-          <p>Log food by talking, check your progress, plan a workout. Changes always ask first.</p>
+          <p>Log food from a photo, check your progress, plan a workout. Changes ask first.</p>
           <button className="btn primary" onClick={() => nav('/agent/new')}><Icon name="plus" size={18} stroke={2.4} />New chat</button>
         </div>
       )}
+      <Link to="/agent/memory" className="link" style={{ marginTop: 12 }}><Icon name="note" size={18} />Memory</Link>
       <ChatMenu chat={menu} onClose={() => setMenu(null)} />
+    </div>
+  );
+}
+
+/** /agent/memory — what the assistant remembers. */
+export function AgentMemoryPage() {
+  const nav = useNavigate();
+  return (
+    <div className="page">
+      <header className="page-head">
+        <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}><Icon name="chevronLeft" size={24} /></button>
+        <h1>Memory</h1>
+      </header>
+      <p className="faint t-13" style={{ margin: '-4px 4px 10px' }}>Facts the assistant saved about you. It reads the names every time and the notes when they matter.</p>
+      <MemoryList />
     </div>
   );
 }
@@ -135,24 +153,79 @@ export function AgentNewPage() {
   return <div className="page" />;
 }
 
-/** /agent/:id — one chat, full screen. */
+// ---- model chip: which provider / effort this chat uses ----
+function useStatus() {
+  const [st, setSt] = useState<AIStatus | null>(null);
+  useEffect(() => { let live = true; cachedStatus().then((s) => live && setSt(s)); return () => { live = false; }; }, []);
+  return st;
+}
+/** "GPT-6.1 Sol" → "Sol", "GLM 5.3 Flash" → "GLM Flash": drop version tokens. */
+const shortModel = (label: string) => label.split(/\s+/).filter((w) => !/\d/.test(w)).join(' ') || label;
+const EFFORT: Record<Effort, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+function pickOf(chat: Chat, st: AIStatus | null) {
+  const connected = st?.providers.filter((p) => p.connected) ?? [];
+  const provider = connected.find((p) => p.id === chat.provider) ?? connected.find((p) => p.id === st?.config.primary) ?? connected[0];
+  const effort: Effort = chat.effort ?? st?.global.defaultEffort ?? 'medium';
+  return { connected, provider, effort };
+}
+function ModelChip({ chat, onOpen }: { chat: Chat; onOpen: () => void }) {
+  const st = useStatus();
+  const { provider, effort } = pickOf(chat, st);
+  const ranLabel = chat.ran && st?.providers.find((p) => p.id === chat.ran!.provider && p.model === chat.ran!.model)?.label;
+  const label = ranLabel && chat.ran!.provider === provider?.id ? ranLabel : provider?.label;
+  if (!label) return null;
+  return <button className="model-chip" onClick={onOpen} aria-label={`Model: ${label}, effort ${EFFORT[effort]}. Change`}><Icon name="sparkle" size={12} stroke={2.4} />{shortModel(label)} · {EFFORT[effort]}<Icon name="chevronDown" size={12} stroke={2.6} /></button>;
+}
+function ModelSheet({ chat, open, onClose }: { chat: Chat; open: boolean; onClose: () => void }) {
+  const st = useStatus();
+  const { connected, provider, effort } = pickOf(chat, st);
+  const set = (patch: { provider?: ProviderId; effort?: Effort }) => setChatFields(chat.id, patch);
+  return (
+    <Sheet open={open} onClose={onClose} title="Model">
+      <div className="menu-group" style={{ marginTop: 0 }} role="radiogroup" aria-label="Model">
+        {connected.map((p) => (
+          <button key={p.id} className="menu-item" role="radio" aria-checked={provider?.id === p.id} onClick={() => set({ provider: p.id })}>
+            <Icon name={p.id === 'chatgpt' ? 'sparkle' : 'bolt'} size={22} />
+            <span className="grow"><span style={{ display: 'block' }}>{p.label}</span><span className="faint t-13" style={{ fontWeight: 500 }}>{p.id === 'chatgpt' ? 'ChatGPT' : 'OpenRouter'}{p.video ? ' · video' : ''}</span></span>
+            {provider?.id === p.id && <Icon name="check" size={20} stroke={2.6} />}
+          </button>
+        ))}
+        {!connected.length && <p className="muted" style={{ padding: '12px 4px' }}>Connect ChatGPT or OpenRouter in Settings → Agent.</p>}
+      </div>
+      <div className="section-title" style={{ marginTop: 18 }}>Thinking</div>
+      <div className="seg" role="radiogroup" aria-label="Effort">
+        {(['low', 'medium', 'high'] as const).map((e) => <button key={e} role="radio" aria-checked={effort === e} aria-pressed={effort === e} onClick={() => set({ effort: e })}>{EFFORT[e]}</button>)}
+      </div>
+      <p className="faint t-13" style={{ margin: '10px 4px 0' }}>Higher thinks longer before answering. For this chat only.</p>
+    </Sheet>
+  );
+}
+
+/** /agent/:id — one chat, full screen: glass header, its own scroller, composer at the bottom. */
 export function AgentChatPage() {
   const { id } = useParams();
   const nav = useNavigate();
   const chat = useChat(id);
   const [menu, setMenu] = useState<Chat | null>(null);
+  const [model, setModel] = useState(false);
   if (chat === undefined && id) return <div className="page" />;
   if (!chat) return <div className="page"><header className="page-head"><h1>Agent</h1></header><p className="muted">This chat no longer exists.</p></div>;
   return (
-    <div className="page no-tabs chat-page">
-      <header className="page-head chat-head">
-        <button className="icon-btn" aria-label="All chats" onClick={() => nav(chat.kind === 'quick' ? '/agent?view=quick' : '/agent')}><Icon name="chevronLeft" size={24} /></button>
-        <h1 className="small ellipsis" dir="auto">{chat.messages.length ? chat.title : 'New chat'}</h1>
-        {chat.messages.length > 0 && <button className="icon-btn" aria-label="Chat options" onClick={() => setMenu(chat)}><Icon name="more" size={22} stroke={2.6} /></button>}
-        <button className="icon-btn" aria-label="New chat" onClick={() => nav(`/agent/new?from=${encodeURIComponent(chat.context?.route ?? '/agent')}`)}><Icon name="plus" size={22} /></button>
+    <div className="chat-screen">
+      <header className="chat-bar">
+        <button className="glass-btn" aria-label="All chats" onClick={() => nav(chat.kind === 'quick' ? '/agent?view=quick' : '/agent')}><Icon name="chevronLeft" size={22} stroke={2.2} /></button>
+        <div className="chat-bar-mid">
+          <h1 className="chat-title ellipsis" dir="auto">{chat.messages.length ? chat.title : 'New chat'}</h1>
+          <ModelChip chat={chat} onOpen={() => setModel(true)} />
+        </div>
+        {chat.messages.length > 0
+          ? <button className="glass-btn" aria-label="Chat options" onClick={() => setMenu(chat)}><Icon name="more" size={22} stroke={2.6} /></button>
+          : <span className="glass-btn ghost" aria-hidden />}
+        <button className="glass-btn" aria-label="New chat" onClick={() => nav(`/agent/new?from=${encodeURIComponent(chat.context?.route ?? '/agent')}`)}><Icon name="plus" size={22} stroke={2.2} /></button>
       </header>
       <ChatBody chat={chat} />
       <ChatMenu chat={menu} onClose={() => setMenu(null)} />
+      <ModelSheet chat={chat} open={model} onClose={() => setModel(false)} />
     </div>
   );
 }
@@ -160,42 +233,227 @@ export function AgentChatPage() {
 /** Messages + composer; used by the full-screen chat and the quick-chat sheet. */
 function ChatBody({ chat }: { chat: Chat }) {
   const live = useLive(chat.id);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { void recoverChat(chat.id); }, [chat.id]);
-  // follow the conversation while the user is near the bottom (the scroller is the page, or the sheet body)
+  // follow the conversation while the user is near the bottom
+  // new messages / a new card always bring the bottom into view; streaming text only while the user is near it
   const count = chat.messages.length;
+  const first = useRef(true);
+  const seen = useRef('');
+  const pinned = useRef(true); // the user hasn't scrolled away from the bottom
   useLayoutEffect(() => {
-    const end = endRef.current;
-    const box = end?.closest('.sheet-body') ?? document.querySelector('.app');
-    if (!end || !box) return;
-    if (box.scrollHeight - box.scrollTop - box.clientHeight < 240 || live.text === '') end.scrollIntoView({ block: 'end' });
+    const box = scroller.current;
+    if (!box) return;
+    const sig = `${count}|${chat.pending?.toolCallId ?? ''}|${chat.error ?? ''}|${live.running}`;
+    const changed = sig !== seen.current; seen.current = sig;
+    if (first.current || changed || box.scrollHeight - box.scrollTop - box.clientHeight < 260) { box.scrollTop = box.scrollHeight; pinned.current = true; }
+    // cards fill in names/macros and images decode a moment later: re-pin a few times
+    if (changed || first.current) for (const ms of [120, 400, 900]) window.setTimeout(() => { if (pinned.current) box.scrollTop = box.scrollHeight; }, ms);
+    first.current = false;
   }, [count, live.text, live.running, chat.pending?.toolCallId, chat.error]);
+  // stay pinned to the bottom while content grows (cards load names/macros, images decode) unless the user scrolled up
+  useEffect(() => {
+    const box = scroller.current, inner = box?.firstElementChild;
+    if (!box || !inner) return;
+    pinned.current = true;
+    const onScroll = () => { pinned.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80; };
+    const ro = new ResizeObserver(() => { if (pinned.current) box.scrollTop = box.scrollHeight; });
+    box.addEventListener('scroll', onScroll, { passive: true });
+    ro.observe(inner);
+    return () => { ro.disconnect(); box.removeEventListener('scroll', onScroll); };
+  }, [chat.id]);
 
   const results = new Map<string, string>();
   for (const m of chat.messages) if (m.role === 'tool') results.set(m.toolCallId, m.content);
   const showRetry = !live.running && (!!chat.error || needsReply(chat));
+  const focusComposer = () => composer.current?.focus();
   return (
     <>
-      <div className="msgs" aria-live="polite" aria-busy={live.running}>
-        {!chat.messages.length && <EmptyChat onPick={(t) => sendMessage(chat.id, [{ type: 'text', text: t }])} />}
-        {chat.messages.map((m, i) => <Message key={i} m={m} chat={chat} results={results} />)}
-        {live.running && (live.text
-          ? <div className="bubble bot streaming" dir="auto"><Rich text={live.text} /><span className="caret" aria-hidden /></div>
-          : <div className="typing" aria-label="Thinking"><i /><i /><i /></div>)}
-        {chat.error && !live.running && <div className="chat-error" role="alert"><Icon name="info" size={16} stroke={2.2} /><span className="grow">{chat.error}</span></div>}
-        {showRetry && <button className="btn chat-retry" onClick={() => runLoop(chat.id)}><Icon name="history" size={16} />Retry</button>}
-        <div ref={endRef} />
+      <div className="chat-scroll" ref={scroller}>
+        <div className="msgs" aria-live="polite" aria-busy={live.running}>
+          {!chat.messages.length && <EmptyChat onPick={(t) => sendMessage(chat.id, [{ type: 'text', text: t }])} />}
+          <AnimatePresence initial={false}>
+            {chat.messages.map((m, i) => <Message key={i} m={m} chat={chat} results={results} onChange={focusComposer} />)}
+          </AnimatePresence>
+          {live.running && (live.text
+            ? <div className="bubble bot streaming" dir="auto"><Rich text={live.text} /><span className="caret" aria-hidden /></div>
+            : <motion.div className="typing" aria-label="Thinking" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={spring}><i /><i /><i /></motion.div>)}
+          {chat.error && !live.running && <div className="chat-error" role="alert"><Icon name="info" size={16} stroke={2.2} /><span className="grow">{chat.error}</span></div>}
+          {showRetry && <button className="btn chat-retry" onClick={() => runLoop(chat.id)}><Icon name="history" size={16} />Retry</button>}
+        </div>
       </div>
-      <Composer chat={chat} running={live.running} />
+      <Composer chat={chat} running={live.running} inputRef={composer} />
     </>
   );
 }
+
+function EmptyChat({ onPick }: { onPick: (t: string) => void }) {
+  const ideas = ['How was my training this week?', 'What did I eat today?', 'Log 2 eggs for breakfast'];
+  return (
+    <div className="chat-empty">
+      <span className="chat-empty-glyph" aria-hidden><Icon name="sparkle" size={30} stroke={1.7} /></span>
+      <div className="stack" style={{ gap: 8, width: '100%' }}>
+        {ideas.map((t) => <button key={t} className="idea pressable" onClick={() => onPick(t)}><span className="grow">{t}</span><Icon name="arrowUp" size={16} stroke={2.4} /></button>)}
+      </div>
+    </div>
+  );
+}
+
+/** Minimal formatting: paragraphs, line breaks, **bold**. */
+function Rich({ text }: { text: string }) {
+  return <>{text.split(/(\*\*[^*]+\*\*)/g).map((s, i) => (s.startsWith('**') && s.endsWith('**') && s.length > 4 ? <b key={i}>{s.slice(2, -2)}</b> : <Fragment key={i}>{s}</Fragment>))}</>;
+}
+
+const bubbleIn = { initial: { opacity: 0, y: 10, scale: 0.96 }, animate: { opacity: 1, y: 0, scale: 1 }, transition: spring };
+
+function UserPart({ p }: { p: AIPart }) {
+  if (p.type === 'image') return <img className="bubble-img" alt="Attached photo" src={`data:${p.mime};base64,${p.base64}`} />;
+  if (p.type === 'file') return <span className="att-chip"><Icon name="note" size={16} />{p.name}</span>;
+  if (p.type === 'video') return <span className="att-chip"><Icon name="play" size={16} />Video</span>;
+  if (isContextPart(p.text)) return null;
+  const file = p.text.match(/^\[File "(.+?)"/);
+  if (file) return <span className="att-chip"><Icon name="note" size={16} />{file[1]}</span>;
+  const video = p.text.match(/^\[Video "(.+?)"/);
+  if (video) return <span className="att-chip"><Icon name="play" size={16} />{video[1]} · frames</span>;
+  return <span className="bubble-text">{p.text}</span>;
+}
+
+function Message({ m, chat, results, onChange }: { m: AIMessage; chat: Chat; results: Map<string, string>; onChange: () => void }) {
+  if (m.role === 'tool') return null;
+  if (m.role === 'user') {
+    const imgs = m.content.filter((p) => p.type === 'image');
+    const rest = m.content.filter((p) => p.type !== 'image');
+    return (
+      <motion.div className="bubble user" dir="auto" {...bubbleIn}>
+        {imgs.length > 0 && <div className={'bubble-imgs' + (imgs.length > 1 ? ' grid' : '')}>{imgs.map((p, i) => <UserPart key={i} p={p} />)}</div>}
+        {rest.map((p, i) => <UserPart key={i} p={p} />)}
+      </motion.div>
+    );
+  }
+  const calls = m.toolCalls ?? [];
+  const chips = calls.filter((c) => c.name !== 'request_changes' && c.name !== 'ask_user');
+  return (
+    <>
+      {m.text && <motion.div className="bubble bot" dir="auto" {...bubbleIn}><Rich text={m.text} /></motion.div>}
+      {chips.length > 0 && <div className="tool-chips">{chips.map((c) => <ToolChip key={c.id} call={c} failed={isError(results.get(c.id))} />)}</div>}
+      {calls.filter((c) => c.name === 'request_changes' || c.name === 'ask_user').map((c) => <CardBlock key={c.id} call={c} chat={chat} result={results.get(c.id)} onChange={onChange} />)}
+    </>
+  );
+}
+const isError = (content?: string) => { if (!content) return false; try { return 'error' in (JSON.parse(content) as object); } catch { return false; } };
+
+function ToolChip({ call, failed }: { call: AIToolCall; failed?: boolean }) {
+  const { icon, text } = chipLabel(call);
+  return <span className={'tool-chip' + (failed ? ' failed' : '')}><Icon name={failed ? 'info' : icon} size={13} stroke={2.2} />{text}{failed ? ' · failed' : ''}</span>;
+}
+
+function CardBlock({ call, chat, result, onChange }: { call: AIToolCall; chat: Chat; result?: string; onChange: () => void }) {
+  const p = chat.pending?.toolCallId === call.id ? chat.pending : null;
+  const done = chat.cards?.[call.id];
+  if (p?.kind === 'ask' || (!p && done?.kind === 'ask')) {
+    const qs = p?.questions ?? done?.questions ?? [];
+    return <AskCard chatId={chat.id} questions={qs} answered={p ? undefined : { answers: done?.answers, text: done?.comment }} />;
+  }
+  if (p) return <RequestBlockCard chatId={chat.id} p={p} onChange={onChange} />;
+  if (done) return <RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.comment} />;
+  if (result && isError(result)) return <div className="tool-chips"><span className="tool-chip failed"><Icon name="info" size={13} stroke={2.2} />{call.name === 'ask_user' ? 'Question' : 'Request'} didn’t validate · retrying</span></div>;
+  return null;
+}
+
+// ---- composer: text, attach menu (photo / camera / video / file), send / stop ----
+function Composer({ chat, running, inputRef }: { chat: Chat; running: boolean; inputRef: React.RefObject<HTMLTextAreaElement | null> }) {
+  const [text, setText] = useState('');
+  const [atts, setAtts] = useState<{ label: string; kind: 'image' | 'file' | 'video'; parts: AIPart[] }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const st = useStatus();
+  const loc = useLocation();
+  const pending = chat.pending?.status === 'pending';
+  const ask = pending && chat.pending?.kind === 'ask';
+  useLayoutEffect(() => { const el = inputRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; } }, [text, inputRef]);
+  const canSend = !running && !busy && (!!text.trim() || (!pending && atts.length > 0));
+  const send = async () => {
+    if (!canSend) return;
+    const parts: AIPart[] = [...atts.flatMap((a) => a.parts), ...(text.trim() ? [{ type: 'text' as const, text: text.trim() }] : [])];
+    setText(''); setAtts([]);
+    const fresh = await getChat(chat.id);
+    await sendMessage(chat.id, parts, fresh?.context ?? { route: loc.pathname, date: dateKey() });
+  };
+  const add = async (files: FileList | null) => {
+    setMenu(false);
+    const list = [...(files ?? [])].slice(0, 4);
+    if (!list.length) return;
+    setBusy(true);
+    const { provider } = pickOf(chat, st);
+    try {
+      for (const f of list) {
+        const parts = await fileToParts(f, { video: !!provider?.video });
+        const kind: 'image' | 'file' | 'video' = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : 'file';
+        setAtts((x) => [...x, { label: f.name, kind, parts }].slice(-4));
+      }
+    } catch (e) { await notice('Couldn’t attach that', e instanceof AttachError ? e.message : 'Try another file.'); }
+    finally { setBusy(false); }
+  };
+  const placeholder = ask ? 'Or answer in your words…' : pending ? 'What should change?' : 'Message';
+  return (
+    <div className="composer-wrap">
+      {atts.length > 0 && (
+        <div className="composer-imgs">
+          {atts.map((a, i) => {
+            const img = a.parts.find((p) => p.type === 'image') as Extract<AIPart, { type: 'image' }> | undefined;
+            return (
+              <span key={i} className="composer-img">
+                {a.kind === 'image' && img ? <img alt={a.label} src={`data:${img.mime};base64,${img.base64}`} /> : <span className="composer-file"><Icon name={a.kind === 'video' ? 'play' : 'note'} size={18} /><span className="ellipsis">{a.label}</span></span>}
+                <button aria-label={`Remove ${a.label}`} onClick={() => setAtts((x) => x.filter((_, j) => j !== i))}><Icon name="close" size={12} stroke={3} /></button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div className="composer">
+        <button className="composer-btn" aria-label="Attach" aria-haspopup="dialog" disabled={running || busy} onClick={() => setMenu(true)}><Icon name={busy ? 'more' : 'plus'} size={22} stroke={2.2} /></button>
+        <textarea ref={inputRef} rows={1} className="composer-input" dir="auto" value={text} placeholder={placeholder} aria-label="Message"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); void send(); } }} />
+        <AnimatePresence initial={false} mode="popLayout">
+          {running ? (
+            <motion.button key="stop" className="send-btn stop" aria-label="Stop" onClick={() => stop(chat.id)} {...swap}><Icon name="stop" size={16} stroke={3} /></motion.button>
+          ) : (
+            <motion.button key="send" className="send-btn" aria-label="Send" disabled={!canSend} onClick={send} {...swap}><Icon name="arrowUp" size={20} stroke={2.6} /></motion.button>
+          )}
+        </AnimatePresence>
+      </div>
+      <Sheet open={menu} onClose={() => setMenu(false)} title="Attach">
+        <div className="attach-grid">
+          <AttachOption icon="image" label="Photo" accept="image/*" multiple onPick={add} />
+          <AttachOption icon="camera" label="Camera" accept="image/*" capture onPick={add} />
+          <AttachOption icon="play" label="Video" accept="video/*" onPick={add} />
+          <AttachOption icon="note" label="File" accept="application/pdf,text/plain,text/csv,text/markdown,application/json,.csv,.json,.md,.txt,.tsv" onPick={add} />
+        </div>
+        <p className="faint t-13" style={{ margin: '12px 4px 0' }}>PDFs up to 10 MB, videos up to 20 MB. Text files are read in.</p>
+      </Sheet>
+    </div>
+  );
+}
+function AttachOption({ icon, label, accept, capture, multiple, onPick }: { icon: string; label: string; accept: string; capture?: boolean; multiple?: boolean; onPick: (f: FileList | null) => void }) {
+  return (
+    <label className="attach-opt pressable">
+      <span className="attach-ic" aria-hidden><Icon name={icon} size={24} stroke={2} /></span>
+      <span>{label}</span>
+      <input type="file" className="sr-only" accept={accept} multiple={multiple} {...(capture ? { capture: 'environment' as const } : {})}
+        onChange={(e) => { const f = e.target.files; onPick(f); e.target.value = ''; }} />
+    </label>
+  );
+}
+const swap = { initial: { scale: 0.25, opacity: 0, filter: 'blur(4px)' }, animate: { scale: 1, opacity: 1, filter: 'blur(0px)' }, exit: { scale: 0.25, opacity: 0, filter: 'blur(4px)' }, transition: { type: 'spring', duration: 0.3, bounce: 0 } } as const;
 
 /** Quick chats (lib/agent/quick.ts) open here, as a sheet over the current page. */
 export function QuickChatHost() {
   const id = useQuickChat();
   const chat = useChat(id ?? undefined);
   const nav = useNavigate();
+  const [model, setModel] = useState(false);
   const close = () => setQuickChat(null);
   return (
     <Sheet open={!!id} onClose={close} full title={<span className="ellipsis" dir="auto" style={{ display: 'block' }}>{chat?.title ?? 'Assistant'}</span>}
@@ -207,179 +465,16 @@ export function QuickChatHost() {
           <button className="icon-btn" aria-label="Open full screen" onClick={() => { close(); nav(`/agent/${chat.id}`); }}><Icon name="chevronUp" size={22} /></button>
         </>
       )}>
-      {chat && <div className="quick-chat"><ChatBody chat={chat} /></div>}
+      {chat && (
+        <div className="quick-chat">
+          <div className="quick-model"><ModelChip chat={chat} onOpen={() => setModel(true)} /></div>
+          <ChatBody chat={chat} />
+          <ModelSheet chat={chat} open={model} onClose={() => setModel(false)} />
+        </div>
+      )}
     </Sheet>
   );
 }
-
-
-function EmptyChat({ onPick }: { onPick: (t: string) => void }) {
-  const ideas = ['How was my training this week?', 'What did I eat today?', 'Log 2 eggs for breakfast'];
-  return (
-    <div className="chat-empty">
-      <span className="chat-empty-glyph" aria-hidden><Icon name="sparkle" size={30} stroke={1.7} /></span>
-      <div className="stack" style={{ gap: 8, width: '100%' }}>
-        {ideas.map((t) => <button key={t} className="mini-row pressable" onClick={() => onPick(t)}><span className="grow">{t}</span><Icon name="arrowUp" size={16} /></button>)}
-      </div>
-    </div>
-  );
-}
-
-/** Minimal formatting: paragraphs, line breaks, **bold**. */
-function Rich({ text }: { text: string }) {
-  return <>{text.split(/(\*\*[^*]+\*\*)/g).map((s, i) => (s.startsWith('**') && s.endsWith('**') && s.length > 4 ? <b key={i}>{s.slice(2, -2)}</b> : <Fragment key={i}>{s}</Fragment>))}</>;
-}
-
-function Message({ m, chat, results }: { m: AIMessage; chat: Chat; results: Map<string, string> }) {
-  if (m.role === 'tool') return null;
-  if (m.role === 'user') {
-    return (
-      <div className="bubble user" dir="auto">
-        {m.content.map((p, i) => (p.type === 'image'
-          ? <img key={i} className="bubble-img" alt="Attached photo" src={`data:${p.mime};base64,${p.base64}`} />
-          : isContextPart(p.text) ? null : <Fragment key={i}>{p.text}</Fragment>))}
-      </div>
-    );
-  }
-  const calls = m.toolCalls ?? [];
-  return (
-    <>
-      {m.text && <div className="bubble bot" dir="auto"><Rich text={m.text} /></div>}
-      {calls.length > 0 && (
-        <div className="tool-chips">
-          {calls.filter((c) => c.name !== 'request_changes').map((c) => <ToolChip key={c.id} call={c} failed={isError(results.get(c.id))} />)}
-        </div>
-      )}
-      {calls.filter((c) => c.name === 'request_changes').map((c) => <RequestBlock key={c.id} call={c} chat={chat} result={results.get(c.id)} />)}
-    </>
-  );
-}
-const isError = (content?: string) => { if (!content) return false; try { return 'error' in (JSON.parse(content) as object); } catch { return false; } };
-
-function ToolChip({ call, failed }: { call: AIToolCall; failed?: boolean }) {
-  const { icon, text } = chipLabel(call);
-  return <span className={'tool-chip' + (failed ? ' failed' : '')}><Icon name={failed ? 'info' : icon} size={13} stroke={2.2} />{text}{failed ? ' · failed' : ''}</span>;
-}
-
-function RequestBlock({ call, chat, result }: { call: AIToolCall; chat: Chat; result?: string }) {
-  if (chat.pending?.toolCallId === call.id) return <RequestCard chatId={chat.id} p={chat.pending} />;
-  const done = chat.cards?.[call.id];
-  if (done) return <RequestCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.comment} />;
-  if (result && isError(result)) return <div className="tool-chips"><span className="tool-chip failed"><Icon name="info" size={13} stroke={2.2} />Request didn’t validate · retrying</span></div>;
-  return null;
-}
-
-function useDescribed(actions: RequestAction[]) {
-  const [d, setD] = useState<Described[] | null>(null);
-  const key = JSON.stringify(actions);
-  useEffect(() => { let alive = true; Promise.all(actions.map(describeAction)).then((x) => alive && setD(x)); return () => { alive = false; }; }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return d;
-}
-
-const OUTCOME: Record<string, { icon: string; text: string; cls: string }> = {
-  applied: { icon: 'check', text: 'Applied', cls: 'good' }, rejected: { icon: 'close', text: 'Rejected', cls: 'muted' },
-  comment: { icon: 'chat', text: 'Commented', cls: 'muted' }, failed: { icon: 'info', text: 'Failed', cls: 'bad' },
-};
-
-function RequestCard({ chatId, p, outcome, comment }: { chatId: string; p: PendingRequest; outcome?: string; comment?: string }) {
-  const described = useDescribed(p.actions);
-  const [note, setNote] = useState('');
-  const active = !outcome;
-  const busy = p.status === 'applying';
-  const o = outcome ? OUTCOME[outcome] : null;
-  return (
-    <section className={'req-card' + (active ? ' active' : ' done')} aria-label={`Request: ${p.summary}`}>
-      <div className="req-head">
-        <span className="req-glyph" aria-hidden><Icon name="edit" size={16} stroke={2.2} /></span>
-        <span className="grow req-summary" dir="auto">{p.summary}</span>
-        {o && <span className={'req-outcome ' + o.cls}><Icon name={o.icon} size={14} stroke={2.6} />{o.text}</span>}
-      </div>
-      <div className="req-actions">
-        {(described ?? p.actions.map((a) => ({ title: a.name, icon: 'bolt', rows: [] }))).map((d, i) => (
-          <div key={i} className="req-action">
-            <div className="req-action-title"><Icon name={d.icon} size={15} stroke={2.2} />{d.title}</div>
-            {d.rows.length > 0 && (
-              <dl className="req-rows">
-                {d.rows.map((r, j) => <div key={j}><dt dir="auto">{r.label}</dt><dd dir="auto" className="num">{r.value}</dd></div>)}
-              </dl>
-            )}
-          </div>
-        ))}
-      </div>
-      {comment && <p className="req-comment" dir="auto">“{comment}”</p>}
-      {active && (
-        <>
-          <label className="req-note">
-            <span className="sr-only">Comment</span>
-            <input className="input" placeholder="Comment (optional)" value={note} disabled={busy} onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && note.trim()) { e.preventDefault(); void resolvePending(chatId, { type: 'comment', comment: note }); } }} />
-            {note.trim() && <button className="icon-btn sm tint" aria-label="Send comment" disabled={busy} onClick={() => resolvePending(chatId, { type: 'comment', comment: note })}><Icon name="arrowUp" size={18} stroke={2.4} /></button>}
-          </label>
-          <div className="req-buttons">
-            <button className="btn lg" disabled={busy} onClick={() => resolvePending(chatId, { type: 'reject', comment: note })}><Icon name="close" size={18} stroke={2.4} />Reject</button>
-            <button className="btn lg good" disabled={busy} onClick={() => resolvePending(chatId, { type: 'apply' })}><Icon name="check" size={18} stroke={2.6} />{busy ? 'Applying…' : 'Apply'}</button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function Composer({ chat, running }: { chat: Chat; running: boolean }) {
-  const [text, setText] = useState('');
-  const [imgs, setImgs] = useState<Extract<AIPart, { type: 'image' }>[]>([]);
-  const [busyImg, setBusyImg] = useState(false);
-  const ta = useRef<HTMLTextAreaElement>(null);
-  const loc = useLocation();
-  const pending = chat.pending?.status === 'pending';
-  useLayoutEffect(() => { const el = ta.current; if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; } }, [text]);
-  const canSend = !running && (!!text.trim() || (!pending && imgs.length > 0)) && !busyImg;
-  const send = async () => {
-    if (!canSend) return;
-    const parts: AIPart[] = [...imgs, ...(text.trim() ? [{ type: 'text' as const, text: text.trim() }] : [])];
-    setText(''); setImgs([]);
-    const fresh = await getChat(chat.id);
-    await sendMessage(chat.id, parts, fresh?.context ?? { route: loc.pathname, date: dateKey() });
-  };
-  return (
-    <div className="composer-wrap">
-      {imgs.length > 0 && (
-        <div className="composer-imgs">
-          {imgs.map((im, i) => (
-            <span key={i} className="composer-img">
-              <img alt={`Photo ${i + 1}`} src={`data:${im.mime};base64,${im.base64}`} />
-              <button aria-label={`Remove photo ${i + 1}`} onClick={() => setImgs((x) => x.filter((_, j) => j !== i))}><Icon name="close" size={12} stroke={3} /></button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="composer">
-        <label className="icon-btn composer-btn" aria-label="Add photo">
-          <Icon name="camera" size={22} />
-          <input type="file" accept="image/*" className="sr-only" disabled={running} onChange={async (e) => {
-            const f = e.target.files?.[0]; e.target.value = '';
-            if (!f) return;
-            setBusyImg(true);
-            try { const im = await downscaleImage(f); setImgs((x) => [...x, im].slice(-4)); }
-            catch { await notice('Couldn’t read that photo', 'Try another photo, or a screenshot of it.'); }
-            finally { setBusyImg(false); }
-          }} />
-        </label>
-        <textarea ref={ta} rows={1} className="composer-input" dir="auto" value={text} placeholder={pending ? 'Comment on the request…' : 'Message'} aria-label="Message"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); void send(); } }} />
-        <AnimatePresence initial={false} mode="popLayout">
-          {running ? (
-            <motion.button key="stop" className="send-btn stop" aria-label="Stop" onClick={() => stop(chat.id)} {...swap}><Icon name="stop" size={16} stroke={3} /></motion.button>
-          ) : (
-            <motion.button key="send" className="send-btn" aria-label="Send" disabled={!canSend} onClick={send} {...swap}><Icon name="arrowUp" size={20} stroke={2.6} /></motion.button>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-const swap = { initial: { scale: 0.25, opacity: 0, filter: 'blur(4px)' }, animate: { scale: 1, opacity: 1, filter: 'blur(0px)' }, exit: { scale: 0.25, opacity: 0, filter: 'blur(4px)' }, transition: { type: 'spring', duration: 0.3, bounce: 0 } } as const;
 
 /** Floating button on every screen except the agent itself and a live workout. Opens a chat with this screen as context. */
 export function AgentFab({ hidden }: { hidden?: boolean }): ReactNode {
