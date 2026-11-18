@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
     planWeek: true,
     adaptiveMaintenance: true,
     agent: true,
+    journal: true,
   },
 };
 

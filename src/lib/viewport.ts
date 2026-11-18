@@ -30,15 +30,25 @@ function apply() {
 /** On-screen keyboard: how much of the layout it covers, as --kb (0 when closed), plus html.kb-open.
  *  --app-h is left alone (it is the screen frame); screens that have an input at the bottom (the agent chat) lift
  *  themselves by --kb. Below 120 px is noise (toolbar/status bar differences), not a keyboard. */
+export function keyboardInset(vv: { height: number; offsetTop: number } | null | undefined, frameH: number, innerH: number) {
+  if (!vv) return 0;
+  // The chat screen hangs off the bottom of #root, which is `frameH` (--app-h) tall from the top of the layout
+  // viewport. In iOS standalone that frame is the full screen (e.g. 844) while innerHeight can report less (797), so
+  // measuring against innerHeight left the composer ~47 px too low: under the keyboard. The visible area ends at
+  // offsetTop + height (offsetTop = how far iOS panned the visual viewport to reveal the input), so the keyboard
+  // covers everything of the frame below that line.
+  const kb = Math.round(frameH - (vv.offsetTop + vv.height));
+  // closed: the only difference is the frame-vs-innerHeight gap (status bar), never a keyboard
+  const closedGap = Math.max(0, frameH - innerH);
+  return kb > closedGap + 80 ? kb : 0;
+}
 function keyboard() {
-  const vv = window.visualViewport;
-  const kb = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
-  const open = kb > 120;
-  document.documentElement.style.setProperty('--kb', `${open ? kb : 0}px`);
-  document.documentElement.classList.toggle('kb-open', open);
-  // iOS scrolls the (non-scrolling) document to reveal the input; the chat screen lifts itself instead. Elsewhere (sheets)
-  // leave iOS's own scroll-into-view alone.
-  if (open && document.querySelector('.chat-screen')) window.scrollTo(0, 0);
+  const frameH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || window.innerHeight;
+  const kb = keyboardInset(window.visualViewport, frameH, window.innerHeight);
+  document.documentElement.style.setProperty('--kb', `${kb}px`);
+  // when iOS pans the page up to reveal the input, the chat's header follows the visible top edge
+  document.documentElement.style.setProperty('--kb-top', `${kb > 0 ? Math.max(0, Math.round(window.visualViewport?.offsetTop ?? 0)) : 0}px`);
+  document.documentElement.classList.toggle('kb-open', kb > 0);
 }
 
 export function installViewportFix() {

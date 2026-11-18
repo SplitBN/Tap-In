@@ -11,7 +11,7 @@ export type AIMessage =
   | { role: 'assistant'; text?: string; toolCalls?: AIToolCall[]; opaque?: unknown }
   | { role: 'tool'; toolCallId: string; name: string; content: string };
 export type AITool = { name: string; description: string; parameters: Record<string, unknown> };
-export type Effort = 'low' | 'medium' | 'high';
+export type Effort = 'auto' | 'low' | 'medium' | 'high';
 export type ProviderId = 'chatgpt' | 'openrouter';
 
 /** Per user: which provider first when both are connected. */
@@ -20,8 +20,9 @@ export type AIConfig = { primary: ProviderId; fallback: ProviderId | null };
 export type AIGlobal = {
   models: { chatgpt: string; openrouter: string };
   openrouterProvider: { order: string[]; allow_fallbacks: boolean } | null;
-  defaultEffort: Effort;
-  helperEffort: Effort;
+  defaultEffort: Effort; // 'auto' = no reasoning parameter (provider default)
+  titleEffort: Effort;
+  extractEffort: Effort;
   webModel: string;
 };
 export type AIProviderInfo = { id: ProviderId; connected: boolean; model: string; label: string; video: boolean; files: boolean };
@@ -41,7 +42,7 @@ export type TurnEvent =
   | { type: 'done'; provider: string; model: string; effort?: Effort; opaque?: unknown; usage?: { input: number; output: number } }
   | { type: 'error'; code: 'no_provider' | 'auth' | 'limit' | 'provider' | 'bad_request' | 'network'; message: string };
 
-export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; effort?: Effort; provider?: ProviderId };
+export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; /** only 'title' from the client (server maps it to titleEffort) */ effort?: Effort | 'title'; provider?: ProviderId };
 
 export type RequestAction = {
   name: string;
@@ -62,6 +63,10 @@ export type PendingRequest = {
   actions: RequestAction[];
   questions?: AskQuestion[];
   status: PendingStatus;
+  /** the tool call already has a result (the user commented): the card stays open, but acting on it later goes in as a user note */
+  answered?: boolean;
+  /** the user's comment(s) on this card */
+  comments?: string[];
 };
 
 /** Where the user opened the agent from (route + date shown in that screen). */
@@ -80,19 +85,32 @@ export interface Chat {
   renamed?: boolean;
   /** titled by the helper call already */
   titled?: boolean;
-  /** this chat's model pick (header chip); undefined = the user's preferred provider / global default effort */
+  /** this chat's provider pick (header chip, only when both are connected); undefined = the user's preferred provider */
   provider?: ProviderId;
+  /** v2 per-chat effort, ignored since v3 (effort is admin-only) */
   effort?: Effort;
   /** what actually ran last (from `done`) */
   ran?: { provider: string; model: string; effort?: Effort };
   messages: AIMessage[];
   pending?: PendingRequest | null;
   /** past cards by toolCallId, so the chat can still render them after they were answered */
-  cards?: Record<string, { summary: string; actions: RequestAction[]; outcome: 'applied' | 'rejected' | 'comment' | 'failed' | 'answered'; comment?: string;
+  cards?: Record<string, { summary: string; actions: RequestAction[]; outcome: 'applied' | 'rejected' | 'comment' | 'failed' | 'answered' | 'replaced'; comment?: string;
     kind?: 'request' | 'ask'; questions?: AskQuestion[]; answers?: Record<string, string | string[]> }>;
+  /** charts / tables / stat tiles by toolCallId, resolved on the client (source queries run here, points capped) */
+  displays?: Record<string, Display>;
   context?: AgentContext;
   /** last error shown under the chat (cleared on the next send) */
   error?: string | null;
   createdAt: number;
   updatedAt: number;
 }
+
+// ---- display tools (show_chart / show_table / show_stats), resolved for rendering ----
+export type ChartPoint = { x: string; y: number };
+export type ChartSeries = { name: string; points: ChartPoint[] };
+export type ChartMarker = { x: string; label: string };
+export type ChartBand = { from: string; to?: string | null; label: string; tone?: 'good' | 'bad' | 'neutral' };
+export type Display =
+  | { type: 'chart'; title: string; kind: 'line' | 'bar' | 'area' | 'scatter'; yLabel?: string; unit?: string; series: ChartSeries[]; markers: ChartMarker[]; bands: ChartBand[]; note?: string }
+  | { type: 'table'; title?: string; columns: string[]; rows: (string | number | null)[][] }
+  | { type: 'stats'; items: { label: string; value: string | number; unit?: string; delta?: number; good?: 'up' | 'down' }[] };

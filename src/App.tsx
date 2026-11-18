@@ -22,6 +22,7 @@ import { ExercisesPage } from './pages/Exercises';
 import { CalendarPage } from './pages/Calendar';
 import { AgentChatPage, AgentFab, AgentMemoryPage, AgentNewPage, AgentPage, QuickChatHost } from './pages/Agent';
 import { purgeChats } from './lib/agent/chats';
+import { JournalPage } from './pages/Journal';
 
 function Fab() {
   const s = useSettings();
@@ -67,7 +68,7 @@ function TabBar() {
 const TITLES: [string, string][] = [ // longest prefix first
   ['/plans/all', 'Plans'], ['/plans/', 'Plan'], ['/plans', 'Gym'], ['/workouts/', 'Workout'], ['/session/', 'Workout'], ['/history', 'History'],
   ['/exercises', 'Exercises'], ['/exercise/', 'Exercise'], ['/stats', 'Stats'], ['/weight', 'Weight'], ['/settings', 'Settings'],
-  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'], ['/calendar', 'Calendar'], ['/agent', 'Agent'],
+  ['/food', 'Food'], ['/nutrition', 'Goals'], ['/supps', 'Supps'], ['/calendar', 'Calendar'], ['/agent', 'Agent'], ['/journal', 'Journal'],
 ];
 
 /** .app is the scroll container (see index.css), so reset it to the top on every route change.
@@ -120,6 +121,7 @@ export default function App() {
           <Route path="/nutrition" element={<NutritionPage />} />
           <Route path="/supps" element={<SupplementsPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/journal" element={<JournalPage />} />
           <Route path="/agent" element={<AgentPage />} />
           <Route path="/agent/new" element={<AgentNewPage />} />
           <Route path="/agent/memory" element={<AgentMemoryPage />} />

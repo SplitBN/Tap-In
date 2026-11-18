@@ -12,8 +12,9 @@ export const DEFAULT_CONFIG: AIConfig = { primary: 'chatgpt', fallback: 'openrou
 export const DEFAULT_GLOBAL: AIGlobal = {
   models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' },
   openrouterProvider: { order: ['river'], allow_fallbacks: true },
-  defaultEffort: 'medium',
-  helperEffort: 'low',
+  defaultEffort: 'auto',
+  titleEffort: 'low',
+  extractEffort: 'auto',
   webModel: 'perplexity/sonar',
 };
 
@@ -42,8 +43,10 @@ export function mergeGlobal(base: AIGlobal, p: any): AIGlobal {
     const allow = typeof p.openrouterProvider.allow_fallbacks === 'boolean' ? p.openrouterProvider.allow_fallbacks : g.openrouterProvider?.allow_fallbacks ?? true;
     g.openrouterProvider = order.length ? { order, allow_fallbacks: allow } : null; // empty order = let OpenRouter route
   }
+  if (isEffort(p.helperEffort)) g.titleEffort = g.extractEffort = p.helperEffort; // v2 rows: helperEffort covered both
   if (isEffort(p.defaultEffort)) g.defaultEffort = p.defaultEffort;
-  if (isEffort(p.helperEffort)) g.helperEffort = p.helperEffort;
+  if (isEffort(p.titleEffort)) g.titleEffort = p.titleEffort;
+  if (isEffort(p.extractEffort)) g.extractEffort = p.extractEffort;
   g.webModel = modelId(p.webModel) ?? g.webModel;
   return g;
 }

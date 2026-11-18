@@ -283,3 +283,103 @@ lets a web page the agent read trigger changes. Still only changeable by the use
 - Keyboard: `lib/viewport.ts` sets `--kb` from `visualViewport` (and `html.kb-open`); the chat screen sits on `bottom: var(--kb)`.
 - Fake provider (v2): admin status with both providers (GLM has video), photo + "log this…" → ask_user → batched
   run_query → food request with alternatives; "log X" → batched search → food request; title calls answered.
+
+---
+
+# v3 changes (2026-11-18, second round of real use) — override earlier sections where they differ
+
+## Effort: admin only, "auto" by default
+- Users never see effort. The chat model sheet only offers **which provider** (ChatGPT plan / OpenRouter), and only when
+  both are connected; with one connected the chip just shows the model name (no sheet).
+- `Effort = 'auto' | 'low' | 'medium' | 'high'`. `auto` = send no reasoning/effort parameter (provider/model default).
+- `AIGlobal`: `defaultEffort` (default `'auto'`), `titleEffort` (default `'low'`), `extractEffort` (default `'auto'`);
+  `helperEffort` removed (read it as a fallback for old rows). Admin section shows all three with Auto/Low/Medium/High.
+- `/ai/turn` `effort` stays accepted (admin testing) but the client no longer sends it except for the title call
+  (`effort: 'title'` alias → server uses `titleEffort`). Server ignores a non-admin's explicit effort other than `'title'`.
+
+## Request card comments (bug fix)
+Bug: commenting on a pending request hid the comment, closed the card as "changed", the agent replied, and nothing was
+actionable anymore. New behaviour:
+- The comment is shown as a normal user bubble in the chat.
+- The card stays **open** (Apply / Reject still work) after a comment. Tool result:
+  `{status:'comment', comment, note:'The request is still open and the user can still apply it as is. If it should change, call request_changes again with the full revised version — that replaces this card.'}`
+- A new request_changes in the same chat **supersedes** the older open card (old one shows "Replaced", greyed).
+- Applying or rejecting a card whose tool call was already answered (commented) appends a short user-side note
+  (`<context>user applied the earlier request: …results…</context>` / rejected) and continues the loop so the agent knows.
+- Same for ask_user: typed text answers it; the card shows the answer.
+
+## Chats housekeeping
+- Chat list: **Select** mode (checkboxes, Select all, Delete N with an in-app confirm).
+- Chats not updated for 7 days move to a collapsed **Older** row at the bottom ("Older · 23"), expanded on tap; quick
+  chats keep their 3-day purge. Search field at the top of the list when there are > 10 chats.
+
+## Keyboard (bug fix)
+On iPhone the composer moves up but still sits partly under the keyboard. Compute the keyboard inset from
+`visualViewport` correctly: `kb = max(0, window.innerHeight - vv.height - vv.offsetTop)` measured against the layout
+viewport the app actually uses (`--app-h`), and drop the bottom safe-area padding while the keyboard is open (the
+keyboard already covers the home indicator). Re-measure on `vv.resize` and `vv.scroll`. Keep the last message visible.
+
+## Rich answers: charts, tables, stat tiles
+New display tools (client-only, no side effects, no approval):
+- `show_chart({ title, kind: 'line'|'bar'|'area'|'scatter', y_label?, unit?, series: Series[], markers?: Marker[], bands?: Band[], journal?: boolean })`
+  - `Series = { name, points?: {x: string /*YYYY-MM-DD or label*/, y: number}[], source?: { command: string, input: object, x: string, y: string, path?: string } }`
+    — either inline points or a **source**: a `kind:'query'` command the client runs itself (so big data never goes through
+    the model), with dotted field paths into the result rows (`path` = where the row array is, e.g. `"days"`).
+  - `Marker = { x, label }` (single events, e.g. "PR"), `Band = { from, to?, label, tone?: 'good'|'bad'|'neutral' }`
+    (ranges, e.g. creatine on/off, a cut).
+  - `journal: true` overlays the user's journal entries in the chart's date range automatically (points as markers,
+    ranges as bands).
+- `show_table({ title?, columns: string[], rows: (string|number|null)[][] })` (≤ 50 rows; scrolls horizontally).
+- `show_stats({ items: { label, value, unit?, delta?: number, good?: 'up'|'down' }[] })` — big friendly tiles.
+Rendered inline in the chat with the app's chart components (`src/components/Charts.tsx`), role colours, dark theme,
+tap a point for its value. The tool result is a tiny ack (`{shown:true, points:n}`) so the model can comment on it.
+Instructions: prefer a chart/tiles/table over listing numbers; keep the text short around them; for "bench over time"
+use the exercise progress query as source; for supplement effects add creatine-on/off bands from supplement history.
+
+## Journal (new)
+Dated life events that can't be inferred from logs ("Started cut", "Exam season", "Moved out", "Sick").
+- Synced table `journal` `{ id, date, endDate?: string|null, title, note?: string, tag?: 'diet'|'training'|'health'|'life'|'other', createdAt, updatedAt, deletedAt }`
+  (add to server SYNC_TABLES and backup).
+- Commands: `journal.list` (query; from/to filter), `journal.add`, `journal.update`, `journal.end` (set endDate), `journal.delete` (actions).
+  Permission category `journal` (default ask).
+- UI: Journal page (`/journal`) — timeline list grouped by month, ongoing items marked, + to add (title, date, optional end,
+  tag, note); reachable from Home (widget or link) and Calendar (journal items show on their days); toggle `features.journal`.
+- Charts overlay journal entries (see `journal: true`); the agent may propose journal entries when the user mentions such
+  events ("I started a cut today" → propose journal.add) and uses them when explaining trends.
+
+## Memory: always-on + notebook
+- Memory stays the agent's notebook (preferences, facts about the user), separate from the journal (dated events).
+- `Memory` adds `pinned: boolean`. **Pinned** memories' full content goes in the instructions (cap ~1.5k tokens total;
+  the agent is told to keep pinned ones short, e.g. "bad left shoulder, avoid overhead pressing"); the rest stay as an
+  index (name + description) read with memory_read. memory_write takes `pinned`. Memory page shows a pin toggle.
+
+## v3 server notes
+- `/ai/turn` effort resolution: `'title'` → `global.titleEffort` (anyone); an explicit level (or old `tier` alias) is
+  honoured only for admins; otherwise `global.defaultEffort`. `'auto'` sends no `reasoning` field to either provider.
+  `done.effort` reports the resolved value (may be `'auto'`).
+- Old stored `helperEffort` seeds both `titleEffort` and `extractEffort`; explicit new fields win. `POST /ai/global`
+  still accepts `helperEffort` (sets both) but the response/status never include it.
+- `journal` added to server `SYNC_TABLES`.
+
+## v3 client notes (as built)
+- Effort: the client sends no `effort` on normal turns and `effort: 'title'` on the title call. The chat chip only names
+  the model; with both providers connected it opens a "Use" sheet (ChatGPT plan / OpenRouter). Admin section has
+  Thinking / Chat titles / Page extracts, each Auto · Low · Med · High. A v2 `helperEffort` is read as both helpers.
+- Card comments: the comment is the tool result (`status:'comment'` + note) and renders as the user's bubble right
+  after the card; the pending card stays open with `answered: true` (it no longer blocks the loop or new messages).
+  Apply/Reject on an answered card appends a user message `<context>user applied|rejected the earlier request "…": …</context>`
+  (rendered as a small centred note) and continues the loop. A new card replaces an open one (`outcome: 'replaced'`).
+- Display tools resolve on the client into `chat.displays[toolCallId]` (local only). Sources must be non-blocked
+  `kind:'query'` commands; x values that are timestamps become dates; > 365 points are evenly downsampled (ends kept).
+  Journal overlay: entries with an end or ongoing → bands (ongoing runs to the chart end), single days → markers.
+  The tool result is `{shown, points, series:[{name, points, first, last}], bands, markers}` or `{error}`.
+- Journal: `endDate` undefined = single day, `null` = ongoing, date = range; `journal.add` takes `ongoing`;
+  `journal.update` takes `singleDay` to drop the end. Dexie v5 table `journal`, in sync TABLES and backups,
+  `features.journal`, permission category `journal`. UI: /journal, Home widget, Calendar (underlined days + day sheet + legend).
+- Memory: `memory.pin` command; pinned contents inline in the instructions up to ~6k chars (the rest fall back to the
+  index); memory page has a pin toggle per row.
+- Keyboard: `keyboardInset(vv, frameH = --app-h, innerH)` = `frameH − (vv.offsetTop + vv.height)`, counted only when it
+  exceeds the closed-state gap (frameH − innerH) by 80 px; sets `--kb`, `--kb-top` (= offsetTop while open) and
+  `html.kb-open` (drops the composer's safe-area padding). The chat screen spans `top: var(--kb-top)` to
+  `bottom: var(--kb)`; the scroller re-pins to the last message on `visualViewport` resize.
+- Chats: Select mode (select all / delete N with confirm), "Older" fold for chats untouched 7 days, search when > 10.

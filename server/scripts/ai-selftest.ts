@@ -95,8 +95,13 @@ ok((none[0] as any).code === 'no_provider', 'no_provider');
 const c = mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter', fallback: 'openrouter', models: { x: 1 }, junk: 1 });
 ok(c.primary === 'openrouter' && c.fallback === null && mergeConfig(DEFAULT_CONFIG, { primary: 'openrouter' }).fallback === 'chatgpt' && Object.keys(c).length === 2, 'mergeConfig');
 const g = mergeGlobal(DEFAULT_GLOBAL, { models: { openrouter: 'anthropic/claude-haiku-5.5', chatgpt: '' }, defaultEffort: 'high', helperEffort: 'max', openrouterProvider: { order: ['river', 5] }, webModel: null });
-ok(g.models.openrouter === 'anthropic/claude-haiku-5.5' && g.models.chatgpt === 'gpt-6.1-sol' && g.defaultEffort === 'high' && g.helperEffort === 'low'
+ok(g.models.openrouter === 'anthropic/claude-haiku-5.5' && g.models.chatgpt === 'gpt-6.1-sol' && g.defaultEffort === 'high' && g.titleEffort === 'low' && g.extractEffort === 'auto'
   && g.openrouterProvider?.order.join() === 'river' && g.openrouterProvider.allow_fallbacks === true && g.webModel === 'perplexity/sonar', 'mergeGlobal');
+ok(DEFAULT_GLOBAL.defaultEffort === 'auto' && DEFAULT_GLOBAL.titleEffort === 'low' && DEFAULT_GLOBAL.extractEffort === 'auto', 'v3 effort defaults');
+const old = mergeGlobal(DEFAULT_GLOBAL, { helperEffort: 'medium' });
+ok(old.titleEffort === 'medium' && old.extractEffort === 'medium' && !('helperEffort' in old), 'old helperEffort → title + extract');
+const nw = mergeGlobal(DEFAULT_GLOBAL, { helperEffort: 'medium', titleEffort: 'high', extractEffort: 'auto', defaultEffort: 'auto' });
+ok(nw.titleEffort === 'high' && nw.extractEffort === 'auto' && nw.defaultEffort === 'auto', 'new effort fields win over helperEffort');
 ok(mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: null }).openrouterProvider === null && mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: { order: [] } }).openrouterProvider === null, 'mergeGlobal routing off');
 ok(prettyModel('gpt-6.1-sol') === 'GPT-6.1 Sol' && prettyModel('z-ai/glm-5.3-flash') === 'GLM 5.3 Flash', 'prettyModel');
 
@@ -134,6 +139,9 @@ const ob = sent[1].body;
 ok(ob.reasoning?.effort === 'low' && ob.provider?.order?.[0] === 'river' && ob.provider.allow_fallbacks === true && ob.model === 'z-ai/glm-5.3-flash', 'openrouter body: reasoning + provider routing');
 await collect(openrouterProvider('k', { ...DEFAULT_GLOBAL, openrouterProvider: null }).turn(req, 'm'));
 ok(!('provider' in sent[2].body), 'openrouter body: no routing when off');
+await collect(openrouterProvider('k', DEFAULT_GLOBAL).turn({ ...req, effort: 'auto' }, 'm'));
+await collect(gptP.turn({ ...req, effort: 'auto' }, gm));
+ok(!('reasoning' in sent[3].body) && !('reasoning' in sent[4].body), 'effort auto → no reasoning param (both)');
 globalThis.fetch = realFetch;
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');

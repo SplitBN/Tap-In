@@ -15,6 +15,7 @@ type Outcome = NonNullable<Chat['cards']>[string]['outcome'];
 const OUTCOME: Record<string, { icon: string; text: string; cls: string }> = {
   applied: { icon: 'check', text: 'Done', cls: 'good' }, rejected: { icon: 'close', text: 'Skipped', cls: 'muted' },
   comment: { icon: 'chat', text: 'Changing', cls: 'muted' }, failed: { icon: 'info', text: 'Failed', cls: 'bad' }, answered: { icon: 'check', text: 'Answered', cls: 'good' },
+  replaced: { icon: 'swap', text: 'Replaced', cls: 'muted' },
 };
 const spring = { type: 'spring', bounce: 0, duration: 0.35 } as const;
 const appear = { initial: { opacity: 0, y: 10, scale: 0.98 }, animate: { opacity: 1, y: 0, scale: 1 }, transition: spring };

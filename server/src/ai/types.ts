@@ -10,8 +10,8 @@ export type AIMessage =
   | { role: 'assistant'; text?: string; toolCalls?: AIToolCall[]; opaque?: unknown }
   | { role: 'tool'; toolCallId: string; name: string; content: string };
 export type AITool = { name: string; description: string; parameters: Record<string, unknown> };
-export type Effort = 'low' | 'medium' | 'high';
-export const EFFORTS: Effort[] = ['low', 'medium', 'high'];
+export type Effort = 'auto' | 'low' | 'medium' | 'high'; // auto = send no reasoning/effort parameter (model default)
+export const EFFORTS: Effort[] = ['auto', 'low', 'medium', 'high'];
 export type ProviderId = 'chatgpt' | 'openrouter';
 
 /** Per user: which provider to prefer when both are connected. */
@@ -21,8 +21,9 @@ export type AIConfig = { primary: ProviderId; fallback: ProviderId | null };
 export type AIGlobal = {
   models: { chatgpt: string; openrouter: string }; // chatgpt: if not in the account's list → first listed
   openrouterProvider: { order: string[]; allow_fallbacks: boolean } | null; // sent as OpenRouter `provider`
-  defaultEffort: Effort;
-  helperEffort: Effort; // titles, web/read extract
+  defaultEffort: Effort; // chat turns
+  titleEffort: Effort; // chat title call (/ai/turn effort:'title')
+  extractEffort: Effort; // web/read extract
   webModel: string;
 };
 

@@ -4,7 +4,7 @@
 // volatile (time, screen) goes here — that rides in a <context> block on each user message (contextBlock below),
 // which stays in the history, so every later turn keeps the same prefix.
 import { run } from '../../api/registry';
-import { memoryList } from '../../api/memory';
+import { memoryList, pinnedMemories } from '../../api/memory';
 import { getSettings } from '../../db/settings';
 import { commandIndex, coreBlock } from './tools';
 import type { AgentContext } from './types';
@@ -26,6 +26,17 @@ const RULES = `You are the assistant inside Tap In, the user's personal gym, foo
 - Attached text files arrive inline; PDFs and videos as files; video on a model without video support arrives as a few frames.
 - Dates are local YYYY-MM-DD.
 
+# Showing data (phones are bad at walls of numbers)
+- Prefer show_chart / show_stats / show_table over listing numbers; keep the text around them to a line or two.
+- Trends over time → show_chart with a source (the app runs the query, so the data never has to pass through you): e.g. bench over time = source { command: "progress.exercise", input: { exerciseId }, path: the timeline array, x: its date field, y: e1rm or best weight } (check field names with a run_query first if unsure).
+- Supplement effects: add bands for when it was taken (from supplements.periods — compact on-periods; don't page through supplements.history for this), e.g. { from, to, label: "Creatine", tone: "good" }; single events (a PR) as markers.
+- Set journal: true on trend charts so the user's life events (cut, exam season, sick) show up, and use them when explaining a trend.
+- Headline numbers (this week vs last) → show_stats with delta and good: up/down. Comparisons → show_table.
+
+# Journal vs memory
+- The journal holds dated life events the logs can't show ("Started cut", "Exam season", "Moved out", "Sick"). When the user mentions one, propose journal.add (ongoing: true for things that last until ended, journal.end when they stop).
+- Memory is your notebook of lasting facts and preferences. Pinned memories (below, with content) matter in almost every answer.
+
 # Logging food (text or photo)
 1. Work out as much as you can yourself. From a photo: every item (drinks and sauces too), cooking method, and the portion from visual cues (plate ≈ 26 cm, hand, cutlery, count the pieces). From text: the user's words, memories, what they usually log.
 2. Search all items in ONE batched run_query (foods.search per item, a couple of phrasings each: English + Hebrew, generic + branded). The search ranks the user's own and frequent foods first: prefer them when they match. Use foods.get only if you need portions you don't have.
@@ -35,7 +46,11 @@ const RULES = `You are the assistant inside Tap In, the user's personal gym, foo
 
 export async function buildInstructions(): Promise<string> {
   const s = await getSettings();
-  const memories = await run(memoryList, {});
+  const memories = (await run(memoryList, {})).filter((m) => !m.pinned);
+  const pinned = await pinnedMemories();
+  let budget = 6000; // ≈1.5k tokens of pinned notes; the rest are listed by name only
+  const pinnedLines: string[] = [];
+  for (const m of pinned) { const line = `- ${m.name}: ${m.content.replace(/\s+/g, ' ')}`; if (line.length > budget) { memories.push({ id: m.id, name: m.name, description: m.description, pinned: true, updatedAt: '' }); continue; } budget -= line.length; pinnedLines.push(line); }
   const on = Object.entries(s.features).filter(([, v]) => v !== false).map(([k]) => k).sort().join(', ');
   const off = Object.entries(s.features).filter(([, v]) => v === false).map(([k]) => k).sort().join(', ') || 'none';
   // oldest first: a new memory appends at the end instead of shifting everything after it
@@ -51,7 +66,10 @@ ${commandIndex()}
 # Settings
 Weight unit: ${s.unit}. Effort: ${s.effortMode.toUpperCase()}. Features on: ${on}. Off: ${off}.
 
-# Memory index (id · name · description)
+# Pinned memories (always true; keep in mind)
+${pinnedLines.length ? pinnedLines.join('\n') : '(none)'}
+
+# Memory index (id · name · description — memory_read for the content)
 ${mem.length ? mem.map((m) => `${m.id} · ${m.name} · ${m.description}`).join('\n') : '(empty)'}`;
 }
 

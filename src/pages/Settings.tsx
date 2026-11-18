@@ -65,6 +65,7 @@ export function SettingsPage() {
         <Toggle label="Food" icon="food" role="food" on={f.food} onChange={feat('food')} />
         <Toggle label="Supps" icon="pill" role="supp" sub="Supplements, medications and peptides" on={f.supplements} onChange={feat('supplements')} />
         <Toggle label="Agent" icon="sparkle" role="gym" sub="Ask, log and plan by chatting" on={f.agent !== false} onChange={feat('agent')} />
+        <Toggle label="Journal" icon="book" role="neutral" sub="Life events: a cut, exam season, being sick" on={f.journal !== false} onChange={feat('journal')} />
       </div>
       {f.gym && <>
         <div className="section-title">Workout</div>

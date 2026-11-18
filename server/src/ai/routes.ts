@@ -168,7 +168,7 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
       const s = await loadState(env, userId);
       const chain = providerChain(env, userId, s);
       if (!chain.length) return null;
-      return (await completeText(chain, EXTRACT_INSTRUCTIONS, extractPrompt(page, question), s.global.helperEffort)).trim() || null;
+      return (await completeText(chain, EXTRACT_INSTRUCTIONS, extractPrompt(page, question), s.global.extractEffort)).trim() || null;
     };
     try { return json(await webRead(target, typeof prompt === 'string' ? prompt : null, extract)); }
     catch (e) { if (e instanceof WebError) throw new HttpError(e.status, e.message); throw e; }
@@ -186,7 +186,7 @@ function parsePasted(s: unknown): URLSearchParams | null {
 }
 
 // ---------------- /ai/turn ----------------
-type TurnBody = Omit<TurnRequest, 'effort'> & { effort: Effort | null; provider: ProviderId | null };
+type TurnBody = Omit<TurnRequest, 'effort'> & { effort: Effort | 'title' | null; provider: ProviderId | null };
 const TIER_EFFORT: Record<string, Effort> = { cheap: 'low', smart: 'high' }; // v1 alias
 
 function validPart(c: any) {
@@ -201,7 +201,7 @@ function validPart(c: any) {
 function validTurn(b: any): TurnBody | null {
   if (!b || typeof b !== 'object') return null;
   const effort = b.effort != null ? b.effort : b.tier != null ? TIER_EFFORT[b.tier] : null;
-  if (effort !== null && !isEffort(effort)) return null;
+  if (effort !== null && effort !== 'title' && !isEffort(effort)) return null;
   if (b.provider != null && !PROVIDERS.includes(b.provider)) return null;
   if (typeof (b.instructions ?? '') !== 'string' || !Array.isArray(b.messages) || !b.messages.length || !Array.isArray(b.tools ?? [])) return null;
   for (const m of b.messages as AIMessage[]) {
@@ -235,7 +235,9 @@ async function turn(req: Request, env: Env, ctx: ExecutionContext, userId: strin
       const s = await loadState(env, userId);
       const chain = providerChain(env, userId, s, parsed.provider); // the chat's pick first, then the user's fallback
       const { provider: _p, ...rest } = parsed;
-      for await (const ev of runTurn(chain, { ...rest, effort: parsed.effort ?? s.global.defaultEffort }, abort.signal)) {
+      // effort is admin-only: 'title' → titleEffort; an explicit level counts only for admins (testing); else defaultEffort
+      const effort = parsed.effort === 'title' ? s.global.titleEffort : parsed.effort && isAdmin(env, userId) ? parsed.effort : s.global.defaultEffort;
+      for await (const ev of runTurn(chain, { ...rest, effort }, abort.signal)) {
         if (abort.signal.aborted) break; // client went away
         await send(ev);
       }

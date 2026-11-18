@@ -32,13 +32,15 @@ const post = <T>(path: string, body: unknown = {}) => req<T>(path, { method: 'PO
 
 export const DEFAULT_GLOBAL: AIGlobal = {
   models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' }, openrouterProvider: { order: ['river'], allow_fallbacks: true },
-  defaultEffort: 'medium', helperEffort: 'low', webModel: 'perplexity/sonar',
+  defaultEffort: 'auto', titleEffort: 'low', extractEffort: 'auto', webModel: 'perplexity/sonar',
 };
 /** One place that turns whatever /ai/status returns (v2, or a lagging v1 Worker) into the v2 shape. */
 export function normalizeStatus(raw: Partial<AIStatus> & { config?: Partial<AIConfig> }): AIStatus {
   const chatgpt = { connected: !!raw.chatgpt?.connected, ...(raw.chatgpt?.email ? { email: raw.chatgpt.email } : {}) };
   const openrouter = { hasKey: !!raw.openrouter?.hasKey };
-  const global: AIGlobal = { ...DEFAULT_GLOBAL, ...raw.global, models: { ...DEFAULT_GLOBAL.models, ...raw.global?.models } };
+  const g0 = (raw.global ?? {}) as Partial<AIGlobal> & { helperEffort?: AIGlobal['titleEffort'] }; // helperEffort: v2 rows
+  const { helperEffort, ...g1 } = g0;
+  const global: AIGlobal = { ...DEFAULT_GLOBAL, ...(helperEffort ? { titleEffort: helperEffort, extractEffort: helperEffort } : {}), ...g1, models: { ...DEFAULT_GLOBAL.models, ...g0.models } };
   const providers: AIProviderInfo[] = Array.isArray(raw.providers) && raw.providers.length ? raw.providers : [
     { id: 'chatgpt', connected: chatgpt.connected, model: global.models.chatgpt, label: 'ChatGPT', video: false, files: true },
     { id: 'openrouter', connected: openrouter.hasKey, model: global.models.openrouter, label: 'OpenRouter', video: false, files: true },

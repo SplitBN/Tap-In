@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AskCard, RequestBlockCard } from '../components/AgentCards';
+import { DisplayCard } from '../components/AgentChart';
 import { MemoryList } from '../components/AgentSettings';
 import { confirmDialog, notice } from '../components/Dialog';
 import { Icon } from '../components/Icon';
@@ -14,7 +16,7 @@ import { isContextPart } from '../lib/agent/instructions';
 import { cachedStatus, needsReply, recoverChat, runLoop, sendMessage, stop, useLive } from '../lib/agent/loop';
 import { setQuickChat, useQuickChat } from '../lib/agent/quick';
 import { chipLabel } from '../lib/agent/tools';
-import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, Effort, ProviderId } from '../lib/agent/types';
+import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, ProviderId } from '../lib/agent/types';
 import { dateKey } from '../lib/nutrition';
 
 const ago = (ts: number) => {
@@ -33,16 +35,46 @@ export function AgentPage() {
   const all = (useChats() ?? []).filter((c) => c.messages.length);
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'quick' ? 'quick' : 'chats';
-  const chats = all.filter((c) => (c.kind === 'quick') === (view === 'quick'));
   const quickCount = all.filter((c) => c.kind === 'quick').length;
   const [menu, setMenu] = useState<Chat | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [olderOpen, setOlderOpen] = useState(false);
+  const [q, setQ] = useState('');
   const sync = useSync();
   const ready = isFake() || !!sync.account;
+  const inView = all.filter((c) => (c.kind === 'quick') === (view === 'quick'));
+  const needle = q.trim().toLowerCase();
+  const chats = needle ? inView.filter((c) => c.title.toLowerCase().includes(needle) || lastText(c).toLowerCase().includes(needle)) : inView;
+  // chats untouched for a week fold into "Older" (quick chats are purged after 3 days anyway)
+  const weekAgo = Date.now() - 7 * 864e5;
+  const recent = view === 'quick' || needle ? chats : chats.filter((c) => c.updatedAt >= weekAgo);
+  const older = view === 'quick' || needle ? [] : chats.filter((c) => c.updatedAt < weekAgo);
+  const shown = [...recent, ...(olderOpen || selecting ? older : [])];
+  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const endSelect = () => { setSelecting(false); setPicked(new Set()); };
+  const allPicked = shown.length > 0 && shown.every((c) => picked.has(c.id));
+  const row = (c: Chat) => (
+    <div key={c.id} className={'list-item chat-row' + (selecting && picked.has(c.id) ? ' picked' : '')}>
+      {selecting && (
+        <button className={'sel-circle' + (picked.has(c.id) ? ' on' : '')} aria-pressed={picked.has(c.id)} aria-label={`Select ${c.title}`} onClick={() => toggle(c.id)}>
+          {picked.has(c.id) && <Icon name="check" size={14} stroke={3} />}
+        </button>
+      )}
+      {selecting
+        ? <button className="grow plain chat-row-main" onClick={() => toggle(c.id)}><ChatRowText c={c} /></button>
+        : <Link to={`/agent/${c.id}`} className="grow plain chat-row-main"><ChatRowText c={c} /></Link>}
+      {!selecting && <button className="icon-btn sm" aria-label={`Options for ${c.title}`} onClick={() => setMenu(c)}><Icon name="more" size={20} stroke={2.6} /></button>}
+    </div>
+  );
   return (
     <div className="page">
       <header className="page-head">
         <h1>Agent</h1>
-        <button className="icon-btn filled" aria-label="New chat" onClick={() => nav('/agent/new')}><Icon name="plus" size={22} stroke={2.2} /></button>
+        {inView.length > 0 && (selecting
+          ? <button className="pill-btn" onClick={endSelect}>Done</button>
+          : <button className="pill-btn" onClick={() => setSelecting(true)}>Select</button>)}
+        {!selecting && <button className="icon-btn filled" aria-label="New chat" onClick={() => nav('/agent/new')}><Icon name="plus" size={22} stroke={2.2} /></button>}
       </header>
       {!ready && (
         <Link to="/settings" className="list-item pressable card agent-setup">
@@ -51,30 +83,32 @@ export function AgentPage() {
           <Icon name="chevronRight" className="chev" size={18} />
         </Link>
       )}
+      {all.length > 10 && (
+        <label className="search" style={{ marginBottom: 12 }}>
+          <Icon name="search" size={18} /><input className="input" type="search" placeholder="Search chats" aria-label="Search chats" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+      )}
       {(quickCount > 0 || view === 'quick') && (
         <div className="seg chat-filter" role="tablist" aria-label="Show">
-          <button role="tab" aria-selected={view === 'chats'} onClick={() => setParams({}, { replace: true })}>Chats</button>
-          <button role="tab" aria-selected={view === 'quick'} onClick={() => setParams({ view: 'quick' }, { replace: true })}>Quick{quickCount ? ` · ${quickCount}` : ''}</button>
+          <button role="tab" aria-selected={view === 'chats'} onClick={() => { endSelect(); setParams({}, { replace: true }); }}>Chats</button>
+          <button role="tab" aria-selected={view === 'quick'} onClick={() => { endSelect(); setParams({ view: 'quick' }, { replace: true }); }}>Quick{quickCount ? ` · ${quickCount}` : ''}</button>
         </div>
       )}
       {view === 'quick' && <p className="faint t-13" style={{ margin: '0 4px 8px' }}>Photo logs and other quick chats. Deleted after 3 days unless you keep them.</p>}
-      {chats.length ? (
-        <div className="list">
-          {chats.map((c) => (
-            <div key={c.id} className="list-item chat-row">
-              <Link to={`/agent/${c.id}`} className="grow plain chat-row-main">
-                <span className="row" style={{ gap: 6 }}>
-                  <span className="title ellipsis grow" dir="auto">{c.title}</span>
-                  {c.pending?.status === 'pending' && <span className="badge accent">Waiting</span>}
-                  <span className="faint t-13 num">{ago(c.updatedAt)}</span>
-                </span>
-                <span className="sub ellipsis" dir="auto" style={{ display: 'block' }}>{lastText(c) || ' '}</span>
-              </Link>
-              <button className="icon-btn sm" aria-label={`Options for ${c.title}`} onClick={() => setMenu(c)}><Icon name="more" size={20} stroke={2.6} /></button>
-            </div>
-          ))}
-        </div>
-      ) : view === 'quick' ? (
+      {selecting && shown.length > 0 && (
+        <button className="link" style={{ padding: '0 4px 8px' }} onClick={() => setPicked(allPicked ? new Set() : new Set(shown.map((c) => c.id)))}>{allPicked ? 'Select none' : 'Select all'}</button>
+      )}
+      {recent.length > 0 && <div className="list">{recent.map(row)}</div>}
+      {older.length > 0 && (
+        <>
+          <button className="older-row pressable" aria-expanded={olderOpen || selecting} onClick={() => setOlderOpen((o) => !o)}>
+            <span className="grow">Older</span><span className="faint num">{older.length}</span>
+            <Icon name={olderOpen || selecting ? 'chevronUp' : 'chevronDown'} size={18} className="chev" />
+          </button>
+          {(olderOpen || selecting) && <div className="list">{older.map(row)}</div>}
+        </>
+      )}
+      {!chats.length && (needle ? <div className="empty compact"><p>No chats match “{q}”.</p></div> : view === 'quick' ? (
         <div className="empty compact"><p>No quick chats.</p></div>
       ) : (
         <div className="empty">
@@ -83,10 +117,34 @@ export function AgentPage() {
           <p>Log food from a photo, check your progress, plan a workout. Changes ask first.</p>
           <button className="btn primary" onClick={() => nav('/agent/new')}><Icon name="plus" size={18} stroke={2.4} />New chat</button>
         </div>
+      ))}
+      {!selecting && <Link to="/agent/memory" className="link" style={{ marginTop: 12 }}><Icon name="note" size={18} />Memory</Link>}
+      {selecting && document.querySelector('.shell') && createPortal(
+        <div className="sel-bar chat-sel-bar" role="toolbar" aria-label="Selected chats">
+          <span className="sel-count num" aria-live="polite">{picked.size}<span className="sr-only"> selected</span></span>
+          <span className="grow" />
+          <button className="sel-act danger" disabled={!picked.size} onClick={async () => {
+            const n = picked.size;
+            if (!(await confirmDialog({ title: `Delete ${n} chat${n === 1 ? '' : 's'}?`, message: 'Memories and journal entries they saved stay.', confirm: 'Delete', danger: true }))) return;
+            for (const id of picked) await deleteChat(id);
+            endSelect();
+          }}><Icon name="trash" size={20} /><span>Delete{picked.size ? ` ${picked.size}` : ''}</span></button>
+        </div>, document.querySelector('.shell')!,
       )}
-      <Link to="/agent/memory" className="link" style={{ marginTop: 12 }}><Icon name="note" size={18} />Memory</Link>
       <ChatMenu chat={menu} onClose={() => setMenu(null)} />
     </div>
+  );
+}
+function ChatRowText({ c }: { c: Chat }) {
+  return (
+    <>
+      <span className="row" style={{ gap: 6 }}>
+        <span className="title ellipsis grow" dir="auto">{c.title}</span>
+        {c.pending?.status === 'pending' && !c.pending.answered && <span className="badge accent">Waiting</span>}
+        <span className="faint t-13 num">{ago(c.updatedAt)}</span>
+      </span>
+      <span className="sub ellipsis" dir="auto" style={{ display: 'block' }}>{lastText(c) || ' '}</span>
+    </>
   );
 }
 
@@ -153,7 +211,7 @@ export function AgentNewPage() {
   return <div className="page" />;
 }
 
-// ---- model chip: which provider / effort this chat uses ----
+// ---- model chip: which provider this chat uses (the only user choice; effort is the admin's) ----
 function useStatus() {
   const [st, setSt] = useState<AIStatus | null>(null);
   useEffect(() => { let live = true; cachedStatus().then((s) => live && setSt(s)); return () => { live = false; }; }, []);
@@ -161,42 +219,36 @@ function useStatus() {
 }
 /** "GPT-6.1 Sol" → "Sol", "GLM 5.3 Flash" → "GLM Flash": drop version tokens. */
 const shortModel = (label: string) => label.split(/\s+/).filter((w) => !/\d/.test(w)).join(' ') || label;
-const EFFORT: Record<Effort, string> = { low: 'Low', medium: 'Medium', high: 'High' };
 function pickOf(chat: Chat, st: AIStatus | null) {
   const connected = st?.providers.filter((p) => p.connected) ?? [];
   const provider = connected.find((p) => p.id === chat.provider) ?? connected.find((p) => p.id === st?.config.primary) ?? connected[0];
-  const effort: Effort = chat.effort ?? st?.global.defaultEffort ?? 'medium';
-  return { connected, provider, effort };
+  return { connected, provider };
 }
+const PLAN: Record<ProviderId, string> = { chatgpt: 'ChatGPT plan', openrouter: 'OpenRouter' };
 function ModelChip({ chat, onOpen }: { chat: Chat; onOpen: () => void }) {
   const st = useStatus();
-  const { provider, effort } = pickOf(chat, st);
+  const { connected, provider } = pickOf(chat, st);
   const ranLabel = chat.ran && st?.providers.find((p) => p.id === chat.ran!.provider && p.model === chat.ran!.model)?.label;
   const label = ranLabel && chat.ran!.provider === provider?.id ? ranLabel : provider?.label;
   if (!label) return null;
-  return <button className="model-chip" onClick={onOpen} aria-label={`Model: ${label}, effort ${EFFORT[effort]}. Change`}><Icon name="sparkle" size={12} stroke={2.4} />{shortModel(label)} · {EFFORT[effort]}<Icon name="chevronDown" size={12} stroke={2.6} /></button>;
+  if (connected.length < 2) return <span className="model-chip static"><Icon name="sparkle" size={12} stroke={2.4} />{shortModel(label)}</span>;
+  return <button className="model-chip" onClick={onOpen} aria-label={`Using ${label} (${PLAN[provider!.id]}). Change`}><Icon name="sparkle" size={12} stroke={2.4} />{shortModel(label)}<Icon name="chevronDown" size={12} stroke={2.6} /></button>;
 }
 function ModelSheet({ chat, open, onClose }: { chat: Chat; open: boolean; onClose: () => void }) {
   const st = useStatus();
-  const { connected, provider, effort } = pickOf(chat, st);
-  const set = (patch: { provider?: ProviderId; effort?: Effort }) => setChatFields(chat.id, patch);
+  const { connected, provider } = pickOf(chat, st);
   return (
-    <Sheet open={open} onClose={onClose} title="Model">
-      <div className="menu-group" style={{ marginTop: 0 }} role="radiogroup" aria-label="Model">
+    <Sheet open={open} onClose={onClose} title="Use">
+      <div className="menu-group" style={{ marginTop: 0 }} role="radiogroup" aria-label="Provider">
         {connected.map((p) => (
-          <button key={p.id} className="menu-item" role="radio" aria-checked={provider?.id === p.id} onClick={() => set({ provider: p.id })}>
+          <button key={p.id} className="menu-item" role="radio" aria-checked={provider?.id === p.id} onClick={() => { void setChatFields(chat.id, { provider: p.id }); onClose(); }}>
             <Icon name={p.id === 'chatgpt' ? 'sparkle' : 'bolt'} size={22} />
-            <span className="grow"><span style={{ display: 'block' }}>{p.label}</span><span className="faint t-13" style={{ fontWeight: 500 }}>{p.id === 'chatgpt' ? 'ChatGPT' : 'OpenRouter'}{p.video ? ' · video' : ''}</span></span>
+            <span className="grow"><span style={{ display: 'block' }}>{PLAN[p.id]}</span><span className="faint t-13" style={{ fontWeight: 500 }}>{p.label}{p.video ? ' · video' : ''}</span></span>
             {provider?.id === p.id && <Icon name="check" size={20} stroke={2.6} />}
           </button>
         ))}
-        {!connected.length && <p className="muted" style={{ padding: '12px 4px' }}>Connect ChatGPT or OpenRouter in Settings → Agent.</p>}
       </div>
-      <div className="section-title" style={{ marginTop: 18 }}>Thinking</div>
-      <div className="seg" role="radiogroup" aria-label="Effort">
-        {(['low', 'medium', 'high'] as const).map((e) => <button key={e} role="radio" aria-checked={effort === e} aria-pressed={effort === e} onClick={() => set({ effort: e })}>{EFFORT[e]}</button>)}
-      </div>
-      <p className="faint t-13" style={{ margin: '10px 4px 0' }}>Higher thinks longer before answering. For this chat only.</p>
+      <p className="faint t-13" style={{ margin: '10px 4px 0' }}>For this chat. The other one takes over if this one fails.</p>
     </Sheet>
   );
 }
@@ -259,9 +311,12 @@ function ChatBody({ chat }: { chat: Chat }) {
     pinned.current = true;
     const onScroll = () => { pinned.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80; };
     const ro = new ResizeObserver(() => { if (pinned.current) box.scrollTop = box.scrollHeight; });
+    // the keyboard opening shrinks the scroller: keep the last message in view
+    const onViewport = () => { if (pinned.current) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; }); };
     box.addEventListener('scroll', onScroll, { passive: true });
+    window.visualViewport?.addEventListener('resize', onViewport);
     ro.observe(inner);
-    return () => { ro.disconnect(); box.removeEventListener('scroll', onScroll); };
+    return () => { ro.disconnect(); box.removeEventListener('scroll', onScroll); window.visualViewport?.removeEventListener('resize', onViewport); };
   }, [chat.id]);
 
   const results = new Map<string, string>();
@@ -320,8 +375,17 @@ function UserPart({ p }: { p: AIPart }) {
 }
 
 function Message({ m, chat, results, onChange }: { m: AIMessage; chat: Chat; results: Map<string, string>; onChange: () => void }) {
-  if (m.role === 'tool') return null;
+  if (m.role === 'tool') {
+    // a comment on a request card shows as the user's own bubble (the card stays open above it)
+    if (m.name !== 'request_changes') return null;
+    let r: { status?: string; comment?: string } = {};
+    try { r = JSON.parse(m.content); } catch { /* not JSON */ }
+    return r.status === 'comment' && r.comment ? <motion.div className="bubble user" dir="auto" {...bubbleIn}><span className="bubble-text">{r.comment}</span></motion.div> : null;
+  }
   if (m.role === 'user') {
+    const note = m.content.length === 1 && m.content[0].type === 'text' ? m.content[0].text.match(/^<context>user (applied|rejected) the earlier request "(.*?)"/) : null;
+    if (note) return <div className="chat-note"><Icon name={note[1] === 'applied' ? 'check' : 'close'} size={13} stroke={2.6} />You {note[1]} “{note[2]}”</div>;
+    if (!m.content.some((p) => p.type !== 'text' || !isContextPart(p.text))) return null;
     const imgs = m.content.filter((p) => p.type === 'image');
     const rest = m.content.filter((p) => p.type !== 'image');
     return (
@@ -332,12 +396,13 @@ function Message({ m, chat, results, onChange }: { m: AIMessage; chat: Chat; res
     );
   }
   const calls = m.toolCalls ?? [];
-  const chips = calls.filter((c) => c.name !== 'request_changes' && c.name !== 'ask_user');
+  const CARD = ['request_changes', 'ask_user', 'show_chart', 'show_table', 'show_stats'];
+  const chips = calls.filter((c) => !CARD.includes(c.name));
   return (
     <>
       {m.text && <motion.div className="bubble bot" dir="auto" {...bubbleIn}><Rich text={m.text} /></motion.div>}
       {chips.length > 0 && <div className="tool-chips">{chips.map((c) => <ToolChip key={c.id} call={c} failed={isError(results.get(c.id))} />)}</div>}
-      {calls.filter((c) => c.name === 'request_changes' || c.name === 'ask_user').map((c) => <CardBlock key={c.id} call={c} chat={chat} result={results.get(c.id)} onChange={onChange} />)}
+      {calls.filter((c) => CARD.includes(c.name)).map((c) => <CardBlock key={c.id} call={c} chat={chat} result={results.get(c.id)} onChange={onChange} />)}
     </>
   );
 }
@@ -349,6 +414,11 @@ function ToolChip({ call, failed }: { call: AIToolCall; failed?: boolean }) {
 }
 
 function CardBlock({ call, chat, result, onChange }: { call: AIToolCall; chat: Chat; result?: string; onChange: () => void }) {
+  if (call.name.startsWith('show_')) {
+    const d = chat.displays?.[call.id];
+    if (d) return <DisplayCard d={d} />;
+    return result && isError(result) ? <div className="tool-chips"><span className="tool-chip failed"><Icon name="info" size={13} stroke={2.2} />Couldn’t draw that · retrying</span></div> : null;
+  }
   const p = chat.pending?.toolCallId === call.id ? chat.pending : null;
   const done = chat.cards?.[call.id];
   if (p?.kind === 'ask' || (!p && done?.kind === 'ask')) {
@@ -356,7 +426,7 @@ function CardBlock({ call, chat, result, onChange }: { call: AIToolCall; chat: C
     return <AskCard chatId={chat.id} questions={qs} answered={p ? undefined : { answers: done?.answers, text: done?.comment }} />;
   }
   if (p) return <RequestBlockCard chatId={chat.id} p={p} onChange={onChange} />;
-  if (done) return <RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.comment} />;
+  if (done) return <RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.outcome === 'rejected' ? done.comment : undefined} />;
   if (result && isError(result)) return <div className="tool-chips"><span className="tool-chip failed"><Icon name="info" size={13} stroke={2.2} />{call.name === 'ask_user' ? 'Question' : 'Request'} didn’t validate · retrying</span></div>;
   return null;
 }
@@ -369,7 +439,7 @@ function Composer({ chat, running, inputRef }: { chat: Chat; running: boolean; i
   const [menu, setMenu] = useState(false);
   const st = useStatus();
   const loc = useLocation();
-  const pending = chat.pending?.status === 'pending';
+  const pending = chat.pending?.status === 'pending' && !chat.pending.answered;
   const ask = pending && chat.pending?.kind === 'ask';
   useLayoutEffect(() => { const el = inputRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; } }, [text, inputRef]);
   const canSend = !running && !busy && (!!text.trim() || (!pending && atts.length > 0));

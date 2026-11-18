@@ -91,7 +91,8 @@ export function openrouterProvider(key: string, global: AIGlobal): Provider {
     id: 'openrouter',
     async model() { return global.models.openrouter; },
     async *turn(req: TurnRequest, model: string, signal?: AbortSignal) {
-      const body: Record<string, unknown> = { model, messages: toChat(req.instructions, req.messages, wantsCacheMarks(model)), stream: true, usage: { include: true }, reasoning: { effort: req.effort } };
+      const body: Record<string, unknown> = { model, messages: toChat(req.instructions, req.messages, wantsCacheMarks(model)), stream: true, usage: { include: true } };
+      if (req.effort !== 'auto') body.reasoning = { effort: req.effort }; // auto = model default
       if (global.openrouterProvider) body.provider = global.openrouterProvider; // e.g. { order: ['river'], allow_fallbacks: true }
       const tools = toOrTools(req.tools);
       if (tools) { body.tools = tools; body.tool_choice = 'auto'; }

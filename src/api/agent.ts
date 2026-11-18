@@ -9,7 +9,7 @@ const zPerm = z.enum(['ask', 'auto']);
 export const agentPrefsUpdate = defineCommand({ name: 'agentPrefs.update', kind: 'action',
   description: 'Settings-only: change the assistant preferences — permissions per category (ask / auto) and web (web tools). Not available to the assistant.',
   input: z.object({
-    permissions: z.object({ food: zPerm, gym: zPerm, supplements: zPerm, body: zPerm, settings: zPerm }).partial().optional(),
+    permissions: z.object({ food: zPerm, gym: zPerm, supplements: zPerm, body: zPerm, journal: zPerm, settings: zPerm }).partial().optional(),
     web: z.boolean().optional(),
   }),
   run: async ({ permissions, web }) => {

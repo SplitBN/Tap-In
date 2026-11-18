@@ -23,6 +23,8 @@ import { DayDots, markerWords, mondayOf } from './Calendar';
 import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
 import { useChats } from '../lib/agent/chats';
+import { journalList } from '../api/journal';
+import { JournalSheet, journalRange } from './Journal';
 
 const DAY = 86400000;
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -49,6 +51,7 @@ export function HomePage() {
         <WeightWidget onLog={() => setWeighing(true)} />
         {settings.features.gym && <WeekWidget />}
         <CalendarWidget />
+        {settings.features.journal !== false && <JournalWidget />}
         {settings.features.agent !== false && <AgentWidget />}
       </div>
       <WeighInSheet open={weighing} onClose={() => setWeighing(false)} />
@@ -297,6 +300,32 @@ function AgentWidget() {
           <Icon name="chevronRight" size={18} className="chev" />
         </button>
       )}
+    </Widget>
+  );
+}
+
+/** Journal: what is going on now (ongoing entries) and the latest event; + adds one. */
+function JournalWidget() {
+  const nav = useNavigate();
+  const list = useLiveQuery(() => run(journalList, {}), []) ?? [];
+  const [adding, setAdding] = useState(false);
+  const now = list.filter((j) => j.ongoing);
+  const last = [...list].filter((j) => !j.ongoing).sort((a, b) => b.date.localeCompare(a.date))[0];
+  return (
+    <Widget role="neutral" icon="book" wide title="Journal" onOpen={() => nav('/journal')}
+      action={<button className="icon-btn sm" aria-label="Add to journal" onClick={() => setAdding(true)}><Icon name="plus" size={18} /></button>}>
+      {now.length || last ? (
+        <div className="jw">
+          {now.slice(0, 3).map((j) => <span key={j.id} className="jw-chip" dir="auto"><i aria-hidden />{j.title}</span>)}
+          {last && <span className="jw-last muted t-13" dir="auto">{last.title} · {journalRange(last)}</span>}
+        </div>
+      ) : (
+        <button className="row pressable plain widget-cta" onClick={() => setAdding(true)}>
+          <span className="grow">Note a cut, exam season, being sick…</span>
+          <Icon name="chevronRight" size={18} className="chev" />
+        </button>
+      )}
+      <JournalSheet entry={adding ? 'new' : null} onClose={() => setAdding(false)} />
     </Widget>
   );
 }

@@ -4,7 +4,7 @@ import { confirmDialog, notice } from './Dialog';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { run } from '../api/registry';
-import { memoryDelete, memoryGet, memoryList, memorySave } from '../api/memory';
+import { memoryDelete, memoryGet, memoryList, memoryPin, memorySave } from '../api/memory';
 import { agentPrefsUpdate } from '../api/agent';
 import { useSettings } from '../db/settings';
 import { useSync } from '../lib/sync';
@@ -29,9 +29,10 @@ function Toggle({ label, sub, on, onChange }: { label: string; sub?: string; on:
 const CATS: { id: AgentCategory; label: string; icon: string; role: string }[] = [
   { id: 'food', label: 'Food', icon: 'food', role: 'food' }, { id: 'gym', label: 'Gym', icon: 'dumbbell', role: 'gym' },
   { id: 'supplements', label: 'Supps', icon: 'pill', role: 'supp' }, { id: 'body', label: 'Weight & notes', icon: 'scale', role: 'weight' },
+  { id: 'journal', label: 'Journal', icon: 'flag', role: 'neutral' },
   { id: 'settings', label: 'Settings', icon: 'settings', role: 'neutral' },
 ];
-const EFFORTS: { id: Effort; label: string }[] = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }];
+const EFFORTS: { id: Effort; label: string }[] = [{ id: 'auto', label: 'Auto' }, { id: 'low', label: 'Low' }, { id: 'medium', label: 'Med' }, { id: 'high', label: 'High' }];
 
 /** Settings → Agent. Everyone: accounts, preferred provider, permissions, memory, web. Admin: "For everyone" defaults.
  *  Credentials go to the server only. */
@@ -173,17 +174,26 @@ function AdminSection({ st, onSaved }: { st: AIStatus; onSaved: (g: AIGlobal) =>
             onChange={(e) => setOrder(e.target.value)} onBlur={saveOrder} onKeyDown={(e) => e.key === 'Enter' && saveOrder()} />
         </div>
         {routing && <Toggle label="Fall back to other providers" on={routing.allow_fallbacks} onChange={(v) => save({ openrouterProvider: { ...routing, allow_fallbacks: v } })} />}
-        <div className="list-item"><span className="grow title">Thinking</span><EffortSeg value={g.defaultEffort} onChange={(v) => save({ defaultEffort: v })} /></div>
-        <div className="list-item"><span className="grow"><span className="title">Helpers</span><span className="sub" style={{ display: 'block' }}>Titles, page extracts</span></span><EffortSeg value={g.helperEffort} onChange={(v) => save({ helperEffort: v })} /></div>
+        <EffortRow label="Thinking" sub="Every chat. Auto = the model decides" value={g.defaultEffort} onChange={(v) => save({ defaultEffort: v })} />
+        <EffortRow label="Chat titles" value={g.titleEffort} onChange={(v) => save({ titleEffort: v })} />
+        <EffortRow label="Page extracts" sub="Web pages read with a question" value={g.extractEffort} onChange={(v) => save({ extractEffort: v })} />
         <ModelRow label="Web search model" models={models.openrouter ?? []} value={g.webModel} onChange={(v) => v && save({ webModel: v })} />
       </div>
       <p className="faint t-13" style={{ margin: '6px 4px 0' }}>Applies to every account. OpenRouter lists models without tool support too: pick one that supports tools.</p>
     </>
   );
 }
-function EffortSeg({ value, onChange }: { value: Effort; onChange: (v: Effort) => void }) {
+function EffortRow({ label, sub, value, onChange }: { label: string; sub?: string; value: Effort; onChange: (v: Effort) => void }) {
   return (
-    <div className="seg" style={{ width: 200 }} role="radiogroup">
+    <div className="list-item" style={{ flexWrap: 'wrap', rowGap: 8 }}>
+      <span className="grow"><span className="title">{label}</span>{sub && <span className="sub" style={{ display: 'block' }}>{sub}</span>}</span>
+      <EffortSeg label={label} value={value} onChange={onChange} />
+    </div>
+  );
+}
+function EffortSeg({ label, value, onChange }: { label: string; value: Effort; onChange: (v: Effort) => void }) {
+  return (
+    <div className="seg" style={{ width: 236 }} role="radiogroup" aria-label={label}>
       {EFFORTS.map((e) => <button key={e.id} role="radio" aria-checked={value === e.id} aria-pressed={value === e.id} onClick={() => onChange(e.id)}>{e.label}</button>)}
     </div>
   );
@@ -295,13 +305,17 @@ export function MemoryList() {
     <>
       <div className="list">
         {list?.length ? list.map((m) => (
-          <button key={m.id} className="list-item pressable" onClick={() => setOpen(m.id)}>
-            <Icon name="note" size={18} />
-            <span className="grow"><span className="title ellipsis" dir="auto" style={{ display: 'block' }}>{m.name}</span>{m.description && <span className="sub ellipsis" dir="auto" style={{ display: 'block' }}>{m.description}</span>}</span>
+          <div key={m.id} className="list-item mem-row">
+            <button className={'mem-pin' + (m.pinned ? ' on' : '')} aria-pressed={!!m.pinned} aria-label={`${m.pinned ? 'Unpin' : 'Pin'} ${m.name}`}
+              onClick={() => run(memoryPin, { id: m.id, pinned: !m.pinned })}><Icon name="pin" size={18} stroke={2.1} /></button>
+            <button className="grow plain mem-main" onClick={() => setOpen(m.id)}>
+              <span className="title ellipsis" dir="auto" style={{ display: 'block' }}>{m.name}</span>{m.description && <span className="sub ellipsis" dir="auto" style={{ display: 'block' }}>{m.description}</span>}
+            </button>
             <Icon name="chevronRight" className="chev" size={18} />
-          </button>
+          </div>
         )) : <div className="list-item"><span className="grow sub">Nothing yet. Tell the assistant “remember …”.</span></div>}
       </div>
+      {!!list?.length && <p className="faint t-13" style={{ margin: '8px 4px 0' }}><Icon name="pin" size={12} stroke={2.4} /> Pinned notes are always in the assistant’s mind; keep them short. The rest it reads when they matter.</p>}
       <MemorySheet id={open} onClose={() => setOpen(null)} />
     </>
   );

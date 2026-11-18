@@ -2,6 +2,9 @@
 // function of the messages it is given — no hidden state — so reload / Apply / Reject all behave like the real loop.
 //   "log eggs"            → one batched run_query (foods.search) → request_changes entries.logMany with alternatives
 //   photo + "log this…"   → ask_user (2 multiple-choice questions) → batched run_query (rice, chicken) → food request
+//   "show bench" → batched lookup → show_chart (source: progress.exercise, creatine band, journal overlay)
+//   "table" / "stats"     → show_table / show_stats
+//   comment on a food card → reply (card stays open); a comment with "200g" → revised request (replaces the card)
 //   "remember X"          → memory_write
 //   "search X"            → web_answer
 //   anything else         → echoes the text, streamed
@@ -13,7 +16,7 @@ const GLOBAL_KEY = 'tapin:fakeAIGlobal';
 const DEFAULT_CFG: AIConfig = { primary: 'chatgpt', fallback: 'openrouter' };
 const DEFAULT_GLOBAL: AIGlobal = {
   models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' }, openrouterProvider: { order: ['river'], allow_fallbacks: true },
-  defaultEffort: 'medium', helperEffort: 'low', webModel: 'perplexity/sonar',
+  defaultEffort: 'auto', titleEffort: 'low', extractEffort: 'auto', webModel: 'perplexity/sonar',
 };
 const read = <T,>(k: string, d: T): T => { try { return { ...d, ...JSON.parse(localStorage.getItem(k) ?? '{}') }; } catch { return d; } };
 const write = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
@@ -57,7 +60,12 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
       { id: 'cook', question: 'How was the chicken cooked?', options: ['Grilled', 'Fried', 'Baked'], other: true },
       { id: 'rice', question: 'How much rice?', options: ['½ cup', '1 cup', '2 cups'] },
     ] } } };
+    const note = last.content.length === 1 && last.content[0].type === 'text' ? last.content[0].text.match(/^<context>user (applied|rejected) the earlier request/) : null;
+    if (note) return { text: note[1] === 'applied' ? 'Great — logged as shown.' : 'OK, left it out.' };
     if (food) return { call: { name: 'run_query', args: { queries: [{ name: 'foods.search', input: { query: food, limit: 5 } }] } } };
+    if (/^show bench/i.test(said)) return { call: { name: 'run_query', args: { queries: [{ name: 'exercises.search', input: { query: 'bench press', limit: 1 } }, { name: 'supplements.list', input: {} }, { name: 'supplements.history', input: {} }] } } };
+    if (/^table/i.test(said)) return { call: { name: 'show_table', args: { title: 'Last week', columns: ['Day', 'kcal', 'Protein g', 'Workout'], rows: [['Mon', 2450, 162, 'Push'], ['Tue', 2210, 148, null], ['Wed', 2600, 171, 'Pull'], ['Thu', 1980, 120, null], ['Fri', 2390, 158, 'Legs']] } } };
+    if (/^stats/i.test(said)) return { call: { name: 'show_stats', args: { items: [{ label: 'Workouts', value: 4, delta: 1, good: 'up' }, { label: 'Avg protein', value: 152, unit: 'g', delta: -8, good: 'up' }, { label: 'Weight', value: 81.4, unit: 'kg', delta: -0.6, good: 'down' }, { label: 'Streak', value: '6 wk' }] } } };
     const mem = said.match(/^remember\s+(.+)/i)?.[1]?.trim();
     if (mem) return { call: { name: 'memory_write', args: { name: mem.slice(0, 40), description: 'Something the user asked me to remember', content: mem } } };
     const q = said.match(/^search\s+(.+)/i)?.[1]?.trim();
@@ -69,6 +77,18 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
     switch (last.name) {
       case 'ask_user': return { call: { name: 'run_query', args: { queries: [{ name: 'foods.search', input: { query: 'rice cooked', limit: 5 } }, { name: 'foods.search', input: { query: 'chicken breast grilled', limit: 5 } }] } } };
       case 'run_query': {
+        if (/^show bench/i.test(said)) {
+          const g = (Array.isArray(out) ? out : []) as { result?: unknown }[];
+          const ex = (g[0]?.result as { id: string; name: string }[] | undefined)?.[0];
+          if (!ex) return { text: 'No bench press found.' };
+          const crea = (g[1]?.result as { supplements?: { id: string; name: string; schedule?: { startDate?: string } }[] } | undefined)?.supplements?.find((s) => /creatine/i.test(s.name));
+          const hist = g[2]?.result;
+          const logs = (Array.isArray(hist) ? hist as { supplementId: string; date: string; status: string }[] : []).filter((l) => crea && l.supplementId === crea.id && l.status === 'taken').map((l) => l.date).sort();
+          const bands = logs.length ? [{ from: logs[0], to: logs[logs.length - 1], label: 'Creatine', tone: 'good' }]
+            : crea?.schedule?.startDate ? [{ from: crea.schedule.startDate, label: 'Creatine', tone: 'good' }] : [];
+          return { call: { name: 'show_chart', args: { title: `${ex.name}: estimated 1RM`, kind: 'line', unit: 'kg', y_label: 'e1RM',
+            series: [{ name: 'e1RM', source: { command: 'progress.exercise', input: { exerciseId: ex.id }, path: 'sessions', x: 'date', y: 'bestSet.e1rmKg' } }], bands, journal: true } } };
+        }
         const groups = (Array.isArray(out) ? out : []) as { result?: { key: string; name: string }[] }[];
         const items = groups.map((g, i) => {
           const rows = Array.isArray(g.result) ? g.result : [];
@@ -82,9 +102,21 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
         if (r.error) return { text: `That request didn't go through: ${r.error}` };
         if (r.status === 'applied') { const n = (r.applied ?? []).reduce((s, a) => s + (a.input.items?.length ?? 1), 0); return { text: `Logged ✓ (${n} item${n === 1 ? '' : 's'})` }; }
         if (r.status === 'rejected') return { text: r.comment ? `OK, not logged. You said: “${r.comment}”.` : 'OK, not logged.' };
-        return { text: `Got it: “${r.comment ?? ''}”. Tell me what to change and I'll ask again.` };
+        const grams = Number(r.comment?.match(/(\d+)\s*g\b/)?.[1]);
+        if (r.status === 'comment' && grams) { // revise: same request with the new amount (replaces the open card)
+          const prev = [...msgs].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.some((c) => c.name === 'request_changes'));
+          const call = prev?.role === 'assistant' ? prev.toolCalls!.find((c) => c.name === 'request_changes')! : null;
+          const acts = JSON.parse(JSON.stringify(call?.args.actions ?? [])) as { name: string; input: { items?: { grams?: number }[]; grams?: number } }[];
+          for (const a of acts) { if (a.input.items) a.input.items.forEach((i) => { i.grams = grams; }); else a.input.grams = grams; }
+          return { text: `Updated to ${grams} g.`, call: { name: 'request_changes', args: { summary: `${String(call?.args.summary ?? 'Log')} (${grams} g)`, actions: acts } } };
+        }
+        if (r.status === 'comment') return { text: 'That’s already included — tap Log when it looks right, or tell me what to change.' };
+        return { text: `Got it: “${r.comment ?? ''}”.` };
       }
       case 'memory_write': return { text: 'Saved to memory.' };
+      case 'show_chart': return { text: (out as { error?: string }).error ? `Couldn't draw it: ${(out as { error: string }).error}` : 'Here is your bench over time — the green band is when you took creatine.' };
+      case 'show_table': return { text: 'Here’s last week.' };
+      case 'show_stats': return { text: 'This week at a glance.' };
       case 'web_answer': return { text: `From the web: ${(out as { untrusted_web_content?: { answer?: string } }).untrusted_web_content?.answer ?? '…'}` };
       default: return { text: 'Done.' };
     }
@@ -103,7 +135,7 @@ function title(body: TurnRequest): string {
 export async function* fakeTurn(body: TurnRequest, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   await sleep(250, signal);
   const provider = body.provider ?? 'chatgpt';
-  const done: TurnEvent = { type: 'done', provider, model: provider === 'chatgpt' ? 'gpt-6.1-sol' : 'z-ai/glm-5.3-flash', effort: body.effort ?? 'medium' };
+  const done: TurnEvent = { type: 'done', provider, model: provider === 'chatgpt' ? 'gpt-6.1-sol' : 'z-ai/glm-5.3-flash', effort: body.effort === 'title' ? 'low' : body.effort ?? 'auto' };
   if (!body.tools.length) { yield { type: 'text', delta: title(body) }; yield done; return; }
   const p = plan(body.messages, body.tools.map((t) => t.name));
   if (p.text) {

@@ -8,7 +8,7 @@ import { getStatus, isFake, turn } from './client';
 import { getChat, newChat, patchChat, recentQuickChat } from './chats';
 import { buildInstructions, contextBlock, isContextPart, TITLE_INSTRUCTIONS } from './instructions';
 import { applyActions, appliedSummary, cap, executeTool, isBlocking, isParallelSafe, toolList, type ToolEnv, type ToolOutcome } from './tools';
-import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, Effort, RequestAction } from './types';
+import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, RequestAction } from './types';
 
 export const MAX_STEPS = 12;
 
@@ -52,8 +52,10 @@ const titleFrom = (parts: AIPart[]) => {
 /** Does the chat need the loop to continue (last message is the user's or a tool result, nothing pending)? */
 export function needsReply(c: Chat) {
   const last = c.messages[c.messages.length - 1];
-  return !c.pending && !!last && last.role !== 'assistant';
+  return !blocking(c) && !!last && last.role !== 'assistant';
 }
+/** A card the model is waiting on (an open card the user already commented on does not block). */
+export const blocking = (c: Chat) => !!c.pending && !c.pending.answered;
 
 /** Send a user message. While a card is waiting, the text answers it (a comment on a request, free text for a question). */
 export async function sendMessage(chatId: string, parts: AIPart[], context?: AgentContext) {
@@ -63,14 +65,15 @@ export async function sendMessage(chatId: string, parts: AIPart[], context?: Age
   const ctx = context ?? c.context;
   // the volatile context rides on the message, not in the instructions (keeps the cached prompt prefix stable)
   const withContext = (p: AIPart[]): AIPart[] => [{ type: 'text', text: contextBlock(ctx) }, ...p];
-  if (c.pending?.status === 'pending' && text) {
+  if (c.pending?.status === 'pending' && !c.pending.answered && text) {
+    // text while a card waits answers it: a question gets the text as its answer; a request gets a comment and stays open
     await resolvePending(chatId, c.pending.kind === 'ask' ? { type: 'answer', answers: {}, text } : { type: 'comment', comment: text }, false);
     c = (await getChat(chatId))!;
     const media = parts.filter((p) => p.type !== 'text');
     if (media.length) await patchChat(chatId, { messages: [...c.messages, { role: 'user', content: withContext(media) }] });
     return runLoop(chatId);
   }
-  if (c.pending) return;
+  if (blocking(c)) return;
   const first = !c.messages.some((m) => m.role === 'user');
   await patchChat(chatId, { error: null, context: ctx, ...(first && !c.renamed ? { title: titleFrom(parts) } : {}), messages: [...c.messages, { role: 'user', content: withContext(parts) }] });
   return runLoop(chatId);
@@ -122,10 +125,26 @@ async function resolveOnce(chatId: string, d: Decision) {
     card = { summary: p.summary, actions: p.actions, outcome: 'rejected', comment: d.comment?.trim() || undefined };
   } else {
     const comment = d.type === 'comment' ? d.comment.trim() : d.text?.trim() ?? '';
-    content = cap({ status: 'comment', comment });
+    content = cap({ status: 'comment', comment, note: 'The request is still open and the user can still apply it as is. If it should change, call request_changes again with the full revised version — that replaces this card.' });
     card = { summary: p.summary, actions: p.actions, outcome: 'comment', comment };
   }
   const now = (await getChat(chatId))!;
+  if (kind === 'request' && d.type === 'comment') {
+    // the card stays open (Apply / Reject still work); the comment shows as the user's bubble (rendered from this result)
+    if (p.answered) return; // a later message is a normal message (sendMessage), never a second tool result
+    await patchChat(chatId, { error: null, pending: { ...p, answered: true, comments: [...(p.comments ?? []), card.comment ?? ''] },
+      messages: [...now.messages, { role: 'tool', toolCallId: p.toolCallId, name, content }] });
+    return;
+  }
+  if (p.answered) {
+    // the tool call already has its (comment) result: tell the model what happened in a user-side note instead
+    const res = JSON.parse(content) as { status: string; results?: unknown; comment?: string };
+    const note = res.status === 'applied' ? `user applied the earlier request "${p.summary}" as shown on the card: ${cap({ results: res.results, applied: (res as { applied?: unknown }).applied }, 6000)}`
+      : `user rejected the earlier request "${p.summary}"${res.comment ? `: ${res.comment}` : ''}`;
+    await patchChat(chatId, { error: null, pending: null, cards: { ...now.cards, [p.toolCallId]: card },
+      messages: [...now.messages, { role: 'user', content: [{ type: 'text', text: `<context>${note}</context>` }] }] });
+    return;
+  }
   await patchChat(chatId, { error: null, pending: null, cards: { ...now.cards, [p.toolCallId]: card },
     messages: [...now.messages, { role: 'tool', toolCallId: p.toolCallId, name, content }] });
 }
@@ -156,6 +175,7 @@ export async function runLoop(chatId: string) {
   aborts.set(chatId, ac);
   setLive(chatId, { running: true, text: '' });
   try {
+    if ((await getChat(chatId))?.error) await patchChat(chatId, { error: null }); // a retry clears the old error
     const env = await toolEnv();
     const tools = toolList(env);
     for (;;) {
@@ -168,7 +188,7 @@ export async function runLoop(chatId: string) {
       const instructions = await buildInstructions();
       let text = '', opaque: unknown, error: string | null = null, ran: Chat['ran'];
       const calls: AIToolCall[] = [];
-      for await (const ev of turn({ instructions, messages: c.messages, tools, ...(c.effort ? { effort: c.effort } : {}), ...(c.provider ? { provider: c.provider } : {}) }, ac.signal)) {
+      for await (const ev of turn({ instructions, messages: c.messages, tools, ...(c.provider ? { provider: c.provider } : {}) }, ac.signal)) {
         if (ev.type === 'text') { text += ev.delta; setLive(chatId, { text }); }
         else if (ev.type === 'tool_call') calls.push(ev.call);
         else if (ev.type === 'done') { opaque = ev.opaque; ran = { provider: ev.provider, model: ev.model, ...(ev.effort ? { effort: ev.effort } : {}) }; }
@@ -194,15 +214,21 @@ export async function runLoop(chatId: string) {
       const messages: AIMessage[] = [...c.messages, msg];
       let pending = c.pending ?? null;
       const cards = { ...c.cards };
+      const displays = { ...c.displays };
       for (const x of calls) { // results in call order
         const out = outs.get(x.id)!;
-        if ('pending' in out && out.pending) { pending = out.pending; continue; }
+        if ('pending' in out && out.pending) {
+          // a new card replaces the older open (commented) one
+          if (pending && pending.toolCallId !== out.pending.toolCallId) cards[pending.toolCallId] = { kind: pending.kind, summary: pending.summary, actions: pending.actions, questions: pending.questions, outcome: 'replaced', comment: pending.comments?.join(' · ') };
+          pending = out.pending; continue;
+        }
+        if ('display' in out && out.display) displays[x.id] = out.display;
         if ('applied' in out) cards[x.id] = { summary: out.applied.summary, actions: out.applied.actions, outcome: out.applied.failed ? 'failed' : 'applied' };
         messages.push({ role: 'tool', toolCallId: x.id, name: x.name, content: out.content! });
       }
       setLive(chatId, { text: '' });
-      await patchChat(chatId, { messages, pending, cards, ...(ran ? { ran } : {}) }); // one write per step
-      if (!calls.length || pending) break;
+      await patchChat(chatId, { messages, pending, cards, displays, ...(ran ? { ran } : {}) }); // one write per step
+      if (!calls.length || (pending && !pending.answered)) break;
     }
   } catch (e) {
     await patchChat(chatId, { error: (e as Error).message || 'Something went wrong' });
@@ -213,7 +239,7 @@ export async function runLoop(chatId: string) {
   void maybeTitle(chatId);
 }
 
-/** After the first assistant reply: one helper call (no tools, helper effort) for a 2–5 word title. Never part of the chat. */
+/** After the first assistant reply: one helper call (no tools, effort 'title' → the admin's titleEffort) for a 2–5 word title. Never part of the chat. */
 async function maybeTitle(chatId: string) {
   const c = await getChat(chatId);
   if (!c || c.renamed || c.titled || !c.messages.some((m) => m.role === 'assistant')) return;
@@ -223,11 +249,9 @@ async function maybeTitle(chatId: string) {
   const said = firstUser ? userText(firstUser.content) : '';
   const media = firstUser?.content.some((p) => p.type !== 'text') ? ' (with an attachment)' : '';
   const convo = `User${media}: ${said || '(attachment only)'}\nAssistant: ${(firstReply?.text ?? '').slice(0, 400)}`;
-  const st = await cachedStatus();
-  const effort: Effort = st?.global.helperEffort ?? 'low';
   let title = '';
   try {
-    for await (const ev of turn({ instructions: TITLE_INSTRUCTIONS, messages: [{ role: 'user', content: [{ type: 'text', text: convo }] }], tools: [], effort, ...(c.provider ? { provider: c.provider } : {}) })) {
+    for await (const ev of turn({ instructions: TITLE_INSTRUCTIONS, messages: [{ role: 'user', content: [{ type: 'text', text: convo }] }], tools: [], effort: 'title', ...(c.provider ? { provider: c.provider } : {}) })) {
       if (ev.type === 'text') title += ev.delta;
       if (ev.type === 'error') return;
     }

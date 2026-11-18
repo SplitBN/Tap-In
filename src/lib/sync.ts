@@ -6,7 +6,7 @@ import { db, onLocalChange } from '../db/db';
 
 /** Production API. Set after `wrangler deploy` (also overridable in Settings → Account for dev). */
 export const DEFAULT_API = 'https://tap-in.tap-in-server.workers.dev';
-const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories'] as const;
+const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories', 'journal'] as const;
 
 interface Account { api: string; token: string; user: { id: string; name: string } }
 export interface SyncState { account: Account | null; status: 'off' | 'idle' | 'syncing' | 'offline' | 'error'; pending: number; lastSync: number | null; error?: string }

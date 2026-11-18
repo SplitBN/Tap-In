@@ -185,6 +185,27 @@ export const suppHistory = defineCommand({ name: 'supplements.history', kind: 'q
     .filter((l) => alive(l) && (!supplementId || l.supplementId === supplementId)).sortBy('date'))
     .map((l) => ({ id: l.id, supplementId: l.supplementId, date: l.date, slot: l.slot, status: l.status, amount: l.amount, unit: l.unit, site: l.site, takenAt: l.takenAt ? new Date(l.takenAt).toISOString() : null })) });
 
+export const suppPeriods = defineCommand({ name: 'supplements.periods', kind: 'query',
+  description: 'When a supplement was being taken, as compact on-periods {from, to} (taken days merged; gaps longer than gapDays end a period). Use for charts (on/off bands, e.g. creatine) and "since when have I been taking X". Omit supplementId for all supplements.',
+  input: z.object({ supplementId: zId.optional(), from: zDate.optional(), to: zDate.optional(), gapDays: z.number().int().min(1).max(60).default(3) }),
+  run: async ({ supplementId, from, to, gapDays }) => {
+    const logs = await db.supplogs.where('date').between(from ?? '0000-00-00', to ?? '9999-12-31', true, true)
+      .filter((l) => alive(l) && l.status === 'taken' && (!supplementId || l.supplementId === supplementId)).toArray();
+    const sups = new Map((await db.supplements.toArray()).map((s) => [s.id, s.name]));
+    const byId = new Map<string, string[]>();
+    for (const l of logs) byId.set(l.supplementId, [...(byId.get(l.supplementId) ?? []), l.date]);
+    const day = (k: string) => keyToDate(k).getTime() / 86400000;
+    return [...byId].map(([id, ds]) => {
+      const dates = [...new Set(ds)].sort();
+      const periods: { from: string; to: string; days: number }[] = [];
+      for (const d of dates) {
+        const cur = periods[periods.length - 1];
+        if (cur && day(d) - day(cur.to) <= gapDays) { cur.to = d; cur.days++; } else periods.push({ from: d, to: d, days: 1 });
+      }
+      return { supplementId: id, name: sups.get(id) ?? null, periods };
+    });
+  } });
+
 // ---------------- notes ----------------
 export const notesAdd = defineCommand({ name: 'notes.add', kind: 'action', description: 'Add a journal note (side effects, how you feel). tags: supplement ids and/or "side-effect". Returns the note.',
   input: z.object({ text: z.string().trim().min(1), tags: z.array(z.string()).default([]), at: z.string().datetime({ offset: true }).optional() }),
@@ -200,10 +221,10 @@ export const notesDelete = defineCommand({ name: 'notes.delete', kind: 'action',
 export const settingsGet = defineCommand({ name: 'settings.get', kind: 'query', description: 'App settings: units, effort mode, active plan, feature switches, default rests, weigh-in interval.',
   input: z.object({}), run: async () => getSettings() });
 const zFeatures = z.object({ gym: z.boolean(), food: z.boolean(), supplements: z.boolean(), survey: z.boolean(),
-  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean(), planWeek: z.boolean(), adaptiveMaintenance: z.boolean(), agent: z.boolean() }).partial();
+  restTimer: z.boolean(), effort: z.boolean(), warmups: z.boolean(), progression: z.boolean(), planWeek: z.boolean(), adaptiveMaintenance: z.boolean(), agent: z.boolean(), journal: z.boolean() }).partial();
 export const settingsUpdate = defineCommand({ name: 'settings.update', kind: 'action',
   description: 'Change settings; only the fields you pass change. unit kg/lb (display unit, data stays in kg), effortMode rir/rpe, activePlanId (a plan id, or null to clear the active plan), ' +
-    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers, planWeek = "Week N" next to the active plan, adaptiveMaintenance = maintenance estimated from food logs + weight trend instead of the formula only, agent = the in-app AI assistant). Returns all settings.',
+    'restCompoundSec / restIsolationSec (default rests, 15-600 s), weighInEveryDays (reminder interval), features: switch app sections on/off (merged into the current switches; gym, food, supplements, restTimer, effort = RIR/RPE column, warmups, survey = post-workout survey on the workout summary, progression = progression targets in the live workout instead of the last-session numbers, planWeek = "Week N" next to the active plan, adaptiveMaintenance = maintenance estimated from food logs + weight trend instead of the formula only, agent = the in-app AI assistant, journal = the life-event journal). Returns all settings.',
   input: z.object({ unit: z.enum(['kg', 'lb']).optional(), effortMode: z.enum(['rir', 'rpe']).optional(), activePlanId: zId.nullable().optional(),
     restCompoundSec: z.number().int().min(15).max(600).optional(), restIsolationSec: z.number().int().min(15).max(600).optional(),
     weighInEveryDays: z.number().int().min(1).max(30).optional(), features: zFeatures.optional() }),

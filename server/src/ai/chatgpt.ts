@@ -115,7 +115,7 @@ export function chatgptProvider(env: Env, userId: string, global: AIGlobal): Pro
         const body: Record<string, unknown> = {
           model, instructions: req.instructions, input, store: false, stream: true, include: ['reasoning.encrypted_content'],
         };
-        if (!noReasoning) body.reasoning = { effort: req.effort };
+        if (!noReasoning && req.effort !== 'auto') body.reasoning = { effort: req.effort };
         const tools = toTools(req.tools, useNamespace);
         if (tools) { body.tools = tools; body.tool_choice = 'auto'; }
         try {

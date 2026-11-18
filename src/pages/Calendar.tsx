@@ -4,7 +4,7 @@
 // so Back from a workout or a food day returns here.
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion, type PanInfo } from 'motion/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
@@ -14,6 +14,9 @@ import { useSettings } from '../db/settings';
 import { fmtWeight, plural } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { useToday } from '../lib/today';
+import { journalList } from '../api/journal';
+import { JournalSheet, journalRange } from './Journal';
+type JEntry = Awaited<ReturnType<typeof journalList.run>>[number];
 
 const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const longDate = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -57,6 +60,9 @@ export function CalendarPage() {
   const days = Array.from({ length: 42 }, (_, i) => shiftDate(gridStart, i));
   const data = useLiveQuery(() => run(calendarRangeCmd, { from: days[0], to: days[41] }), [days[0]]);
   const byDate = new Map((data?.days ?? []).map((d) => [d.date, d]));
+  const settings = useSettings();
+  const journal = useLiveQuery(() => (settings.features.journal !== false ? run(journalList, { from: days[0], to: days[41] }) : Promise.resolve([])), [days[0], settings.features.journal]) ?? [];
+  const journalOn = (k: string) => journal.filter((j) => j.date === k || (j.date < k && (j.ongoing ? k <= today : !!j.endDate && k <= j.endDate)));
   const counts = (data?.days ?? []).filter((d) => monthOf(d.date) === month).reduce((a, d) => ({ w: a.w + d.workouts.length, f: a.f + (d.markers.foodGoalHit ? 1 : 0) }), { w: 0, f: 0 });
 
   // direction of the last month change, for the slide (sign only; reduced motion turns it into a fade via MotionConfig)
@@ -100,10 +106,11 @@ export function CalendarPage() {
                 const d = byDate.get(k);
                 const out = monthOf(k) !== month;
                 const words = markerWords(d);
+                const js = journalOn(k);
                 return (
-                  <button key={k} className={'cal-day' + (out ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '') + (k > today ? ' future' : '')}
+                  <button key={k} className={'cal-day' + (out ? ' out' : '') + (k === today ? ' today' : '') + (k === sel ? ' sel' : '') + (k > today ? ' future' : '') + (js.length ? ' has-journal' : '') + (js.some((j) => j.date === k) ? ' journal-start' : '')}
                     onClick={() => setUrl(month, k)} aria-current={k === today ? 'date' : undefined}
-                    aria-label={(k === today ? 'Today, ' : '') + longDate.format(keyToDate(k)) + (words ? `, ${words}` : '')}>
+                    aria-label={(k === today ? 'Today, ' : '') + longDate.format(keyToDate(k)) + (words ? `, ${words}` : '') + (js.length ? `, ${js.map((j) => j.title).join(', ')}` : '')}>
                     <span className="num">{keyToDate(k).getDate()}</span>
                     <DayDots d={d} />
                   </button>
@@ -124,22 +131,32 @@ export function CalendarPage() {
         <span><i className="dot-food-done" aria-hidden />Fully logged</span>
         <span><i className="dot-weight" aria-hidden />Weigh-in</span>
         <span><i className="dot-supp" aria-hidden />Supps all taken</span>
+        {settings.features.journal !== false && <span><i className="dot-journal" aria-hidden />Journal</span>}
       </div>
 
-      <DaySheet date={sel} day={sel ? byDate.get(sel) : undefined} onClose={() => setUrl(month)} />
+      <DaySheet date={sel} day={sel ? byDate.get(sel) : undefined} journal={sel ? journalOn(sel) : []} onClose={() => setUrl(month)} />
     </div>
   );
 }
 
-function DaySheet({ date, day, onClose }: { date?: string; day?: CalendarDay; onClose: () => void }) {
+function DaySheet({ date, day, journal, onClose }: { date?: string; day?: CalendarDay; journal: JEntry[]; onClose: () => void }) {
   const nav = useNavigate();
   const settings = useSettings();
   const today = useToday();
-  const empty = !day || (!day.workouts.length && !day.food && !day.weighIns.length && !day.supps);
+  const [adding, setAdding] = useState(false);
+  const empty = (!day || (!day.workouts.length && !day.food && !day.weighIns.length && !day.supps)) && !journal.length;
   return (
     <Sheet open={!!date} onClose={onClose} title={date ? (date === today ? `Today · ${longDate.format(keyToDate(date))}` : longDate.format(keyToDate(date))) : undefined}>
       {date && (
         <div className="stack" style={{ gap: 8 }}>
+          {journal.map((j) => (
+            <button key={j.id} className="mini-row pressable" onClick={() => nav('/journal')}>
+              <span className="role-chip jchip"><Icon name="book" size={14} stroke={2} /></span>
+              <span className="grow ellipsis" dir="auto">{j.title}</span>
+              <span className="muted t-13">{journalRange(j)}</span>
+              <Icon name="chevronRight" size={16} className="chev" />
+            </button>
+          ))}
           {day?.workouts.map((w) => (
             <button key={w.id} className="mini-row pressable" data-role="gym" onClick={() => nav(`/session/${w.id}`)}>
               <span className="role-chip"><Icon name="dumbbell" size={14} stroke={2} /></span>
@@ -183,6 +200,8 @@ function DaySheet({ date, day, onClose }: { date?: string; day?: CalendarDay; on
               <button className="text-link" onClick={() => nav(date === today ? '/supps' : `/supps?d=${date}`)}>Supps</button>
             </nav>
           )}
+          {settings.features.journal !== false && <button className="text-link" style={{ alignSelf: 'center' }} onClick={() => setAdding(true)}><Icon name="plus" size={14} stroke={2.4} /> Journal</button>}
+          <JournalSheet entry={adding ? 'new' : null} date={date} onClose={() => setAdding(false)} />
         </div>
       )}
     </Sheet>

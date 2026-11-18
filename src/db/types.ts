@@ -131,11 +131,12 @@ export interface Settings {
     planWeek?: boolean; // "Week N" next to the active plan; undefined = on
     adaptiveMaintenance?: boolean; // maintenance estimated from logs + weight trend; undefined = on
     agent?: boolean; // in-app AI agent (floating button, /agent, Home widget); undefined = on
+    journal?: boolean; // life-event journal (/journal, Calendar, chart overlays); undefined = on
   };
   /** Agent preferences. Changed only from Settings (agentPrefs.update is never offered to the agent). */
   agent?: AgentPrefs;
 }
-export type AgentCategory = 'food' | 'gym' | 'supplements' | 'body' | 'settings';
+export type AgentCategory = 'food' | 'gym' | 'supplements' | 'body' | 'journal' | 'settings';
 export interface AgentPrefs {
   /** per category: 'ask' = request cards need Apply (default), 'auto' = applied at once */
   permissions?: Partial<Record<AgentCategory, 'ask' | 'auto'>>;
@@ -278,4 +279,17 @@ export interface Memory extends Base {
   name: string;
   description: string;
   content: string;
+  /** pinned: full content always in the assistant's instructions (keep short) */
+  pinned?: boolean;
+}
+
+export type JournalTag = 'diet' | 'training' | 'health' | 'life' | 'other';
+/** A dated life event that can't be inferred from the logs ("Started cut", "Exam season", "Moved out", "Sick").
+ *  endDate: undefined = a single day; null = ongoing (until ended); a date = a range. */
+export interface JournalEntry extends Base {
+  date: string;
+  endDate?: string | null;
+  title: string;
+  note?: string;
+  tag?: JournalTag;
 }

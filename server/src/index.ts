@@ -41,7 +41,7 @@ export { RestAlarm, AiAuth };
 
 type User = { id: string; name: string };
 
-const SYNC_TABLES = new Set(['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'settings', 'memories']);
+const SYNC_TABLES = new Set(['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'settings', 'memories', 'journal']);
 const MAX_BATCH = 500;
 const MAX_RECORD_BYTES = 64 * 1024;
 
