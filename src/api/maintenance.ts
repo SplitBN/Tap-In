@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { defineCommand, zDate } from './registry';
 import { alive, db, newRecord, save } from '../db/db';
 import { goalFor } from '../db/food';
+import { dayStatusRange } from './food';
 import { getSettings } from '../db/settings';
 import type { NutritionGoal } from '../db/types';
 import { MAINT, adaptiveMaintenance, latestCleanKg } from '../lib/maintenance';
@@ -11,8 +12,8 @@ import { dateKey, estimateMaintenance, keyToDate, shiftDate, targetKcal } from '
 const r2 = (v: number | null) => (v == null ? null : Math.round(v * 100) / 100);
 
 export const maintenanceEstimate = defineCommand({ name: 'maintenance.estimate', kind: 'query',
-  description: 'Maintenance calories (TDEE) estimated from your own logs by energy balance: mean intake on fully logged days − weight-trend change × 7700 kcal/kg, over a trailing window (default 28 days ending asOf). ' +
-    'Noise rules: only days marked fully logged count; days < 800 kcal, > 2.5× the formula estimate, or robust outliers (median ± 3.5 MAD) are excluded with a reason; weigh-ins are one per day, typos (outside 25–350 kg) and jumps > max(2 kg, 3%) from nearby days are ignored; ' +
+  description: 'Maintenance calories (TDEE) estimated from your own logs by energy balance: mean intake on complete days − weight-trend change × 7700 kcal/kg, over a trailing window (default 28 days ending asOf). ' +
+    'Noise rules: only days whose status is complete count (days.status: inferred from the log, or confirmed by the user); partial / unsure / not-yet-closed days are excluded with that reason; days < 800 kcal, > 2.5× the formula estimate, or robust outliers (median ± 3.5 MAD) are excluded with a reason; weigh-ins are one per day, typos (outside 25–350 kg) and jumps > max(2 kg, 3%) from nearby days are ignored; ' +
     'the trend is a robust Theil–Sen line. The data estimate is blended toward the Mifflin-St Jeor × activity formula by its precision and may move at most 75 kcal/day. ' +
     'source: "formula" (not enough data or feature off), "blended" (data counts < 75%, or easing back to the formula after data thinned out), "adaptive". confidence none|low|medium|high. manualKcal = a manual override in force in the goal (it wins over this estimate). ' +
     'series = per day in the window: logged intake, whether used or why excluded, the day\'s weigh-in (or why ignored), EWMA-smoothed weight and the trend line. history = the estimate for each of the last 57 days. A rough guide, not a measurement.',
@@ -25,18 +26,21 @@ export const maintenanceEstimate = defineCommand({ name: 'maintenance.estimate',
       goalFor(to),
       getSettings(),
       db.entries.where('date').between(lo, to, true, true).filter(alive).toArray(),
-      db.days.where(':id').between(lo, to, true, true).filter(alive).toArray(),
+      dayStatusRange(lo, to),
       db.bodyweight.where('at').between(keyToDate(shiftDate(lo, -MAINT.neighbourDays)).getTime(), keyToDate(shiftDate(to, 1)).getTime()).filter(alive).toArray(),
     ]);
     const enabled = settings.features.adaptiveMaintenance !== false;
     const intake = new Map<string, number>();
     for (const e of entries) intake.set(e.date, (intake.get(e.date) ?? 0) + e.n.kcal);
-    const complete = new Set(days.filter((d) => d.complete).map((d) => d.id));
+    // complete = the inferred day status (or the user's confirmation); everything else is excluded with its reason
+    const complete = new Set(days.filter((d) => d.status === 'complete').map((d) => d.date));
+    const incomplete = new Map(days.filter((d) => d.status !== 'complete' && d.status !== 'empty')
+      .map((d) => [d.date, d.status === 'open' ? 'not yet closed' as const : d.status === 'unsure' ? 'unsure day' as const : 'partial day' as const]));
     const weighIns = weights.map((w) => ({ at: w.at, kg: w.kg }));
     const kg = latestCleanKg(weighIns, to) ?? (await db.bodyweight.orderBy('at').reverse().filter(alive).first())?.kg ?? 80;
     const age = keyToDate(to).getFullYear() - (goal?.birthYear ?? 1995);
     const formula = formulaKcal ?? estimateMaintenance(goal?.sex ?? 'male', kg, goal?.heightCm ?? 175, age, goal?.activity ?? 'light');
-    const r = adaptiveMaintenance({ asOf: to, windowDays, intake, complete, weighIns, formulaKcal: formula });
+    const r = adaptiveMaintenance({ asOf: to, windowDays, intake, complete, incomplete, weighIns, formulaKcal: formula });
     const e = r.est;
     const off = !enabled;
     return {

@@ -23,6 +23,7 @@ import { DayDots, markerWords, mondayOf } from './Calendar';
 import { useToday } from '../lib/today';
 import { workingSetCount } from '../lib/workoutStats';
 import { useChats } from '../lib/agent/chats';
+import { MorningCheck } from '../components/DayStatus';
 import { journalList } from '../api/journal';
 import { JournalSheet, journalRange } from './Journal';
 
@@ -44,6 +45,7 @@ export function HomePage() {
           <h1>Today</h1>
         </div>
       </header>
+      {settings.features.food && <MorningCheck />}
       <div className="widgets">
         {settings.features.gym && <GymWidget />}
         {settings.features.food && <FoodWidget />}

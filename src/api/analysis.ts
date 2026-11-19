@@ -5,6 +5,7 @@ import type { SetLog } from '../db/types';
 import { e1rm, totalLoadKg } from '../lib/science';
 import { welch } from '../lib/stats';
 import { dateKey, keyToDate, sum } from '../lib/nutrition';
+import { dayStatusRange } from './food';
 
 const TABLES = ['exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes'] as const;
 
@@ -30,10 +31,11 @@ export const dataQuery = defineCommand({ name: 'data.query', kind: 'query',
 async function series(metric: 'e1rm' | 'bodyweight' | 'kcal' | 'protein', exerciseIds?: string[]): Promise<{ date: string; value: number; group?: string }[]> {
   if (metric === 'bodyweight') return (await db.bodyweight.filter(alive).toArray()).map((b) => ({ date: dateKey(b.at), value: b.kg }));
   if (metric === 'kcal' || metric === 'protein') {
-    const complete = new Set((await db.days.filter((d) => alive(d) && d.complete).toArray()).map((d) => d.id));
     const byDay = new Map<string, { kcal: number; p: number; c: number; f: number }[]>();
     (await db.entries.filter(alive).toArray()).forEach((e) => byDay.set(e.date, [...(byDay.get(e.date) ?? []), e.n]));
-    // only fully-logged days when any are marked; otherwise every logged day
+    const keys = [...byDay.keys()].sort();
+    // only days whose (inferred or confirmed) status is complete; every logged day if none are
+    const complete = new Set(keys.length ? (await dayStatusRange(keys[0], keys[keys.length - 1])).filter((d) => d.status === 'complete').map((d) => d.date) : []);
     return [...byDay].filter(([d]) => !complete.size || complete.has(d)).map(([date, list]) => ({ date, value: metric === 'kcal' ? sum(list).kcal : sum(list).p }));
   }
   // e1rm: best estimated 1RM per session per exercise, expressed relative to that exercise's overall mean so
@@ -75,11 +77,12 @@ export const statsCompare = defineCommand({ name: 'stats.compareBeforeAfter', ki
       caveat: 'Observational before/after comparison; progress usually slows over time and other changes (diet, sleep, program) confound.' };
   } });
 
-export const statsDaily = defineCommand({ name: 'stats.dailyNutrition', kind: 'query', description: 'Calories and macros per day between dates, with whether each day was marked fully logged.',
+export const statsDaily = defineCommand({ name: 'stats.dailyNutrition', kind: 'query', description: 'Calories and macros per day between dates, with each day\'s status (complete | partial | unsure | open: inferred from the log or confirmed by the user, see days.status) and complete = status is complete.',
   input: z.object({ from: zDate, to: zDate }),
   run: async ({ from, to }) => {
     const entries = await db.entries.where('date').between(from, to, true, true).filter(alive).toArray();
     const days = new Map<string, { kcal: number; p: number; c: number; f: number }[]>(); entries.forEach((e) => days.set(e.date, [...(days.get(e.date) ?? []), e.n]));
-    const complete = new Set((await db.days.filter((d) => alive(d) && d.complete).toArray()).map((d) => d.id));
-    return [...days].sort().map(([date, list]) => { const t = sum(list); return { date, kcal: Math.round(t.kcal), p: Math.round(t.p), c: Math.round(t.c), f: Math.round(t.f), complete: complete.has(date) }; });
+    const st = new Map((await dayStatusRange(from, to)).map((d) => [d.date, d]));
+    return [...days].sort().map(([date, list]) => { const t = sum(list); const s = st.get(date);
+      return { date, kcal: Math.round(t.kcal), p: Math.round(t.p), c: Math.round(t.c), f: Math.round(t.f), status: s?.status ?? 'unsure', complete: s?.status === 'complete' }; });
   } });

@@ -3,7 +3,8 @@ import { defineCommand, zDate, zId, zMeal } from './registry';
 import { alive, db, newRecord, remove, save } from '../db/db';
 import { foodToItem, getItem, goalFor, logEntry, lookupBarcode, quickAdd, recipeNutrition, searchFoods, type FoodItem } from '../db/food';
 import type { DayStatus, Food, FoodEntry, Ingredient, Macros, NutritionGoal } from '../db/types';
-import { dateKey, estimateMaintenance, scale, sum, targetKcal } from '../lib/nutrition';
+import { dateKey, estimateMaintenance, scale, shiftDate, sum, targetKcal } from '../lib/nutrition';
+import { inferDayStatuses, type InferredDay } from '../lib/dayStatus';
 
 const zMacros = z.object({ kcal: z.number().min(0), p: z.number().min(0), c: z.number().min(0), f: z.number().min(0), fiber: z.number().min(0).optional() });
 const zPortion = z.object({ label: z.string().describe('e.g. "1 bar", "1 scoop"'), g: z.number().positive().describe('grams (or ml) per unit') });
@@ -207,9 +208,49 @@ export const entriesLogMany = defineCommand({ name: 'entries.logMany', kind: 'ac
     return out;
   } });
 
-export const daysComplete = defineCommand({ name: 'days.setComplete', kind: 'action', description: 'Mark a day as fully logged or not (only complete days are used to estimate maintenance). Returns the day status.',
+// ---------------- day status (inferred "fully logged", with the user's override) ----------------
+/** Inferred status for every date from..to (see lib/dayStatus.ts). */
+export async function dayStatusRange(from: string, to: string, now = new Date()): Promise<InferredDay[]> {
+  const lo = shiftDate(from, -29);
+  const hi = shiftDate(to > dateKey(now.getTime()) ? to : dateKey(now.getTime()), 1); // tomorrow's entries close "yesterday"
+  const [entries, overrides, goal] = await Promise.all([
+    db.entries.where('date').between(lo, hi, true, true).filter(alive).toArray(),
+    db.days.where('id').between(lo, hi, true, true).filter(alive).toArray(),
+    goalFor(to),
+  ]);
+  const kcalByDay = new Map<string, number>(), mealsByDay = new Map<string, Set<string>>(), entriesByDay = new Map<string, number>();
+  for (const e of entries) {
+    kcalByDay.set(e.date, (kcalByDay.get(e.date) ?? 0) + e.n.kcal);
+    mealsByDay.set(e.date, (mealsByDay.get(e.date) ?? new Set()).add(e.meal));
+    entriesByDay.set(e.date, (entriesByDay.get(e.date) ?? 0) + 1);
+  }
+  const dates: string[] = [];
+  for (let d = from; d <= to; d = shiftDate(d, 1)) dates.push(d);
+  return inferDayStatuses({ dates, kcalByDay, mealsByDay, entriesByDay, overrides: new Map(overrides.map((o) => [o.id, !!o.complete])),
+    now, targetKcal: goal?.kcal ?? null, fallbackKcal: goal?.maintenanceKcal ?? (await formulaFallback()) });
+}
+/** No goals yet: the formula estimate with the same defaults maintenance.estimate uses (latest weigh-in, else 80 kg). */
+async function formulaFallback() {
+  const kg = (await db.bodyweight.orderBy('at').reverse().filter(alive).first())?.kg ?? 80;
+  return Math.round(estimateMaintenance('male', kg, 175, new Date().getFullYear() - 1995, 'light'));
+}
+
+export const daysStatus = defineCommand({ name: 'days.status', kind: 'query',
+  description: 'Whether each day from..to looks fully logged, inferred from the food log (nobody has to remember to mark it): status open (today, or yesterday before 04:00) | empty | complete | partial | unsure, ' +
+    'source auto | you (the user confirmed it with days.setComplete), kcal, baseline (the user\'s usual intake on complete days, else the calorie target), reason. Only complete days feed maintenance and averages. ' +
+    'When a day is partial or unsure, ask the user once if it was everything; when they say so, propose days.setComplete.',
+  input: z.object({ from: zDate, to: zDate }),
+  run: async ({ from, to }) => dayStatusRange(from, to) });
+
+export const daysComplete = defineCommand({ name: 'days.setComplete', kind: 'action',
+  description: 'The user confirms a day: complete true = "that was everything I ate", false = "I missed some". Overrides the inferred status (days.status) for that date; use days.clearOverride to go back to automatic. Returns the day record.',
   input: z.object({ date: zDate, complete: z.boolean() }),
-  run: async ({ date, complete }) => { const d = await db.days.get(date); return save('days', d ? { ...d, complete } : { ...newRecord({ complete }), id: date } as DayStatus); } });
+  run: async ({ date, complete }) => { const d = await db.days.get(date); return save('days', d ? { ...d, complete, deletedAt: null } : { ...newRecord({ complete }), id: date } as DayStatus); } });
+
+export const daysClearOverride = defineCommand({ name: 'days.clearOverride', kind: 'action',
+  description: 'Remove the user\'s confirmation for a day so its status is inferred again (days.status). Returns { ok }.',
+  input: z.object({ date: zDate }),
+  run: async ({ date }) => { const d = await db.days.get(date); if (d && !d.deletedAt) await remove('days', date); return { ok: true }; } });
 
 // ---------------- goals ----------------
 export const goalsGet = defineCommand({ name: 'goals.get', kind: 'query', description: 'Nutrition goals in force on a date (profile, maintenance, calorie/protein/carb/fat targets — any may be null).',

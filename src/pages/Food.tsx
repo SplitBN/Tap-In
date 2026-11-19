@@ -6,7 +6,8 @@ import { AddFoodSheet, EntriesTransferSheet, EntrySheet, FoodTile, MacroLine, Re
 import { toast } from '../components/Toast';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
-import { daysComplete, entriesDeleteMany } from '../api/food';
+import { entriesDeleteMany } from '../api/food';
+import { DayStatusChip, MorningCheck } from '../components/DayStatus';
 import { recordsRestore } from '../api/body';
 import { run } from '../api/registry';
 import { alive, db } from '../db/db';
@@ -23,8 +24,7 @@ export function useDay(date: string) {
   const entries = useLiveQuery(() => db.entries.where('date').equals(date).filter(alive).sortBy('at'), [date]) ?? [];
   // undefined = loading, null = no goals set yet
   const goal = useLiveQuery(async () => (await goalFor(date)) ?? null, [date]);
-  const status = useLiveQuery(() => db.days.get(date), [date]);
-  return { entries, goal, status, total: sum(entries.map((e) => e.n)) };
+  return { entries, goal, total: sum(entries.map((e) => e.n)) };
 }
 
 
@@ -36,7 +36,7 @@ export function FoodPage() {
   const today = useToday();
   const date = params.get('d') ?? today;
   const setDate = (d: string) => setParams(d === today ? {} : { d }, { replace: true });
-  const { entries, goal, status, total } = useDay(date);
+  const { entries, goal, total } = useDay(date);
   const [adding, setAdding] = useState<{ meal: Meal; tab: Tab } | null>(null);
   const [shortcuts, setShortcuts] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -87,6 +87,9 @@ export function FoodPage() {
         </button>
       ) : null}
 
+      {date === today && <MorningCheck />}
+      <div className="day-chip-row"><DayStatusChip date={date} /></div>
+
       <Dashboard total={total} goal={goal ?? null} meals={MEALS.map((m) => ({ ...m, kcal: sum(byMeal(m.id).map((e) => e.n)).kcal }))}
         onMeal={(m) => document.getElementById(`meal-${m}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
@@ -128,15 +131,6 @@ export function FoodPage() {
           </section>
         );
       })}
-
-      <div className="group" style={{ marginTop: 24 }}>
-        <label className="am-row" style={{ cursor: 'pointer' }}>
-          <Icon name="check" />
-          <span className="grow">Day fully logged<span className="am-sub">Only full days count toward your maintenance estimate</span></span>
-          <span className="switch"><input type="checkbox" checked={!!status?.complete}
-            onChange={(e) => run(daysComplete, { date, complete: e.target.checked })} /><span /></span>
-        </label>
-      </div>
 
       <nav className="text-links" aria-label="Food">
         <button className="text-link" onClick={() => nav('/nutrition')}>Goals</button>

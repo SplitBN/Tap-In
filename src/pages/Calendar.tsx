@@ -30,7 +30,7 @@ const monthTitle = (m: string) => keyToDate(`${m}-01`).toLocaleDateString(undefi
 export function markerWords(d?: CalendarDay) {
   if (!d) return '';
   const m = d.markers;
-  return [m.workout && plural(d.workouts.length, 'workout', 'workouts'), m.foodGoalHit ? 'food goals hit' : m.foodComplete && 'food fully logged',
+  return [m.workout && plural(d.workouts.length, 'workout', 'workouts'), m.foodGoalHit ? 'food goals hit' : m.foodComplete && 'food log complete',
     m.weighIn && 'weigh-in', m.suppsAllTaken && 'supplements all taken'].filter(Boolean).join(', ');
 }
 
@@ -128,7 +128,7 @@ export function CalendarPage() {
       <div className="cal-legend" aria-label="Legend">
         <span><i className="dot-workout" aria-hidden />Workout</span>
         <span><i className="dot-food" aria-hidden />Food goals</span>
-        <span><i className="dot-food-done" aria-hidden />Fully logged</span>
+        <span><i className="dot-food-done" aria-hidden />Complete log</span>
         <span><i className="dot-weight" aria-hidden />Weigh-in</span>
         <span><i className="dot-supp" aria-hidden />Supps all taken</span>
         {settings.features.journal !== false && <span><i className="dot-journal" aria-hidden />Journal</span>}
@@ -173,7 +173,7 @@ function DaySheet({ date, day, journal, onClose }: { date?: string; day?: Calend
                 <span className="muted num" style={{ display: 'block', fontWeight: 500 }}>P {day.food.p} · C {day.food.c} · F {day.food.f} g</span>
               </span>
               {day.markers.foodGoalHit ? <span className="badge good"><Icon name="check" size={12} stroke={3} /> Goals</span>
-                : day.food.complete ? <span className="badge accent">Logged</span> : null}
+                : <DayStatusBadge status={day.food.status} source={day.food.statusSource} />}
               <Icon name="chevronRight" size={16} className="chev" />
             </button>
           )}
@@ -206,4 +206,11 @@ function DaySheet({ date, day, journal, onClose }: { date?: string; day?: Calend
       )}
     </Sheet>
   );
+}
+
+function DayStatusBadge({ status, source }: { status: string; source: 'auto' | 'you' }) {
+  if (status === 'complete') return <span className="badge accent">{source === 'you' ? <><Icon name="check" size={12} stroke={3} /> Confirmed</> : 'Complete'}</span>;
+  if (status === 'partial') return <span className="badge warn-badge">Partial</span>;
+  if (status === 'unsure') return <span className="badge">Unsure</span>;
+  return null;
 }

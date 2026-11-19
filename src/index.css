@@ -1476,3 +1476,17 @@ body:has(.chat-sel-bar) .tabbar { visibility: hidden; }
 .cal-day.has-journal { box-shadow: inset 0 -3px 0 -1px rgba(235, 235, 245, 0.28); }
 .cal-day.journal-start { box-shadow: inset 0 -3px 0 -1px var(--text-2); }
 .dot-journal { display: inline-block; width: 12px; height: 3px; border-radius: 2px; background: var(--text-2); vertical-align: middle; }
+
+/* inferred day status (Food chip, morning check on Home / Food) */
+.day-chip-row { display: flex; justify-content: center; margin: -2px 0 10px; }
+.day-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--card-2); color: var(--text-2); font-size: var(--fs-13); font-weight: 650; position: relative; }
+.day-chip::after { content: ''; position: absolute; inset: -6px 0; }
+.day-chip.good { color: var(--good); background: var(--good-soft); }
+.day-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.day-check { margin: 0 0 12px; padding: 12px 12px 12px 14px; border-radius: var(--r-lg); background: var(--card); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role) 30%, transparent); }
+.day-check-text { margin: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.35; font-size: var(--fs-15); }
+.day-check-text span { color: var(--text-2); }
+.day-check-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.day-check-actions .btn { min-height: 40px; gap: 5px; }
+.day-check-actions .text-link { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.badge.warn-badge { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }

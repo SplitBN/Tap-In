@@ -45,7 +45,7 @@ export const CORE = [
   'foods.search', 'foods.get', 'entries.list', 'entries.log', 'entries.logMany', 'entries.update', 'entries.delete', 'goals.get',
   'stats.dailyNutrition', 'sessions.list', 'sessions.get', 'plans.list', 'exercises.search', 'exercises.history', 'progress.exercise',
   'bodyweight.list', 'bodyweight.log', 'supplements.day', 'supplements.log', 'calendar.range',
-  'entries.quickAdd', 'entries.copy', 'entries.move', 'entries.deleteMany', 'foods.create', 'goals.set', 'days.setComplete',
+  'entries.quickAdd', 'entries.copy', 'entries.move', 'entries.deleteMany', 'foods.create', 'goals.set', 'days.status', 'days.setComplete',
   'sessions.active', 'sessions.summary', 'exercises.nextTarget', 'supplements.list', 'supplements.periods', 'supplements.history', 'notes.add', 'journal.list', 'journal.add',
 ];
 const schemaOf = (c: Command) => (({ $schema: _s, ...rest }) => rest)(z.toJSONSchema(c.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>);

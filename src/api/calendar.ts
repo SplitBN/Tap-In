@@ -6,12 +6,14 @@ import { alive, db } from '../db/db';
 import { buildDay } from '../db/supps';
 import { dateKey, goalHit, keyToDate, shiftDate, sum } from '../lib/nutrition';
 import type { Macros } from '../db/types';
+import { dayStatusRange } from './food';
+import type { DayStatusKind } from '../lib/dayStatus';
 
 export interface CalendarDay {
   date: string;
   markers: { workout: boolean; foodGoalHit: boolean; foodComplete: boolean; weighIn: boolean; suppsAllTaken: boolean };
   workouts: { id: string; name: string; minutes: number }[];
-  food: { kcal: number; p: number; c: number; f: number; entries: number; goalKcal: number | null; goalProteinG: number | null; complete: boolean } | null;
+  food: { kcal: number; p: number; c: number; f: number; entries: number; goalKcal: number | null; goalProteinG: number | null; status: DayStatusKind; statusSource: 'auto' | 'you'; complete: boolean } | null;
   weighIns: { id: string; kg: number; at: string }[];
   supps: { due: number; taken: number } | null;
 }
@@ -25,7 +27,7 @@ export async function calendarRange(from: string, to: string): Promise<CalendarD
     db.bodyweight.where('at').between(lo, hi).filter(alive).toArray(),
     db.entries.where('date').between(from, to, true, true).filter(alive).toArray(),
     db.goals.orderBy('effectiveFrom').filter(alive).toArray(),
-    db.days.where('id').between(from, to, true, true).filter(alive).toArray(),
+    dayStatusRange(from, to),
     db.supplements.filter(alive).toArray(),
     db.stacks.filter(alive).toArray(),
     db.supplogs.where('date').between(from, to, true, true).filter(alive).toArray(),
@@ -38,7 +40,8 @@ export async function calendarRange(from: string, to: string): Promise<CalendarD
     // goal in force that day (goals are versioned by effectiveFrom); hit = kcal within ±10% and protein met (lib/nutrition goalHit)
     const g = [...goals].reverse().find((x) => x.effectiveFrom <= d) ?? goals[0];
     const total: Macros = sum(dayEntries.map((e) => e.n));
-    const complete = !!days.find((x) => x.id === d)?.complete;
+    const st = days.find((x) => x.date === d);
+    const complete = st?.status === 'complete';
     const hit = !!g && dayEntries.length > 0 && goalHit(total, g.kcal, g.proteinG);
     // supplements: judged against the CURRENT schedule (archived ones are left out); never on future days
     const items = d <= today ? buildDay(d, sups, stacks, logs.filter((l) => l.date === d)).flatMap((x) => x.stacks.flatMap((s) => s.items)) : [];
@@ -48,7 +51,7 @@ export async function calendarRange(from: string, to: string): Promise<CalendarD
       markers: { workout: daySessions.length > 0, foodGoalHit: hit, foodComplete: complete, weighIn: dayWeights.length > 0, suppsAllTaken: items.length > 0 && taken === items.length },
       workouts: daySessions.map((s) => ({ id: s.id, name: s.name, minutes: Math.round(((s.endedAt ?? s.startedAt) - s.startedAt) / 60000) })),
       food: dayEntries.length || complete ? { kcal: Math.round(total.kcal), p: Math.round(total.p), c: Math.round(total.c), f: Math.round(total.f), entries: dayEntries.length,
-        goalKcal: g?.kcal ?? null, goalProteinG: g?.proteinG ?? null, complete } : null,
+        goalKcal: g?.kcal ?? null, goalProteinG: g?.proteinG ?? null, status: st?.status ?? 'unsure', statusSource: st?.source ?? 'auto', complete } : null,
       weighIns: dayWeights.map((w) => ({ id: w.id, kg: w.kg, at: new Date(w.at).toISOString() })),
       supps: items.length ? { due: items.length, taken } : null,
     });
@@ -57,8 +60,8 @@ export async function calendarRange(from: string, to: string): Promise<CalendarD
 }
 
 const DESC_DAY = 'Each day: markers { workout (a finished workout started that day), foodGoalHit (calories within ±10% of the goal in force that day and protein ≥ 95%, only for targets that are set), ' +
-  'foodComplete (day marked fully logged), weighIn, suppsAllTaken (every scheduled supplement dose that day was taken; judged against the current schedule, archived supplements left out, never true for future days) }, ' +
-  'workouts [{ id (open with sessions.get / sessions.summary), name, minutes }], food (totals kcal/p/c/f, entries, goalKcal, goalProteinG, complete; null when nothing logged), weighIns [{ id, kg, at }], supps { due, taken } (null when nothing was due).';
+  'foodComplete (the day\'s food log looks complete: inferred, or confirmed by the user — see days.status), weighIn, suppsAllTaken (every scheduled supplement dose that day was taken; judged against the current schedule, archived supplements left out, never true for future days) }, ' +
+  'workouts [{ id (open with sessions.get / sessions.summary), name, minutes }], food (totals kcal/p/c/f, entries, goalKcal, goalProteinG, status open|complete|partial|unsure, statusSource auto|you, complete; null when nothing logged), weighIns [{ id, kg, at }], supps { due, taken } (null when nothing was due).';
 
 export const calendarMonth = defineCommand({ name: 'calendar.month', kind: 'query',
   description: `Calendar for one month: one entry per day (1st to last) of what happened. ${DESC_DAY} Use for "which days did I train / hit my goals in March" questions.`,

@@ -61,11 +61,11 @@ function MaintSheet({ open, onClose, est, override, formula }: { open: boolean; 
           : !e.enoughData ? <>
             <p className="muted">{e.source === 'formula' ? `Using the formula estimate (${k(formula)} kcal) until there’s enough data.` : `Not enough recent data, so this eases back to the formula estimate (${k(formula)} kcal) by up to 75 kcal a day.`} Still needed:</p>
             <ul className="maint-list">{e.needs.map((n) => <li key={n}>{n}</li>)}</ul>
-            <p className="faint t-13">Mark a day “fully logged” on the Food page when every meal is in. Unmarked days are skipped, never counted as zero.</p>
+            <p className="faint t-13">Days that look complete count (the app checks how much and how many meals you logged; confirm a day on the Food page if it guessed wrong). Others are skipped, never counted as zero.</p>
           </> : <>
             <WeightChart est={e} />
             <div className="maint-math">
-              <Row l={`Average intake · ${e.intakeDays} fully logged days`} r={`${k(e.meanIntakeKcal!)} kcal`} />
+              <Row l={`Average intake · ${e.intakeDays} complete days`} r={`${k(e.meanIntakeKcal!)} kcal`} />
               <Row l={`Weight trend · ${e.trendStartKg!.toFixed(1)} → ${e.trendEndKg!.toFixed(1)} kg`} r={`${signed(e.trendKgPerWeek!)} kg/wk`} />
               <Row l="Energy in that change (× 7,700 kcal/kg)" r={`${signed(-e.trendKgPerWeek! * 7700 / 7, 0)} kcal/day`} />
               <Row l="From your data" r={`${k(e.dataKcal!)} kcal`} strong />

@@ -192,7 +192,7 @@ export interface FoodEntry extends Base {
   n: Macros; // totals for this entry
 }
 
-/** Marks a day as fully logged — only complete days feed adaptive maintenance. */
+/** The user's override of the inferred day status (lib/dayStatus): complete true = "that was everything", false = "missed some". No record = automatic. */
 export interface DayStatus extends Base { complete: boolean } // id = YYYY-MM-DD
 
 export type Sex = 'male' | 'female';

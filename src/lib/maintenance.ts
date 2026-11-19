@@ -3,7 +3,7 @@
 // Every rule and constant is listed in docs/SPEC.md → "Science sources" → "Adaptive maintenance" rows.
 //
 // Method, per trailing window (default 28 days ending on `asOf`):
-//  1. Intake: only days marked "fully logged" count. A missing day is never 0 kcal. Complete days that are
+//  1. Intake: only complete days count (lib/dayStatus: inferred from the log, or confirmed by the user). A missing day is never 0 kcal. Complete days that are
 //     implausible are dropped: < 800 kcal, > 2.5 × the formula estimate, or a robust outlier
 //     (modified z-score |0.6745·(x − median)/MAD| > 3.5, Iglewicz & Hoaglin 1993, as given in the NIST/SEMATECH
 //     e-Handbook §1.3.5.17; scale floored at 20% of the median, so a very regular eater only loses days > 70% above their median).
@@ -46,7 +46,9 @@ export const MAINT = {
 } as const;
 
 export interface WeighIn { at: number; kg: number }
-export type IntakeExclusion = 'not marked fully logged' | 'under 800 kcal' | 'over 2.5× estimate' | 'outlier vs your usual intake';
+export type IntakeExclusion = 'partial day' | 'unsure day' | 'not yet closed' | 'under 800 kcal' | 'over 2.5× estimate' | 'outlier vs your usual intake';
+/** Why a logged day doesn't count as complete (from lib/dayStatus). */
+export type IncompleteReason = 'partial day' | 'unsure day' | 'not yet closed';
 export type WeightExclusion = 'implausible weight' | 'jump vs nearby weigh-ins';
 
 export interface DayRow {
@@ -132,12 +134,12 @@ export function ewmaSeries(clean: CleanDay[], from: string, to: string) {
 }
 
 /** Intake rules for one window. complete days only; hard bounds first, then the robust outlier rule. */
-export function classifyIntake(dates: string[], intake: Map<string, number>, complete: Set<string>, formulaKcal: number) {
+export function classifyIntake(dates: string[], intake: Map<string, number>, complete: Set<string>, formulaKcal: number, incomplete?: Map<string, IncompleteReason>) {
   const res = new Map<string, IntakeExclusion | null>();
   const pass: string[] = [];
   for (const d of dates) {
     const k = intake.get(d) ?? 0;
-    if (!complete.has(d)) { if (intake.has(d)) res.set(d, 'not marked fully logged'); continue; }
+    if (!complete.has(d)) { if (intake.has(d)) res.set(d, incomplete?.get(d) ?? 'partial day'); continue; }
     if (k < MAINT.minKcal) res.set(d, 'under 800 kcal');
     else if (k > MAINT.maxKcalFactor * formulaKcal) res.set(d, 'over 2.5× estimate');
     else { res.set(d, null); pass.push(d); }
@@ -152,16 +154,16 @@ export function classifyIntake(dates: string[], intake: Map<string, number>, com
 }
 
 /** The energy-balance estimate for the window ending on `to`, blended toward the formula by its precision. */
-export function windowEstimate(to: string, windowDays: number, intake: Map<string, number>, complete: Set<string>, clean: CleanDay[], formulaKcal: number): WindowEstimate & { intakeStatus: Map<string, IntakeExclusion | null> } {
+export function windowEstimate(to: string, windowDays: number, intake: Map<string, number>, complete: Set<string>, clean: CleanDay[], formulaKcal: number, incomplete?: Map<string, IncompleteReason>): WindowEstimate & { intakeStatus: Map<string, IntakeExclusion | null> } {
   const from = shiftDate(to, -(windowDays - 1));
   const dates: string[] = [];
   for (let k = from; k <= to; k = shiftDate(k, 1)) dates.push(k);
-  const intakeStatus = classifyIntake(dates, intake, complete, formulaKcal);
+  const intakeStatus = classifyIntake(dates, intake, complete, formulaKcal, incomplete);
   const used = dates.filter((d) => intakeStatus.get(d) === null).map((d) => intake.get(d) ?? 0);
   const w = clean.filter((d) => !d.excluded && d.date >= from && d.date <= to);
   const spanDays = w.length ? dayDiff(w[0].date, w[w.length - 1].date) : 0;
   const missing: string[] = [];
-  if (used.length < MAINT.minIntakeDays) missing.push(`${MAINT.minIntakeDays} fully logged days (have ${used.length})`);
+  if (used.length < MAINT.minIntakeDays) missing.push(`${MAINT.minIntakeDays} complete days (have ${used.length})`);
   if (w.length < MAINT.minWeighIns) missing.push(`${MAINT.minWeighIns} weigh-ins (have ${w.length})`);
   else if (spanDays < MAINT.minSpanDays) missing.push(`weigh-ins spread over ${MAINT.minSpanDays}+ days (have ${spanDays})`);
   const base = { from, to, intakeDays: used.length, meanIntake: used.length ? mean(used) : null, sdIntake: used.length ? sd(used) : null, weighIns: w.length, spanDays, intakeStatus };
@@ -181,15 +183,15 @@ export type Confidence = 'none' | 'low' | 'medium' | 'high';
 
 /** Full estimate as of a date: replays the window estimate day by day so it moves at most capPerDay kcal per day
  *  (after rounding to 10). A day without enough data eases back toward the formula at the same cap, never in one jump. */
-export function adaptiveMaintenance(p: { asOf: string; windowDays?: number; intake: Map<string, number>; complete: Set<string>; weighIns: WeighIn[]; formulaKcal: number }) {
+export function adaptiveMaintenance(p: { asOf: string; windowDays?: number; intake: Map<string, number>; complete: Set<string>; incomplete?: Map<string, IncompleteReason>; weighIns: WeighIn[]; formulaKcal: number }) {
   const W = p.windowDays ?? MAINT.windowDays;
   const clean = cleanWeighIns(p.weighIns);
   const history: { date: string; kcal: number; source: MaintSource }[] = [];
   const f10 = r10(p.formulaKcal);
   let prev = f10;
-  const cur = windowEstimate(p.asOf, W, p.intake, p.complete, clean, p.formulaKcal);
+  const cur = windowEstimate(p.asOf, W, p.intake, p.complete, clean, p.formulaKcal, p.incomplete);
   for (let k = shiftDate(p.asOf, -MAINT.replayDays); k <= p.asOf; k = shiftDate(k, 1)) {
-    const e = k === p.asOf ? cur : windowEstimate(k, W, p.intake, p.complete, clean, p.formulaKcal);
+    const e = k === p.asOf ? cur : windowEstimate(k, W, p.intake, p.complete, clean, p.formulaKcal, p.incomplete);
     const target = r10(e.ok ? e.blendedKcal : f10);
     // step to the target, or by the largest multiple of 10 within the cap
     prev = Math.abs(target - prev) <= MAINT.capPerDay ? target : prev + Math.sign(target - prev) * Math.floor(MAINT.capPerDay / 10) * 10;
