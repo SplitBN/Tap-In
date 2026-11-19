@@ -445,6 +445,10 @@ function Composer({ chat, running, inputRef }: { chat: Chat; running: boolean; i
   const canSend = !running && !busy && (!!text.trim() || (!pending && atts.length > 0));
   const send = async () => {
     if (!canSend) return;
+    if (text.trim() === '/vvdebug') { // hidden: toggle the keyboard/viewport readout (iOS layout diagnosis)
+      try { localStorage.setItem('tapin:vvdebug', localStorage.getItem('tapin:vvdebug') === '1' ? '0' : '1'); } catch { /* ignore */ }
+      setText(''); window.visualViewport?.dispatchEvent(new Event('resize')); return;
+    }
     const parts: AIPart[] = [...atts.flatMap((a) => a.parts), ...(text.trim() ? [{ type: 'text' as const, text: text.trim() }] : [])];
     setText(''); setAtts([]);
     const fresh = await getChat(chat.id);

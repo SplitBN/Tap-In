@@ -43,12 +43,34 @@ export function keyboardInset(vv: { height: number; offsetTop: number } | null |
   return kb > closedGap + 80 ? kb : 0;
 }
 function keyboard() {
+  const vv = window.visualViewport;
   const frameH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || window.innerHeight;
-  const kb = keyboardInset(window.visualViewport, frameH, window.innerHeight);
-  document.documentElement.style.setProperty('--kb', `${kb}px`);
-  // when iOS pans the page up to reveal the input, the chat's header follows the visible top edge
-  document.documentElement.style.setProperty('--kb-top', `${kb > 0 ? Math.max(0, Math.round(window.visualViewport?.offsetTop ?? 0)) : 0}px`);
-  document.documentElement.classList.toggle('kb-open', kb > 0);
+  const kb = keyboardInset(vv, frameH, window.innerHeight);
+  const root = document.documentElement;
+  root.style.setProperty('--kb', `${kb}px`);
+  // While the keyboard is open, screens with a bottom input pin themselves to the visible rectangle iOS reports
+  // (offsetTop / height of the visual viewport, in layout-viewport coordinates = the fixed #root's coordinates).
+  // This doesn't depend on --app-h, which iOS standalone reports inconsistently once the keyboard is up.
+  root.style.setProperty('--vv-top', `${kb > 0 ? Math.max(0, Math.round(vv?.offsetTop ?? 0)) : 0}px`);
+  root.style.setProperty('--vv-h', `${Math.round(vv?.height ?? window.innerHeight)}px`);
+  root.style.setProperty('--kb-top', `${kb > 0 ? Math.max(0, Math.round(vv?.offsetTop ?? 0)) : 0}px`);
+  root.classList.toggle('kb-open', kb > 0);
+  debugReadout(kb, frameH);
+}
+
+/** localStorage 'tapin:vvdebug' = '1' shows the viewport numbers in a corner (for diagnosing iOS keyboard layout). */
+function debugReadout(kb: number, frameH: number) {
+  let on = false;
+  try { on = localStorage.getItem('tapin:vvdebug') === '1'; } catch { /* ignore */ }
+  let el = document.getElementById('vv-debug');
+  if (!on) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'vv-debug';
+    el.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top) + 4px);left:4px;z-index:99999;padding:4px 6px;border-radius:6px;background:rgba(255,0,80,.85);color:#fff;font:11px/1.3 ui-monospace,monospace;pointer-events:none;white-space:pre';
+    document.body.appendChild(el);
+  }
+  const vv = window.visualViewport;
+  el.textContent = `inner ${window.innerHeight} frame ${frameH} screen ${screen.height}\nvv h ${Math.round(vv?.height ?? 0)} top ${Math.round(vv?.offsetTop ?? 0)} kb ${kb}\nscrollY ${Math.round(window.scrollY)} doc ${document.documentElement.clientHeight}`;
 }
 
 export function installViewportFix() {

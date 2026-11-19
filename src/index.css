@@ -1404,6 +1404,8 @@ button.frow-amt::after { content: ''; position: absolute; inset: -12px -8px; }
    Agent v3 (2026-11-18): keyboard top, chat notes, chat list select/older, memory pins, display cards, journal.
    ============================================================================ */
 .chat-screen { top: var(--kb-top, 0px); }
+/* keyboard open: pin the chat to the visible rectangle iOS reports (see lib/viewport.ts), not to the frame bottom */
+.kb-open .chat-screen { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-h, 100%); }
 .model-chip.static { cursor: default; }
 .model-chip.static::after { display: none; }
 .chat-note { align-self: center; display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: var(--text-2); font-size: var(--fs-13); font-weight: 600; }
