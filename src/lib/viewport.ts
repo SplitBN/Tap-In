@@ -77,7 +77,19 @@ export function installViewportFix() {
   apply(); keyboard();
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', () => setTimeout(apply, 300));
-  window.visualViewport?.addEventListener('resize', () => { apply(); keyboard(); });
-  window.visualViewport?.addEventListener('scroll', keyboard);
+  // iOS fires the first visualViewport resize while the keyboard is still sliding in (height not final) and may not
+  // fire again until the user scrolls — the composer stayed half under the keyboard until then. So after any
+  // viewport/focus change, keep re-measuring every frame for ~900 ms until the keyboard has settled.
+  let until = 0, raf = 0;
+  const settle = () => {
+    until = performance.now() + 900;
+    if (raf) return;
+    const tick = () => { keyboard(); raf = performance.now() < until ? requestAnimationFrame(tick) : 0; };
+    raf = requestAnimationFrame(tick);
+  };
+  window.visualViewport?.addEventListener('resize', () => { apply(); settle(); });
+  window.visualViewport?.addEventListener('scroll', settle);
+  document.addEventListener('focusin', settle);
+  document.addEventListener('focusout', settle);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && apply());
 }
