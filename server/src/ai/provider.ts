@@ -4,6 +4,7 @@ import type { Env } from '../index';
 import { chatgptProvider } from './chatgpt';
 import { decrypt } from './crypto';
 import { openrouterProvider } from './openrouter';
+import { DEFAULT_VOICE, mergeVoice } from './voiceConfig';
 import { EFFORTS, ProviderError, type AIConfig, type AIGlobal, type Effort, type Provider, type ProviderId, type TurnEvent, type TurnRequest } from './types';
 
 export const DEFAULT_CONFIG: AIConfig = { primary: 'chatgpt', fallback: 'openrouter' };
@@ -16,6 +17,7 @@ export const DEFAULT_GLOBAL: AIGlobal = {
   titleEffort: 'low',
   extractEffort: 'auto',
   webModel: 'perplexity/sonar',
+  voice: DEFAULT_VOICE,
 };
 
 export const PROVIDERS: ProviderId[] = ['chatgpt', 'openrouter'];
@@ -48,6 +50,7 @@ export function mergeGlobal(base: AIGlobal, p: any): AIGlobal {
   if (isEffort(p.titleEffort)) g.titleEffort = p.titleEffort;
   if (isEffort(p.extractEffort)) g.extractEffort = p.extractEffort;
   g.webModel = modelId(p.webModel) ?? g.webModel;
+  g.voice = mergeVoice(g.voice, p.voice);
   return g;
 }
 

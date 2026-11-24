@@ -102,8 +102,8 @@ function ChartCard({ title, note, children }: { title: string; note?: string; ch
 /** This week's hard sets per muscle (bar) against the average of earlier full weeks (tick), with the 10-set context line. */
 function Muscles({ data }: { data: WeeklyProgress }) {
   const ref = data.reference.setsPerWeek;
-  const rows = data.muscles.filter((m) => m.thisWeek.direct > 0 || (m.average.direct ?? 0) > 0);
-  const max = Math.max(ref + 2, ...rows.map((m) => Math.max(m.thisWeek.direct, m.average.direct ?? 0)));
+  const rows = data.muscles.filter((m) => m.thisWeek.direct > 0 || m.thisWeek.indirect > 0 || (m.average.direct ?? 0) > 0);
+  const max = Math.max(ref + 2, ...rows.map((m) => Math.max(m.thisWeek.fractional, m.average.direct ?? 0)));
   const pct = (v: number) => `${(v / max) * 100}%`;
   const avgN = data.weeksAveraged;
   return (
@@ -112,6 +112,7 @@ function Muscles({ data }: { data: WeeklyProgress }) {
       <div className="chart-note">This week so far{avgN ? ` vs average of the last ${plural(avgN, 'full week', 'full weeks')}` : ''}</div>
       <div className="m-legend" aria-hidden>
         <span><i className="sw-now" />This week</span>
+        <span><i className="sw-now ind" />+ Indirect (½)</span>
         {avgN > 0 && <span><i className="sw-avg" />Average</span>}
         <span><i className="sw-ref" />{ref} sets</span>
       </div>
@@ -119,20 +120,21 @@ function Muscles({ data }: { data: WeeklyProgress }) {
         <div className="m-rows" role="list">
           {rows.map((m) => (
             <div key={m.muscle} className="m-row" role="listitem"
-              aria-label={`${titleCase(m.muscle)}: ${m.thisWeek.direct} sets this week${m.average.direct != null ? `, average ${m.average.direct}` : ''}`}>
+              aria-label={`${titleCase(m.muscle)}: ${m.thisWeek.direct} sets this week${m.thisWeek.indirect ? ` plus ${m.thisWeek.indirect} indirect` : ''}${m.average.direct != null ? `, average ${m.average.direct}` : ''}`}>
               <span className="m-name">{titleCase(m.muscle)}</span>
               <span className="m-track">
                 <span className="m-ref" style={{ left: pct(ref) }} />
                 {m.thisWeek.direct > 0 && <span className="m-bar" style={{ width: pct(m.thisWeek.direct) }} />}
+                {m.thisWeek.indirect > 0 && <span className="m-bar ind" style={{ left: pct(m.thisWeek.direct), width: pct(m.thisWeek.indirect / 2) }} />}
                 {m.average.direct != null && m.average.direct > 0 && <span className="m-avg" style={{ left: pct(m.average.direct) }} />}
               </span>
-              <span className="m-num num"><b>{m.thisWeek.direct}</b>{m.average.direct != null && <span className="faint"> / {m.average.direct}</span>}</span>
+              <span className="m-num num"><b>{m.thisWeek.direct}</b>{m.thisWeek.indirect > 0 && <span className="faint">+{m.thisWeek.indirect}</span>}{m.average.direct != null && <span className="faint"> / {m.average.direct}</span>}</span>
             </div>
           ))}
         </div>
       ) : <p className="muted" style={{ margin: '8px 0 0' }}>No sets logged yet.</p>}
       <p className="faint chart-foot" style={{ margin: '12px 0 0' }}>
-        Working sets for each exercise's main muscles (warm-ups excluded, a left + right pair is one set). Schoenfeld, Ogborn &amp; Krieger 2017 found more weekly sets per muscle gave more growth; {ref}+ sets was the highest group they studied. The line is context, not a target or a limit.
+        Bar and first number: working sets for each exercise's main muscles; +N and the lighter bar: sets where it assists (drawn at ½). Warm-ups excluded, a left + right pair is one set. Average and the line use main-muscle sets. Schoenfeld, Ogborn &amp; Krieger 2017 found more weekly sets per muscle gave more growth; {ref}+ sets was the highest group they studied. The line is context, not a target or a limit.
       </p>
     </section>
   );

@@ -132,6 +132,7 @@ export interface Settings {
     adaptiveMaintenance?: boolean; // maintenance estimated from logs + weight trend; undefined = on
     agent?: boolean; // in-app AI agent (floating button, /agent, Home widget); undefined = on
     journal?: boolean; // life-event journal (/journal, Calendar, chart overlays); undefined = on
+    score?: boolean; // e1RM score column in the live set table; undefined = on
   };
   /** Agent preferences. Changed only from Settings (agentPrefs.update is never offered to the agent). */
   agent?: AgentPrefs;
@@ -141,6 +142,7 @@ export interface AgentPrefs {
   /** per category: 'ask' = request cards need Apply (default), 'auto' = applied at once */
   permissions?: Partial<Record<AgentCategory, 'ask' | 'auto'>>;
   web?: boolean; // web_answer / web_read tools; undefined = on
+  backupChats?: boolean; // sync chats to the account (attachments stay on the device); undefined = on
   /** v1 single switch, ignored since v2 */
   ask?: boolean;
 }

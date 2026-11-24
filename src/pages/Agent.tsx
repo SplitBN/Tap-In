@@ -8,6 +8,7 @@ import { MemoryList } from '../components/AgentSettings';
 import { confirmDialog, notice } from '../components/Dialog';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
+import { VoiceCallButton } from '../components/VoiceCall';
 import { useSync } from '../lib/sync';
 import { isFake } from '../lib/agent/client';
 import { AttachError, fileToParts } from '../lib/agent/attach';
@@ -270,6 +271,7 @@ export function AgentChatPage() {
           <h1 className="chat-title ellipsis" dir="auto">{chat.messages.length ? chat.title : 'New chat'}</h1>
           <ModelChip chat={chat} onOpen={() => setModel(true)} />
         </div>
+        <VoiceCallButton chat={chat} />
         {chat.messages.length > 0
           ? <button className="glass-btn" aria-label="Chat options" onClick={() => setMenu(chat)}><Icon name="more" size={22} stroke={2.6} /></button>
           : <span className="glass-btn ghost" aria-hidden />}
@@ -315,7 +317,7 @@ function ChatBody({ chat }: { chat: Chat }) {
     const onViewport = () => { if (pinned.current) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; }); };
     box.addEventListener('scroll', onScroll, { passive: true });
     window.visualViewport?.addEventListener('resize', onViewport);
-    ro.observe(inner);
+    ro.observe(inner); ro.observe(box); // the box shrinks when the keyboard opens: keep the newest message in view
     return () => { ro.disconnect(); box.removeEventListener('scroll', onScroll); window.visualViewport?.removeEventListener('resize', onViewport); };
   }, [chat.id]);
 

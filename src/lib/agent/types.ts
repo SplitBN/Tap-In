@@ -24,7 +24,11 @@ export type AIGlobal = {
   titleEffort: Effort;
   extractEffort: Effort;
   webModel: string;
+  /** voice calls (contract v4); optional: an older Worker does not send it */
+  voice?: VoiceConfig;
 };
+/** Admin-only voice-call models: OpenRouter STT + TTS model ids, the TTS voice and its delivery style. */
+export type VoiceConfig = { sttModel: string; ttsModel: string; ttsVoice: string; ttsStyle: string };
 export type AIProviderInfo = { id: ProviderId; connected: boolean; model: string; label: string; video: boolean; files: boolean };
 export type AIStatus = {
   isAdmin: boolean;
@@ -72,7 +76,8 @@ export type PendingRequest = {
 /** Where the user opened the agent from (route + date shown in that screen). */
 export type AgentContext = { route: string; date?: string };
 
-/** Local only (Dexie `chats`), never synced. */
+/** Dexie `chats`. Synced (Settings → Agent → Back up chats, default on) as a stripped copy: attachments become
+ *  placeholders, long tool results are cut (lib/agent/chats.ts syncCopy). Deleting leaves a tombstone (deletedAt). */
 export interface Chat {
   id: string;
   title: string;
@@ -99,10 +104,16 @@ export interface Chat {
   /** charts / tables / stat tiles by toolCallId, resolved on the client (source queries run here, points capped) */
   displays?: Record<string, Display>;
   context?: AgentContext;
+  /** a voice call happened in this chat (src/lib/voice); the transcript is the normal message history */
+  voice?: boolean;
   /** last error shown under the chat (cleared on the next send) */
   error?: string | null;
   createdAt: number;
   updatedAt: number;
+  /** sync stamp: bumped on every write (updatedAt only on changes that should reorder the list); last-write-wins key */
+  syncAt?: number;
+  /** tombstone: the chat was deleted (synced so other devices delete it too); everything else is emptied */
+  deletedAt?: number | null;
 }
 
 // ---- display tools (show_chart / show_table / show_stats), resolved for rendering ----

@@ -383,3 +383,73 @@ Dated life events that can't be inferred from logs ("Started cut", "Exam season"
   `html.kb-open` (drops the composer's safe-area padding). The chat screen spans `top: var(--kb-top)` to
   `bottom: var(--kb)`; the scroller re-pins to the last message on `visualViewport` resize.
 - Chats: Select mode (select all / delete N with confirm), "Older" fold for chats untouched 7 days, search when > 10.
+
+# Science first (2026-11-24) — evidence library + academic web search
+
+- `src/data/evidence.json`: ~76 curated findings (meta-analyses, position stands, key RCTs). Each: id, topic, tags,
+  question, finding (numbers), certainty, evidenceType, population, practical, citations (authors, year, title,
+  journal, doi?, pmid?, url). Citation fields are copied from PubMed esummary / Crossref, never typed by hand.
+- `evidence.search { query, k?=3, topic? }` (core command): BM25F over tags/question/topic/finding/practical with a
+  small synonym map; returns compact hits (finding, practical, certainty, type, refs {cite, url}). `evidence.get { id }`
+  returns the full entry. The JSON loads lazily (own chunk).
+- `web_answer { query, academic? }` → `/ai/web/answer { query, academic? }`. Academic mode prefixes the user message
+  with a peer-reviewed-only instruction (works for any `webModel`) and adds `search_mode: 'academic'` +
+  `web_search_options.search_context_size: 'high'` best-effort; on a 400 it retries without the extras.
+- Instructions: "Science first" section (evidence hierarchy, evidence.search before advice, academic web for gaps,
+  plain-word certainty/effect size, user data as an n-of-1 experiment with noise/confounder checks).
+
+---
+
+# v4 voice calls (2026-11-24) — adds to earlier sections
+
+A call is a normal chat driven by voice (`Chat.voice = true` marks that a call happened); the transcript is the usual
+message history. Client: `src/lib/voice/*` (VAD, audio, controller), `src/components/VoiceCall.tsx` (call button in the
+chat header + call screen), `src/components/VoiceSettings.tsx` (admin rows). Server: `server/src/ai/voice.ts`,
+`server/src/ai/voiceConfig.ts`.
+
+## Routes (bearer auth; all use the user's OpenRouter key, 409 `{code:'no_key'}` without one; chat routing is never sent)
+| Route | Body → Response |
+|---|---|
+| `POST /ai/voice/transcribe` | raw audio bytes, `Content-Type` audio/wav (client sends 16 kHz mono WAV) or mp4/m4a/webm/ogg/mp3/flac; ≤ 10 MB, WAV ≤ 125 s (413) → `{ text }`. Upstream: OpenRouter `/audio/transcriptions` multipart (`file`, `model`, `response_format:'json'`), no `language` (auto-detect), no `prompt`. |
+| `POST /ai/voice/speak` | `{ text }` ≤ 1000 chars (markdown/emoji/URLs stripped) → audio bytes streamed through from OpenRouter `/audio/speech`. `Content-Type: audio/mpeg`, or `audio/pcm;rate=24000` (16-bit LE mono) for pcm-only models (Gemini TTS). `response_format` = mp3 when the model lists it, else pcm; `instructions` = `voice.ttsStyle` only when the model takes it. |
+| `GET /ai/voice/models` | → `{ stt: {id,name}[], tts: {id,name}[] }` (public catalog, admin pickers) |
+| `GET /ai/voice/voices?model=` | → `{ voices: string[], formats: string[], instructions: boolean }` (from `/audio/speech/models/{model}`, cached 1 h) |
+
+`AIGlobal.voice = { sttModel, ttsModel, ttsVoice, ttsStyle }` (admin, `POST /ai/global { voice: {...} }`, merged field by
+field). Defaults: `openai/gpt-transcribe`, `elevenlabs/eleven-v4-turbo`, voice `sarah`.
+
+## Client behaviour
+- Tap the phone button → AudioContext created/resumed inside the tap (iOS gesture), `navigator.audioSession.type =
+  'play-and-record'` when available, wake lock, mic with echo cancellation/noise suppression/AGC.
+- VAD: 20 ms energy frames, adaptive noise floor, start after 80 ms of voice (240 ms + higher bar while the agent talks,
+  so its own voice doesn't interrupt), end after 700 ms silence, 300 ms pre-roll, drop < 300 ms voiced, 2 min cap.
+- Each user message of a call carries a constant hidden part `<context>voice call: …</context>` (short spoken answers, no
+  markdown/JSON, say briefly when a card was put on screen). Not in the instructions, so the cached prefix is unchanged.
+- The controller subscribes to the loop's live text (`subscribeLive`/`getLive` in loop.ts, synchronous: a React effect
+  would miss batched deltas), cuts it at sentence ends (first chunk at the first sentence, later ones merged to ≥ 40
+  chars), fetches TTS for each chunk at once (prefetch) and plays them in order through one AudioContext.
+- Barge-in: speech while the agent talks or thinks stops playback and the loop, then the new utterance is sent.
+- Call screen: orb + status + caption on top, the chat (bubbles + actionable cards) in the middle, controls at the
+  bottom (Mute, Camera, Type, End). Camera: preview, flip, shutter (photo goes with the next utterance or "Send now"),
+  Live (≤ 3 frames per utterance every 2 s, ≤ 24 per call, ≤ 768 px JPEG). Backgrounding the app ends the call.
+- Fake mode: transcribe returns canned text; speak uses speechSynthesis, or a generated PCM tone when
+  `localStorage['tapin:fakeVoicePcm']` is set. Debug hook during a call: `window.tapinVoice.say(text)`.
+
+# Chat backup, request-card details, keyboard pin (2026-11-24) — override earlier sections where they differ
+
+- **Chats sync** (Settings → Agent → "Back up chats", `Settings.agent.backupChats`, default on). Table `chats` is in the
+  client `TABLES` and the server `SYNC_TABLES`. Writes stay in `lib/agent/chats.ts` (not `db.save`): each write bumps
+  `syncAt` (the LWW stamp; `updatedAt` still only orders the list) and queues an outbox entry when backup is on.
+  The server gets `syncCopy(chat)`: image/video/file parts → `[photo]` / `[video]` / `[file "name"]`, no `opaque`, long
+  tool results cut to valid JSON (`{truncated, status, comment, error, preview}`), always < 60 000 chars (oldest turns
+  dropped at a user turn as a last resort, behind a `<context>` marker). Chats are pushed in their own requests so a
+  refused chat never blocks other tables. Pulled chats are merged with the local copy (`hydrateChat`) so placeholders
+  never replace local photos. Delete / purge = tombstone (`deletedAt`, emptied), hidden by every read; local tombstones
+  are dropped after 30 days. Deploy the Worker (chats in `SYNC_TABLES`) before the client.
+- **Request cards** show every field that will be applied (`lib/agent/describe.ts`): hand-written renderers for
+  plans / workouts / items (item keys → exercise names) / supplements / goals / journal / memory / notes / settings,
+  and a full recursive key/value tree for everything else. Long actions fold behind "Details".
+- **Keyboard**: with the keyboard open and focus in `.chat-screen` / `.quick-chat`, `html.kb-pin` is set: the document
+  is held at 0,0 (scroll / focus pans undone), `html, body` are sized to `visualViewport.height`, and a touch guard
+  blocks drags that would scroll the document (outside a scroller, or past a scroller's end). The quick-chat sheet sits
+  on the keyboard's top edge. `/vvdebug` also shows `gap` = visible bottom − composer bottom.

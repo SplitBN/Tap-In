@@ -8,10 +8,10 @@ import { Sheet } from '../components/Sheet';
 import { LineChart, type LinePoint } from '../components/Charts';
 import { db } from '../db/db';
 import { useSettings } from '../db/settings';
-import type { LoadType, SetLog, Unit } from '../db/types';
-import { fmtWeight, plural, relDay, setText } from '../lib/format';
+import type { LoadType, Unit } from '../db/types';
+import { effortText, fmtWeight, plural, relDay, setText } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
-import { fromKg } from '../lib/science';
+import { fromKg, RELIABLE_MAX_RTF, rirToRpe } from '../lib/science';
 import { run } from '../api/registry';
 import { progressExercise, progressSessions, type ExerciseProgress } from '../api/progress';
 import { ExerciseInfo } from './Session';
@@ -92,14 +92,14 @@ export function ExerciseHistoryPage() {
 
   if (!data) return null;
   const lt = data.exercise.loadType;
-  // effort in the user's chosen notation, like the set list (RPE = 10 − RIR)
-  const effort = (rir: number | null) => (rir == null ? '' : settings.effortMode === 'rir' ? ` @${rir} RIR` : ` @${10 - rir}`);
+  // effort in the user's chosen notation; RIR shown as RPE only where the RIR-based scale maps one-to-one (science.ts)
+  const effort = (rir: number | null) => { const e = rir == null ? null : effortText({ rir, rpe: rirToRpe(rir) }, settings.effortMode); return e == null ? '' : settings.effortMode === 'rir' ? ` @${e} RIR` : ` @${e}`; };
   const rows = data.sessions;
   const t = (r: Row) => Date.parse(r.startedAt);
   const W = (kg: number) => Math.round(fromKg(kg, u) * 10) / 10;
   const fmtW = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${u}`;
 
-  const e1rmPts: LinePoint[] = rows.filter((r) => r.bestSet?.e1rmKg).map((r) => ({ t: t(r), v: W(r.bestSet!.e1rmKg!), approx: !r.bestSet!.e1rmReliable,
+  const e1rmPts: LinePoint[] = rows.filter((r) => r.bestSet?.e1rmKg).map((r) => ({ t: t(r), v: W(r.bestSet!.e1rmKg!), approx: !r.bestSet!.e1rmReliable || r.bestSet!.e1rmLowerBound,
     caption: `${loadText(lt, r.bestSet!.loadKg, u)} × ${r.bestSet!.reps}${effort(r.bestSet!.rir)}` }));
   const volPts: LinePoint[] = rows.filter((r) => r.volumeKg > 0).map((r) => ({ t: t(r), v: Math.round(fromKg(r.volumeKg, u)), caption: plural(r.workingSets, 'set', 'sets') }));
   const repsPts: LinePoint[] = rows.filter((r) => r.mostReps > 0).map((r) => ({ t: t(r), v: r.mostReps, caption: r.heaviest ? loadText(lt, r.heaviest.loadKg, u) : undefined }));
@@ -139,7 +139,7 @@ export function ExerciseHistoryPage() {
           <h2 className="section-title">All-time records</h2>
           <div className="card rec-card">
             <div className="rec-grid">
-              {rec.bestE1rm && <RecTile label="Est. 1RM" value={`${rec.bestE1rm.reliable ? '' : '≈'}${fmtWeight(rec.bestE1rm.kg, u)}`}
+              {rec.bestE1rm && <RecTile label="Est. 1RM" value={`${rec.bestE1rm.lowerBound ? '≥' : rec.bestE1rm.reliable ? '' : '≈'}${fmtWeight(rec.bestE1rm.kg, u)}`}
                 sub={`${loadText(lt, rec.bestE1rm.loadKg, u)} × ${rec.bestE1rm.reps} · ${shortDate(rec.bestE1rm.date)}`} to={`/session/${rec.bestE1rm.sessionId}`} />}
               {rec.heaviest && (lt !== 'bodyweight' || everAdded) && <RecTile label={lt === 'assisted' ? 'Least assistance' : lt === 'bodyweight' ? 'Most added' : 'Heaviest'}
                 value={lt === 'weighted' ? fmtWeight(rec.heaviest.loadKg, u) : loadText(lt, rec.heaviest.loadKg, u)} sub={`× ${rec.heaviest.reps} · ${shortDate(rec.heaviest.date)}`} to={`/session/${rec.heaviest.sessionId}`} />}
@@ -175,7 +175,7 @@ export function ExerciseHistoryPage() {
               </section>
             ))}
           </div>
-          <p className="faint chart-foot">e1RM = estimated one-rep max (Epley, using reps + RIR). ≈ and hollow dots: based on more than 10 reps to failure, where estimates are less accurate (Reynolds et al. 2006).</p>
+          <p className="faint chart-foot">e1RM = estimated one-rep max (Wathen equation on reps to failure = reps + RIR; LeSuer et al. 1997). ≈ and hollow dots: more than {RELIABLE_MAX_RTF} reps to failure, where estimates are less accurate (Reynolds et al. 2006), or no effort logged (≥: reps alone, a lower bound).</p>
         </>
       )}
 
@@ -186,7 +186,7 @@ export function ExerciseHistoryPage() {
             <div className="row" style={{ marginBottom: 4 }}>
               <span className="grow" style={{ fontWeight: 600 }}>{keyToDate(r.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: r.date.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}</span>
               {r.prCount > 0 && <span className="badge good num" aria-label={`${plural(r.prCount, 'personal record', 'personal records')}`}><Icon name="flag" size={12} /> PR{r.prCount > 1 ? ` ×${r.prCount}` : ''}</span>}
-              {r.bestSet?.e1rmKg && <span className="badge accent num" title="Estimated one-rep max">Est. 1RM {r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
+              {r.bestSet?.e1rmKg && <span className="badge accent num" title="Estimated one-rep max">Est. 1RM {r.bestSet.e1rmLowerBound ? '≥' : r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
             </div>
             <div className="num muted sess-meta">
               {plural(r.workingSets, 'set', 'sets')}{r.volumeKg > 0 ? ` · ${fmtVolume(r.volumeKg, u)}` : ''}{r.bestSet ? ` · best ${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}` : ''}
@@ -194,7 +194,7 @@ export function ExerciseHistoryPage() {
             <div className="stack" style={{ gap: 2 }}>
               {r.sets.map((l) => (
                 <div key={l.id} className="num faint" style={{ fontSize: '0.875rem' }}>
-                  {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? <><span aria-hidden>↳ </span>Drop set</> : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l as SetLog, u, settings.effortMode)}
+                  {l.kind === 'warmup' ? 'Warm-up' : l.kind === 'drop' ? <><span aria-hidden>↳ </span>Drop set</> : `Set ${l.setNo}`}{l.side !== 'both' ? ` (${l.side})` : ''} · {setText(l, u, settings.effortMode)}{l.e1rm && <span title="Estimated one-rep max"> · e1RM {l.e1rm.lowerBound ? '≥' : l.e1rm.reliable ? '' : '≈'}{fmtWeight(l.e1rm.kg, u, false)}</span>}
                 </div>
               ))}
             </div>

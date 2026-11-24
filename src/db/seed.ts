@@ -1,7 +1,7 @@
 import { db, save } from './db';
 import type { Exercise } from './types';
 
-const SEED_VERSION = 2; // bump whenever src/data/exercises.json changes
+const SEED_VERSION = 3; // bump whenever src/data/exercises.json changes
 export const EXERCISE_IMG_BASE = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
 
 /** Loads the bundled exercise library (free-exercise-db) into IndexedDB once.

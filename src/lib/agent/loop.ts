@@ -21,6 +21,9 @@ const subs = new Set<() => void>();
 const setLive = (id: string, p: Partial<Live>) => { live.set(id, { ...(live.get(id) ?? IDLE), ...p }); subs.forEach((f) => f()); };
 export const useLive = (id: string | undefined) => useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => (id ? live.get(id) ?? IDLE : IDLE));
 export const isRunning = (id: string) => !!live.get(id)?.running;
+/** Non-React access to the live state (voice calls read every delta synchronously; React would batch them). */
+export const getLive = (id: string): Live => live.get(id) ?? IDLE;
+export const subscribeLive = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
 // ---- status (cached for a minute): providers, global defaults, web ----
 let statusCache: { at: number; status: AIStatus | null } | null = null;

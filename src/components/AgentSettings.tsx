@@ -9,6 +9,7 @@ import { agentPrefsUpdate } from '../api/agent';
 import { useSettings } from '../db/settings';
 import { useSync } from '../lib/sync';
 import { chatgptDisconnect, chatgptFinish, chatgptStart, getModels, getStatus, isFake, setConfig, setGlobal, setOpenRouterKey } from '../lib/agent/client';
+import { VoiceAdminRows } from './VoiceSettings';
 import { invalidateAgentStatus } from '../lib/agent/loop';
 import type { AIConfig, AIGlobal, AIModel, AIStatus, Effort, ProviderId } from '../lib/agent/types';
 import type { AgentCategory } from '../db/types';
@@ -56,6 +57,7 @@ export function AgentSettings() {
     try { const { config } = await setConfig(patch); setSt((x) => (x ? { ...x, config } : x)); invalidateAgentStatus(); } catch (e) { await notice('Couldn’t save', (e as Error).message); }
   };
   const web = s.agent?.web !== false;
+  const backupChats = s.agent?.backupChats !== false;
   const p = s.agent?.permissions ?? {};
   const autoCats = CATS.filter((c) => p[c.id] === 'auto');
   const both = !!st?.chatgpt.connected && !!st?.openrouter.hasKey;
@@ -109,6 +111,7 @@ export function AgentSettings() {
           <Icon name="chevronRight" className="chev" size={18} />
         </Link>
         <Toggle label="Web" sub={!st || st.openrouter.hasKey ? 'Search and read pages when it helps' : 'Reading pages works; search needs an OpenRouter key'} on={web} onChange={(v) => run(agentPrefsUpdate, { web: v })} />
+        <Toggle label="Back up chats" sub="Saved to your account, so they survive a reinstall. Photos and files stay on this phone." on={backupChats} onChange={(v) => run(agentPrefsUpdate, { backupChats: v })} />
       </div>
 
       {st?.isAdmin && <AdminSection st={st} onSaved={(global) => { setSt((x) => (x ? { ...x, global } : x)); invalidateAgentStatus(); }} />}
@@ -178,6 +181,7 @@ function AdminSection({ st, onSaved }: { st: AIStatus; onSaved: (g: AIGlobal) =>
         <EffortRow label="Chat titles" value={g.titleEffort} onChange={(v) => save({ titleEffort: v })} />
         <EffortRow label="Page extracts" sub="Web pages read with a question" value={g.extractEffort} onChange={(v) => save({ extractEffort: v })} />
         <ModelRow label="Web search model" models={models.openrouter ?? []} value={g.webModel} onChange={(v) => v && save({ webModel: v })} />
+        <VoiceAdminRows g={g} save={save} />
       </div>
       <p className="faint t-13" style={{ margin: '6px 4px 0' }}>Applies to every account. OpenRouter lists models without tool support too: pick one that supports tools.</p>
     </>

@@ -8,6 +8,7 @@ import { listOpenRouterModels, validateKey } from './openrouter';
 import { completeText, isAdmin, isEffort, loadState, mergeConfig, mergeGlobal, PROVIDERS, prettyModel, providerChain, runTurn, saveConfig, saveGlobal, type AiState } from './provider';
 import { ProviderError, type AIMessage, type AITool, type Effort, type ProviderId, type TurnEvent, type TurnRequest } from './types';
 import { EXTRACT_INSTRUCTIONS, extractPrompt, WebError, webAnswer, webRead } from './web';
+import { handleVoice } from './voice';
 
 const PENDING_MS = 10 * 60_000;
 const STALE_MS = 20 * 86400_000;
@@ -33,6 +34,7 @@ const providerHttp = (e: ProviderError) => new HttpError(e.code === 'limit' ? 42
 
 export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, userId: string, p: string, url: URL): Promise<Response | null> {
   if (!p.startsWith('/ai/')) return null;
+  if (p.startsWith('/ai/voice/')) return handleVoice(req, env, userId, p, url);
   const body = async <T>() => { try { return (await req.json()) as T; } catch { throw new HttpError(400, 'Invalid JSON'); } };
   const stub = () => env.AI_AUTH.get(env.AI_AUTH.idFromName(userId));
 
@@ -153,11 +155,11 @@ export async function handleAi(req: Request, env: Env, ctx: ExecutionContext, us
 
   // ---- web tools ----
   if (req.method === 'POST' && p === '/ai/web/answer') {
-    const { query } = await body<{ query?: string }>();
+    const { query, academic } = await body<{ query?: string; academic?: boolean }>();
     if (typeof query !== 'string' || !query.trim()) throw new HttpError(400, 'query is required');
     const s = await loadState(env, userId);
     if (!s.orKey) throw new HttpError(409, 'Web answers need an OpenRouter key', { code: 'no_key' });
-    try { return json(await webAnswer(s.orKey, s.global.webModel, query.trim().slice(0, 2000))); }
+    try { return json(await webAnswer(s.orKey, s.global.webModel, query.trim().slice(0, 2000), academic === true)); }
     catch (e) { if (e instanceof ProviderError) throw providerHttp(e); throw e; }
   }
 

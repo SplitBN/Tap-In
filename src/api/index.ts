@@ -10,6 +10,7 @@ import './calendar';
 import './memory';
 import './agent';
 import './journal';
+import './evidence';
 
 export { call, listCommands, run, toolDefinitions } from './registry';
 export * as gym from './gym';
@@ -22,3 +23,4 @@ export * as calendar from './calendar';
 export * as memory from './memory';
 export * as agent from './agent';
 export * as journal from './journal';
+export * as evidence from './evidence';

@@ -1,11 +1,11 @@
 // Cards the agent puts in the chat: food requests (editable: swap / amount / uncheck, then Log (N)), other change
-// requests (friendly rows), and multiple-choice questions (ask_user).
+// requests (every field that will be applied, long ones behind Details), and multiple-choice questions (ask_user).
 import { motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Icon } from './Icon';
 import { NumberSheet, type NumberSpec } from './NumberPicker';
 import { getItem, type FoodItem } from '../db/food';
-import { describeAction, type Described } from '../lib/agent/describe';
+import { describeAction, fieldLines, type Described, type Field } from '../lib/agent/describe';
 import { foodEmoji, foodLines, isFoodAction, setAmount, swapFood, toggleLine, type FoodLine } from '../lib/agent/food';
 import { resolvePending, updatePendingActions } from '../lib/agent/loop';
 import type { AskQuestion, Chat, PendingRequest, RequestAction } from '../lib/agent/types';
@@ -134,17 +134,51 @@ function useDescribed(actions: RequestAction[]) {
 
 function PlainAction({ a }: { a: RequestAction }) {
   const [d] = useDescribed([a]) ?? [];
-  return <ActionRow d={d ?? { title: a.name, icon: 'bolt', rows: [] }} />;
+  return <ActionRow d={d ?? { title: a.name, icon: 'bolt', fields: [] }} limit={3} />;
 }
-function ActionRow({ d }: { d: Described }) {
-  const detail = d.rows.slice(0, 4).map((r) => (r.value ? `${r.label} ${r.value}` : r.label)).join(' · ');
+
+/** Every field that will be applied, as a nested label / value list. */
+function FieldList({ fields, depth = 0 }: { fields: Field[]; depth?: number }) {
   return (
-    <div className="arow">
-      <span className="arow-icon" aria-hidden><Icon name={d.icon} size={18} stroke={2.1} /></span>
-      <span className="grow" style={{ minWidth: 0 }}>
-        <span className="arow-title">{d.title}</span>
-        {detail && <span className="arow-detail" dir="auto">{detail}</span>}
-      </span>
+    <dl className={'afields' + (depth ? ' sub' : '')}>
+      {fields.map((x, i) => {
+        const long = (x.value?.length ?? 0) > 34 || /\n/.test(x.value ?? '');
+        return (
+          <div key={i} className={'afield' + (long ? ' long' : '')}>
+            <dt dir="auto">{x.label}</dt>
+            {x.value !== undefined && <dd dir="auto">{x.value}</dd>}
+            {x.children && <dd className="afield-kids"><FieldList fields={x.children} depth={depth + 1} /></dd>}
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+/** One proposed action: icon, title, one-line summary, then everything it will apply. Short ones show it all; long ones
+ *  fold it behind "Details" (limit = how many lines may show without folding). */
+function ActionRow({ d, limit }: { d: Described; limit: number }) {
+  const lines = fieldLines(d.fields);
+  const inline = lines <= limit;
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
+  // the summary line stands in for the fields when they are folded; when they show anyway it would only repeat them
+  const showSummary = !!d.summary && (!inline || !d.fields.length);
+  return (
+    <div className="arow-wrap">
+      <div className="arow">
+        <span className="arow-icon" aria-hidden><Icon name={d.icon} size={18} stroke={2.1} /></span>
+        <span className="grow" style={{ minWidth: 0 }}>
+          <span className="arow-title">{d.title}</span>
+          {showSummary && <span className="arow-detail" dir="auto">{d.summary}</span>}
+        </span>
+        {!inline && (
+          <button className={'arow-more' + (open ? ' open' : '')} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen((o) => !o)}>
+            Details<Icon name="chevronDown" size={14} stroke={2.6} />
+          </button>
+        )}
+      </div>
+      {(inline || open) && d.fields.length > 0 && <div id={detailsId} className="arow-fields"><FieldList fields={d.fields} /></div>}
     </div>
   );
 }
@@ -162,7 +196,7 @@ export function RequestCard({ chatId, p, outcome, comment, onChange }: { chatId:
         {o && <span className={'req-outcome ' + o.cls}><Icon name={o.icon} size={14} stroke={2.6} />{o.text}</span>}
       </div>
       <div className="rcard-rows">
-        {(described ?? p.actions.map((a) => ({ title: a.name, icon: 'bolt', rows: [] }))).map((d, i) => <ActionRow key={i} d={d} />)}
+        {(described ?? p.actions.map((a) => ({ title: a.name, icon: 'bolt', fields: [] }))).map((d, i) => <ActionRow key={i} d={d} limit={p.actions.length === 1 ? 8 : 3} />)}
       </div>
       {comment && <p className="req-comment" dir="auto">“{comment}”</p>}
       {active && (

@@ -427,3 +427,76 @@ export const REQUIRED = ['Bench Press', 'Incline Bench Press', 'Squat', 'Front S
   'Close-Grip Bench Press', 'Skull Crusher', 'Face Pull', 'Shrug', 'Lunge', 'Bulgarian Split Squat', 'Hack Squat', 'Plank', 'Crunch'];
 
 export const EQUIPMENT = ['barbell', 'dumbbell', 'machine', 'smith machine', 'cable', 'body only', 'kettlebells', 'e-z curl bar', 'bands', 'exercise ball', 'medicine ball', 'other'];
+
+// ---------- muscle corrections ----------
+// free-exercise-db's primary/secondary lists are hand-entered and uneven (calves listed for hip thrusts, no front delts on
+// flys, the conventional deadlift's prime movers missing). Corrections for the ~40 most-used movements, by name (every
+// equipment variant). `muscles` = prime movers (count 1 set each), `secondary` = substantial synergists (count ½).
+// Sources: anatomy of the joint actions, plus EMG / biomechanics:
+//  - Squat family: quads prime; glutes and adductors (adductor magnus as hip extensor) synergists; hamstrings stay near
+//    constant length and show low activity (Escamilla 2001, Med Sci Sports Exerc 33(1):127–141; Schoenfeld 2010,
+//    JSCR 24(12):3497–3506). Calves only stabilise → dropped.
+//  - Deadlift: hip extensors (glutes, hamstrings) + erectors prime, quads/traps/lats/forearms synergists; sumo shifts work
+//    to quads and adductors (Escamilla et al. 2002, Med Sci Sports Exerc 34(4):682–688). Trap bar: more knee-dominant,
+//    quads prime with hip extensors (Swinton et al. 2011, JSCR 25(7):2000–2009).
+//  - Hip thrust / bridge: glutes prime; hamstrings and quads synergists, not calves (Contreras et al. 2015, J Appl Biomech
+//    31(6):452–458).
+//  - Presses: front delts + triceps synergists of horizontal presses; flys and pec deck still load the front delt (shoulder
+//    flexion/horizontal adduction); overhead pressing recruits upper traps for scapular upward rotation; front raises use
+//    the clavicular pectoralis (shoulder flexion). Lateral raises recruit upper traps.
+//  - Pulls: biceps, rear delts and mid-back on pulldowns/rows; brachioradialis (forearms) on every curl, most on hammer curls.
+//  - Leg curls: gastrocnemius is a knee flexor, so calves are synergists.
+//  - Triceps isolation: no meaningful secondary (source listed chest/shoulders for dumbbell skull crushers).
+const SQUAT_2ND = ['glutes', 'adductors', 'lower back'];
+const LEG_2ND = ['glutes', 'adductors'];
+const HPRESS_2ND = ['shoulders', 'triceps'];
+const OHP_2ND = ['triceps', 'traps'];
+const CURL_2ND = ['forearms'];
+export const MUSCLES = {
+  'Squat': { secondary: SQUAT_2ND },
+  'Front Squat': { secondary: ['glutes', 'adductors', 'lower back', 'abdominals'] },
+  'Goblet Squat': { secondary: ['glutes', 'adductors', 'abdominals'] },
+  'Hack Squat': { secondary: LEG_2ND },
+  'Leg Press': { secondary: LEG_2ND },
+  'Single-Leg Leg Press': { secondary: LEG_2ND },
+  'Lunge': { secondary: ['glutes', 'adductors', 'hamstrings'] },
+  'Walking Lunge': { secondary: ['glutes', 'adductors', 'hamstrings'] },
+  'Bulgarian Split Squat': { secondary: ['glutes', 'adductors', 'hamstrings'] },
+  'Step-Up': { secondary: ['glutes', 'hamstrings'] },
+  'Deadlift': { muscles: ['glutes', 'hamstrings', 'lower back'], secondary: ['quadriceps', 'traps', 'lats', 'forearms', 'middle back'] },
+  'Sumo Deadlift': { muscles: ['glutes', 'quadriceps'], secondary: ['hamstrings', 'adductors', 'lower back', 'traps', 'forearms'] },
+  'Trap Bar Deadlift': { muscles: ['quadriceps', 'glutes'], secondary: ['hamstrings', 'lower back', 'traps', 'forearms'] },
+  'Romanian Deadlift': { secondary: ['glutes', 'lower back', 'forearms'] },
+  'Hip Thrust': { secondary: ['hamstrings', 'quadriceps'] },
+  'Glute Bridge': { secondary: ['hamstrings', 'quadriceps'] },
+  'Bench Press': { secondary: HPRESS_2ND },
+  'Incline Bench Press': { secondary: HPRESS_2ND },
+  'Decline Bench Press': { secondary: HPRESS_2ND },
+  'Chest Press': { secondary: HPRESS_2ND },
+  'Push-Up': { secondary: [...HPRESS_2ND, 'abdominals'] },
+  'Chest Fly': { secondary: ['shoulders'] },
+  'Incline Chest Fly': { secondary: ['shoulders'] },
+  'Pec Deck': { secondary: ['shoulders'] },
+  'Cable Crossover': { secondary: ['shoulders'] },
+  'Overhead Press': { secondary: OHP_2ND },
+  'Seated Overhead Press': { secondary: OHP_2ND },
+  'Shoulder Press': { secondary: OHP_2ND },
+  'Arnold Press': { secondary: OHP_2ND },
+  'Lateral Raise': { secondary: ['traps'] },
+  'Front Raise': { secondary: ['chest'] },
+  'Upright Row': { muscles: ['shoulders'], secondary: ['traps', 'biceps'] },
+  'Face Pull': { secondary: ['middle back', 'traps'] },
+  'Reverse Fly': { secondary: ['middle back', 'traps'] },
+  'Pull-Up': { secondary: ['biceps', 'middle back', 'forearms'] },
+  'Chin-Up': { secondary: ['biceps', 'middle back', 'forearms'] },
+  'Lat Pulldown': { secondary: ['biceps', 'middle back', 'shoulders'] },
+  'T-Bar Row': { secondary: ['biceps', 'lats', 'shoulders'] },
+  'Bicep Curl': { secondary: CURL_2ND },
+  'Hammer Curl': { muscles: ['biceps', 'forearms'], secondary: [] },
+  'Preacher Curl': { secondary: CURL_2ND },
+  'Incline Curl': { secondary: CURL_2ND },
+  'Skull Crusher': { secondary: [] },
+  'Overhead Triceps Extension': { secondary: [] },
+  'Lying Leg Curl': { secondary: ['calves'] },
+  'Seated Leg Curl': { secondary: ['calves'] },
+};

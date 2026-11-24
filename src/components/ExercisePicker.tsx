@@ -88,7 +88,7 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
               <ExerciseThumb ex={e} />
               <span className="grow">
                 <span className="title" style={{ display: 'block' }}><ExName ex={e} /></span>
-                <span className="sub">{titleCase(e.muscles.join(', '))}{e.unilateral ? ' · one side' : ''}{e.custom ? ' · custom' : ''}</span>
+                <span className="sub">{titleCase(e.muscles.join(', '))}{e.secondary?.length ? <span className="faint"> + {titleCase(e.secondary.join(', '))}</span> : null}{e.unilateral ? ' · one side' : ''}{e.custom ? ' · custom' : ''}</span>
               </span>
               {multi && (
                 <span aria-hidden style={{ width: 24, height: 24, borderRadius: 12, display: 'grid', placeItems: 'center', flex: 'none',

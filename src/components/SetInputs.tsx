@@ -95,7 +95,7 @@ export function EffortExplainer({ mode }: { mode: EffortMode }) {
       <p className="muted t-15" style={{ margin: 0, lineHeight: 1.45 }}>
         {mode === 'rir'
           ? 'Reps in reserve: how many more reps you could have done. 0 = failure, 2 = two left in the tank.'
-          : 'Rate of perceived exertion: effort out of 10. 10 = failure, 9 = one rep left, 8 = two left.'}
+          : 'RPE on the reps-in-reserve scale: 10 = failure, 9.5 = no more reps but a little more weight, 9 = one rep left, 8 = two, 7 = three, 5–6 = about 4–6 left.'}
       </p>
     </div>
   );

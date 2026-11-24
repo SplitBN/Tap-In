@@ -33,6 +33,7 @@ const post = <T>(path: string, body: unknown = {}) => req<T>(path, { method: 'PO
 export const DEFAULT_GLOBAL: AIGlobal = {
   models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' }, openrouterProvider: { order: ['river'], allow_fallbacks: true },
   defaultEffort: 'auto', titleEffort: 'low', extractEffort: 'auto', webModel: 'perplexity/sonar',
+  voice: { sttModel: 'openai/gpt-transcribe', ttsModel: 'elevenlabs/eleven-v4-turbo', ttsVoice: 'sarah', ttsStyle: 'Warm, relaxed and conversational, like a friendly coach on a phone call. Natural pace.' },
 };
 /** One place that turns whatever /ai/status returns (v2, or a lagging v1 Worker) into the v2 shape. */
 export function normalizeStatus(raw: Partial<AIStatus> & { config?: Partial<AIConfig> }): AIStatus {
@@ -40,7 +41,7 @@ export function normalizeStatus(raw: Partial<AIStatus> & { config?: Partial<AICo
   const openrouter = { hasKey: !!raw.openrouter?.hasKey };
   const g0 = (raw.global ?? {}) as Partial<AIGlobal> & { helperEffort?: AIGlobal['titleEffort'] }; // helperEffort: v2 rows
   const { helperEffort, ...g1 } = g0;
-  const global: AIGlobal = { ...DEFAULT_GLOBAL, ...(helperEffort ? { titleEffort: helperEffort, extractEffort: helperEffort } : {}), ...g1, models: { ...DEFAULT_GLOBAL.models, ...g0.models } };
+  const global: AIGlobal = { ...DEFAULT_GLOBAL, ...(helperEffort ? { titleEffort: helperEffort, extractEffort: helperEffort } : {}), ...g1, models: { ...DEFAULT_GLOBAL.models, ...g0.models }, voice: { ...DEFAULT_GLOBAL.voice!, ...g0.voice } };
   const providers: AIProviderInfo[] = Array.isArray(raw.providers) && raw.providers.length ? raw.providers : [
     { id: 'chatgpt', connected: chatgpt.connected, model: global.models.chatgpt, label: 'ChatGPT', video: false, files: true },
     { id: 'openrouter', connected: openrouter.hasKey, model: global.models.openrouter, label: 'OpenRouter', video: false, files: true },
@@ -59,7 +60,7 @@ export const chatgptFinish = (pastedUrl: string): Promise<{ connected: true; ema
 export const chatgptDisconnect = (): Promise<{ ok: boolean; revoked?: boolean }> => (isFake() ? Promise.resolve({ ok: true, revoked: true }) : post('/ai/chatgpt/disconnect'));
 export const getModels = async (provider: ProviderId): Promise<AIModel[]> =>
   (isFake() ? fakeModels(provider) : (await req<{ models: AIModel[] }>(`/ai/models?provider=${provider}`)).models);
-export const webAnswer = (query: string): Promise<{ answer: string; citations: string[] }> => (isFake() ? Promise.resolve(fakeWebAnswer(query)) : post('/ai/web/answer', { query }));
+export const webAnswer = (query: string, academic = false): Promise<{ answer: string; citations: string[] }> => (isFake() ? Promise.resolve(fakeWebAnswer(query)) : post('/ai/web/answer', { query, ...(academic ? { academic: true } : {}) }));
 export const webRead = (url: string, prompt?: string | null): Promise<{ mode: 'raw' | 'extract' | 'full'; content: string; tokens: number; title?: string }> =>
   (isFake() ? Promise.resolve(fakeWebRead(url)) : post('/ai/web/read', { url, prompt: prompt ?? null }));
 

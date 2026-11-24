@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defineCommand, zDate } from './registry';
 import { alive, db } from '../db/db';
 import type { SetLog } from '../db/types';
-import { e1rm, totalLoadKg } from '../lib/science';
+import { setE1rm } from '../lib/science';
 import { welch } from '../lib/stats';
 import { dateKey, keyToDate, sum } from '../lib/nutrition';
 import { dayStatusRange } from './food';
@@ -44,8 +44,8 @@ async function series(metric: 'e1rm' | 'bodyweight' | 'kcal' | 'protein', exerci
   const best = new Map<string, { date: string; ex: string; kg: number }>();
   for (const s of sets) {
     const sess = await db.sessions.get(s.sessionId); if (!sess || !alive(sess)) continue;
-    const est = e1rm(totalLoadKg(s.loadType, s.loadKg, s.bodyweightKg), s.reps!, s.rir ?? 0);
-    if (!est.reliable) continue; // >10 reps to failure: estimate too noisy (Reynolds et al. 2006)
+    const est = setE1rm(s); // same function as the set table / PRs (Wathen on reps + RIR)
+    if (!est?.reliable) continue; // > RELIABLE_MAX_RTF reps to failure (or no bodyweight): too noisy, see science.ts
     const k = `${s.sessionId}:${s.exerciseId}`;
     if (!best.has(k) || est.kg > best.get(k)!.kg) best.set(k, { date: dateKey(sess.startedAt), ex: s.exerciseId, kg: est.kg });
   }

@@ -23,7 +23,7 @@ export class TapInDB extends Dexie {
   notes!: Table<Note, string>;
   memories!: Table<Memory, string>;
   journal!: Table<JournalEntry, string>;
-  /** Agent chats: local only, never synced (see lib/agent/chats.ts). */
+  /** Agent chats: synced as a stripped copy when chat backup is on (see lib/agent/chats.ts), never via save(). */
   chats!: Table<import('../lib/agent/types').Chat, string>;
 
   constructor() {

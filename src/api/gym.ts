@@ -5,12 +5,12 @@ import { createPlan, createWorkout, finishSession, latestBodyweightKg, newItem, 
 import { getSettings, updateSettings } from '../db/settings';
 import type { Exercise, Session, SetLog, SurveyBody, SurveySleep, Workout, WorkoutItem } from '../db/types';
 import { normalizeSupersets, toggleSupersetWithNext } from '../components/ItemSettings';
-import { defaultStepKg, e1rm, progressionTarget, rirToRpe, rpeToRir, snappedStepKg, totalLoadKg, TARGET_RIR } from '../lib/science';
+import { defaultStepKg, e1rm, progressionTarget, RELIABLE_MAX_RTF, rirToRpe, rpeToRir, setE1rm, snappedStepKg, totalLoadKg, TARGET_RIR } from '../lib/science';
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
 import { planStart, planWeek } from '../lib/planWeek';
-import { bestSet, compareToPrevious, personalRecords, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount, type BestSet } from '../lib/workoutStats';
+import { bestSet, compareToPrevious, e1rmMargin, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount, type BestSet } from '../lib/workoutStats';
 
 const zLoadType = z.enum(['weighted', 'bodyweight', 'assisted']);
 const zItemPatch = z.object({
@@ -263,7 +263,7 @@ export const itemsSuperset = defineCommand({ name: 'items.toggleSupersetWithNext
 // ---------------- sessions ----------------
 async function sessionView(s: Session) {
   const sets = (await db.sets.where('sessionId').equals(s.id).filter(alive).toArray()).sort(setOrder);
-  const setOut = (x: SetLog) => ({ id: x.id, kind: x.kind, setNo: x.setNo, dropNo: x.dropNo, side: x.side, loadKg: x.loadKg, loadType: x.loadType, bodyweightKg: x.bodyweightKg, reps: x.reps, rir: x.rir, rpe: x.rpe, done: !!x.doneAt });
+  const setOut = (x: SetLog) => ({ id: x.id, kind: x.kind, setNo: x.setNo, dropNo: x.dropNo, side: x.side, loadKg: x.loadKg, loadType: x.loadType, bodyweightKg: x.bodyweightKg, reps: x.reps, rir: x.rir, rpe: x.rpe, effortInput: x.effortInput ?? null, done: !!x.doneAt, e1rm: setE1rmView(x) });
   return {
     id: s.id, name: s.name, startedAt: new Date(s.startedAt).toISOString(), endedAt: s.endedAt ? new Date(s.endedAt).toISOString() : null,
     live: !s.endedAt, currentItemKey: s.currentKey, notes: s.notes, workoutId: s.workoutId,
@@ -278,7 +278,7 @@ async function sessionView(s: Session) {
 
 export const sessionsActive = defineCommand({ name: 'sessions.active', kind: 'query', description: 'The workout in progress (with exercises and logged sets), or null.',
   input: z.object({}), run: async () => { const s = await db.sessions.filter((x) => alive(x) && !x.endedAt).first(); return s ? sessionView(s) : null; } });
-export const sessionsGet = defineCommand({ name: 'sessions.get', kind: 'query', description: 'One workout session with every exercise and set.',
+export const sessionsGet = defineCommand({ name: 'sessions.get', kind: 'query', description: 'One workout session with every exercise and set. Each set has rir/rpe as stored (effortInput = the scale the user entered; the other is derived only where the RIR-based RPE scale maps one-to-one, else null) and e1rm = the set table score for working sets: {kg, reliable (≤' + RELIABLE_MAX_RTF + ' reps to failure), lowerBound (no effort logged: reps alone, real e1RM ≥ kg), repsToFailure} (Wathen on reps + RIR, total load incl. bodyweight), null for warm-ups/drops or when it cannot be estimated.',
   input: z.object({ id: zId }), run: async ({ id }) => sessionView(await need(db.sessions.get(id), 'Session')) });
 export const sessionsList = defineCommand({ name: 'sessions.list', kind: 'query',
   description: 'Finished workout sessions between two dates (inclusive), newest first: id, name, date, duration, setsDone (working sets, counted like sessions.summary totals.workingSets: a left+right pair is 1, drop steps fold in, warm-ups excluded).',
@@ -373,7 +373,8 @@ export const sessionsDelete = defineCommand({ name: 'sessions.delete', kind: 'ac
   } });
 
 // ---------------- sets ----------------
-/** Effort fields from rir/rpe input: one given -> both derived; null -> both cleared; undefined -> unchanged. */
+/** Effort fields from rir/rpe input: the entered value is stored as given (+ effortInput); the other scale is derived only
+ *  where the RIR-based RPE table maps one-to-one, else null (see science.ts rpeToRir/rirToRpe). null -> both cleared; undefined -> unchanged. */
 const effortPatch = (rir?: number | null, rpe?: number | null): Partial<SetLog> =>
   rir != null ? { rir, rpe: rirToRpe(rir), effortInput: 'rir' } : rpe != null ? { rpe, rir: rpeToRir(rpe), effortInput: 'rpe' }
     : rir === null || rpe === null ? { rir: null, rpe: null } : {};
@@ -384,7 +385,7 @@ const loadSnapshot = async (ex: Exercise, bodyweightKg?: number | null): Promise
 const zBw = z.number().min(20).max(400).nullable().optional()
   .describe('Bodyweight in kg to store on the set (bodyweight/assisted lifts). Omit to keep the stored snapshot; it is taken automatically from the latest weigh-in when the set is created or first marked done. null clears it.');
 export const setsLog = defineCommand({ name: 'sets.log', kind: 'action',
-  description: 'Record or correct a set in a session (creates it or updates the matching one). itemKey is the exercise slot key from sessions.active / sessions.get (items[].key). setNo is 1-based within its kind; drop steps use kind "drop" with dropNo; one-side exercises use side left/right. loadKg means: the weight (weighted), added weight (bodyweight) or assistance (assisted). Give rir or rpe (RPE = 10 − RIR); null clears effort. Omitted fields keep their value. done: true checks it off, false unchecks; omitted keeps an existing set\'s state and marks a new set done. When the set is created it snapshots the exercise load type and (for bodyweight/assisted) the latest bodyweight so e1RM stays right (if no bodyweight was stored, it is filled when the set is checked off); later corrections, un-ticking and re-ticking keep that snapshot unless bodyweightKg is given. Returns the set record.',
+  description: 'Record or correct a set in a session (creates it or updates the matching one). itemKey is the exercise slot key from sessions.active / sessions.get (items[].key). setNo is 1-based within its kind; drop steps use kind "drop" with dropNo; one-side exercises use side left/right. loadKg means: the weight (weighted), added weight (bodyweight) or assistance (assisted). Give rir or rpe (per-set RPE on the RIR-based scale, Zourdos 2016: 10 = failure, 9.5 = no more reps but slightly more load, 9 = 1 rep left … 7 = 3 left, 5–6 = 4–6 left, below 5 = not defined in reps). Pass what the user said, in the scale they used; the other field is derived only where the scale maps one-to-one (else null), never as a plain 10 − x. null clears effort. Omitted fields keep their value. done: true checks it off, false unchecks; omitted keeps an existing set\'s state and marks a new set done. When the set is created it snapshots the exercise load type and (for bodyweight/assisted) the latest bodyweight so e1RM stays right (if no bodyweight was stored, it is filled when the set is checked off); later corrections, un-ticking and re-ticking keep that snapshot unless bodyweightKg is given. Returns the set record.',
   input: z.object({ sessionId: zId, itemKey: z.string(), setNo: z.number().int().min(1), kind: z.enum(['warmup', 'working', 'drop']).default('working'),
     dropNo: z.number().int().min(1).optional(), side: z.enum(['both', 'left', 'right']).default('both'),
     loadKg: z.number().min(0).nullable().optional(), reps: z.number().int().min(0).nullable().optional(),
@@ -425,7 +426,7 @@ export const setsDelete = defineCommand({ name: 'sets.delete', kind: 'action', d
 
 // ---------------- history & analysis ----------------
 export const exerciseHistory = defineCommand({ name: 'exercises.history', kind: 'query',
-  description: 'Every session an exercise was done in (optionally within dates): date, sets, and the best estimated 1RM per session (Epley with reps+RIR; "reliable" false when >10 reps to failure). Use for progress questions.',
+  description: 'Every session an exercise was done in (optionally within dates): date, sets, and the best estimated 1RM per session (working sets; Wathen on reps-to-failure = reps + RIR, same as the set table; "reliable" false when >' + RELIABLE_MAX_RTF + ' reps to failure, "lowerBound" true when that set had no effort logged). Use for progress questions.',
   input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional() }),
   run: async ({ exerciseId, from, to }) => {
     const sets = await db.sets.where('exerciseId').equals(exerciseId).filter((x) => alive(x) && !!x.doneAt).toArray();
@@ -434,21 +435,21 @@ export const exerciseHistory = defineCommand({ name: 'exercises.history', kind: 
     for (const [sid, list] of bySession) {
       const sess = await db.sessions.get(sid); if (!sess || !alive(sess)) continue;
       const date = dateKey(sess.startedAt); if ((from && date < from) || (to && date > to)) continue;
-      let best: { kg: number; reliable: boolean } | null = null;
+      let best: { kg: number; reliable: boolean; lowerBound: boolean } | null = null;
       for (const l of list) {
-        if (l.kind === 'warmup' || !l.reps) continue;
-        const est = e1rm(totalLoadKg(l.loadType, l.loadKg, l.bodyweightKg), l.reps, l.rir ?? 0);
-        if (!best || est.kg > best.kg) best = est;
+        if (l.kind !== 'working') continue;
+        const est = setE1rm(l);
+        if (est && (!best || est.kg > best.kg)) best = est;
       }
-      out.push({ sessionId: sid, date, e1rmKg: best ? Math.round(best.kg * 10) / 10 : null, reliable: best?.reliable ?? null,
-        sets: list.sort(setOrder).map((l) => ({ kind: l.kind, setNo: l.setNo, side: l.side, loadKg: l.loadKg, totalKg: totalLoadKg(l.loadType, l.loadKg, l.bodyweightKg), reps: l.reps, rir: l.rir })) });
+      out.push({ sessionId: sid, date, e1rmKg: best ? Math.round(best.kg * 10) / 10 : null, reliable: best?.reliable ?? null, lowerBound: best?.lowerBound ?? null,
+        sets: list.sort(setOrder).map((l) => ({ kind: l.kind, setNo: l.setNo, side: l.side, loadKg: l.loadKg, totalKg: totalLoadKg(l.loadType, l.loadKg, l.bodyweightKg), reps: l.reps, rir: l.rir, rpe: l.rpe, e1rm: setE1rmView(l) })) });
     }
     return out.sort((a, b) => a.date.localeCompare(b.date));
   } });
 
 // ---------------- workout summary & post-workout survey ----------------
 const r1 = (v: number) => Math.round(v * 10) / 10;
-const bestOut = (b: BestSet | null) => b && ({ loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir, e1rmKg: b.e1rmKg > 0 ? r1(b.e1rmKg) : null, e1rmReliable: b.reliable });
+const bestOut = (b: BestSet | null) => b && ({ loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir, e1rmKg: b.e1rmKg > 0 ? r1(b.e1rmKg) : null, e1rmReliable: b.reliable, e1rmLowerBound: b.lowerBound });
 
 /** Weeks in a row (Monday weeks, local time) with at least one workout, counting back from the week of `ts`.
  *  `starts` = start times of the workouts that count. The week of `ts` itself must have one (the summary's own session). */
@@ -563,9 +564,9 @@ export const sessionsSummary = defineCommand({ name: 'sessions.summary', kind: '
     'totals.workingSets (one per exercise slot + set number: a left+right pair is 1 set, drop steps fold into their set, warm-ups excluded); ' +
     'totals.volumeKg = Σ total load × reps over working sets AND drop steps (warm-ups excluded; both sides of one-side sets; dumbbell loads as logged, i.e. per dumbbell; ' +
     'bodyweight lifts use the bodyweight snapshot + added weight, assisted = bodyweight − assistance). ' +
-    'exercises[]: sets, volumeKg, bestSet (highest Epley e1RM on reps + RIR, working sets only), previous (the last earlier session with that exercise), ' +
+    'exercises[]: sets, volumeKg, bestSet (highest e1RM — Wathen on reps + RIR — working sets only; e1rmLowerBound = no effort logged), previous (the last earlier session with that exercise), ' +
     'trend up|same|down|new vs previous (up = beat last time: higher e1RM, or more reps at ≥ last time\'s top weight; bodyweight/assisted e1RM needs a 1% change so bodyweight drift alone doesn\'t count), ' +
-    'prs vs every earlier session (e1rm: reliable estimates ≤10 reps to failure only; weight: heaviest logged load, i.e. added weight / least assistance for bodyweight lifts; reps: most reps ever at ≥ that load); firstTime = no earlier history (no PRs then); ' +
+    'prs vs every earlier session (e1rm: reliable estimates ≤' + RELIABLE_MAX_RTF + ' reps to failure only; weight: heaviest logged load, i.e. added weight / least assistance for bodyweight lifts; reps: most reps ever at ≥ that load); firstTime = no earlier history (no PRs then); ' +
     'bodyweight logged|estimated|missing tells whether bodyweight lifts had a bodyweight snapshot. highlights[] lists PRs first, then beat-last-time. ' +
     'muscles[]: working sets per muscle this session: direct (primary muscles, 1 per set), indirect (secondary muscles), fractional = direct + 0.5 × indirect (0.5 is a convention), and week = the same counts for Monday → this session. ' +
     'vsLastWorkout compares with the previous session of the same plan workout (null if none). survey = post-workout answers; sessionLoadAU = session RPE × minutes (Foster et al. 2001). ' +
@@ -665,7 +666,8 @@ async function liveProgress(s: Session) {
   const bwAt = await bwFallback();
   const cur = (await db.sets.where('sessionId').equals(s.id).filter((x) => alive(x) && !!x.doneAt).toArray()).sort(setOrder);
   const curStat = cur.map((x) => ({ raw: x, st: toStatSet(x, bwAt(s.startedAt)) }));
-  const exIds = [...new Set(cur.map((x) => x.exerciseId))];
+  // every exercise in the session (not only the ones with ticked sets), so the set table can compare a set being filled in
+  const exIds = [...new Set([...cur.map((x) => x.exerciseId), ...s.items.map((i) => i.exerciseId)])];
   // same "earlier" as the summary: finished sessions that started before this one
   const earlier = (await db.sessions.where('startedAt').below(s.startedAt).filter((x) => alive(x) && !!x.endedAt && x.id !== s.id).toArray())
     .sort((a, b) => b.startedAt - a.startedAt);
@@ -689,6 +691,15 @@ async function liveProgress(s: Session) {
     const badge: SetBadge = prs.length ? 'pr' : beatLastTime ? 'up' : null;
     return { setId: raw.id, itemKey: raw.itemKey, exerciseId: raw.exerciseId, kind: raw.kind, setNo: raw.setNo, side: raw.side, badge, prs, beatLastTime };
   });
+  // best reliable e1RM per exercise before this session (same rule as the e1RM PR, without today's sets) + the margin a
+  // set must clear — the set table highlights a live score above it, so the highlight and the PR badge never disagree
+  const priorBestE1rm: Record<string, { kg: number; marginKg: number } | null> = {};
+  for (const id of exIds) {
+    const est = prior.filter((p) => p.raw.exerciseId === id && p.st.reps > 0).map((p) => e1rm(p.st.totalKg, p.st.reps, p.st.rir)).filter((e) => e.reliable && e.kg > 0);
+    const kg = est.length ? Math.max(...est.map((e) => e.kg)) : 0;
+    const lt = prior.find((p) => p.raw.exerciseId === id)?.st.loadType ?? 'weighted';
+    priorBestE1rm[id] = kg > 0 ? { kg: r1(kg), marginKg: r1(e1rmMargin(lt, kg)) } : null;
+  }
   const replacedDone = s.items.filter((i) => i.replacedBy).reduce((a, i) => a + workingSetCount(cur.filter((x) => x.itemKey === i.key)), 0);
   return {
     sessionId: s.id,
@@ -698,14 +709,15 @@ async function liveProgress(s: Session) {
       volumeKg: r1(volumeKg(curStat.map((c) => c.st))),
     },
     sets,
+    priorBestE1rm,
   };
 }
 export type LiveProgress = Awaited<ReturnType<typeof liveProgress>>;
 
 export const sessionsLiveProgress = defineCommand({ name: 'sessions.liveProgress', kind: 'query',
   description: 'Live progress of a workout (meant for the one in progress, works on any): totals.workingSetsDone / workingSetsPlanned and totals.volumeKg (counted exactly like sessions.summary totals), ' +
-    'and per done working set a badge: "pr" = an all-time record vs every earlier session (e1RM from <=10 reps to failure, heaviest logged load, or most reps at >= that load; same rules as sessions.summary prs; ' +
+    'and per done working set a badge: "pr" = an all-time record vs every earlier session (e1RM from <=' + RELIABLE_MAX_RTF + ' reps to failure, heaviest logged load, or most reps at >= that load; same rules as sessions.summary prs; ' +
     'today\'s sets ticked earlier count as prior, so only the set that raised the bar gets it; never on the first time an exercise is done), "up" = beat the same set (set number + side) of the previous session of that exercise ' +
-    '(higher e1RM, or more reps at >= its weight; bodyweight lifts need a 1% e1RM change), null = neither. prs lists which records.',
+    '(higher e1RM, or more reps at >= its weight; bodyweight lifts need a 1% e1RM change), null = neither. prs lists which records. priorBestE1rm[exerciseId] = best reliable e1RM (kg) of every earlier session and the marginKg a set must beat it by to count as a PR (null = none yet).',
   input: z.object({ id: zId }),
   run: async ({ id }) => liveProgress(await need(db.sessions.get(id), 'Session')) });

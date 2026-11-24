@@ -40,10 +40,21 @@ export const plural = (n: number, one: string, other: string) => `${n.toLocaleSt
 
 export const fmtNum = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
 
-export function setText(l: SetLog, unit: Settings['unit'], mode: Settings['effortMode']) {
+/** Effort of a set in the user's chosen scale. The other scale is shown only where the RIR-based RPE table maps one-to-one
+ *  (science.ts); otherwise the value the user entered is shown with its own scale, e.g. "4 RIR" in RPE mode — never 10 − x. */
+export function effortText(l: { rir?: number | null; rpe?: number | null }, mode: Settings['effortMode']): string | null {
+  const own = mode === 'rir' ? l.rir : l.rpe;
+  if (own != null) return fmtNum(own);
+  if (mode === 'rpe' && l.rir != null) return `${fmtNum(l.rir)} RIR`;
+  if (mode === 'rir' && l.rpe != null) return `RPE ${fmtNum(l.rpe)}`;
+  return null;
+}
+
+export function setText(l: Pick<SetLog, 'loadType' | 'loadKg' | 'reps' | 'rir' | 'rpe'>, unit: Settings['unit'], mode: Settings['effortMode']) {
   const load = l.loadType === 'weighted'
     ? fmtWeight(l.loadKg, unit)
     : l.loadType === 'bodyweight' ? (l.loadKg ? `BW+${fmtWeight(l.loadKg, unit)}` : 'BW') : `BW−${fmtWeight(l.loadKg, unit)}`;
-  const eff = mode === 'rir' ? (l.rir != null ? ` @${fmtNum(l.rir)} RIR` : '') : (l.rpe != null ? ` @${fmtNum(l.rpe)}` : '');
+  const e = effortText(l, mode);
+  const eff = e == null ? '' : mode === 'rir' && l.rir != null ? ` @${e} RIR` : ` @${e}`;
   return `${load} × ${l.reps ?? '–'}${eff}`;
 }

@@ -2,7 +2,8 @@
 // a stat strip (Nth workout · duration · week streak), exercise rows with PR / ↑ counts, muscle rows, then the optional
 // post-workout survey. All numbers come from the sessions.summary command.
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useReducedMotion } from 'motion/react';
 import type { z } from 'zod';
 import { run } from '../api/registry';
 import { sessionsRate, sessionsSummary, type WorkoutSummaryData } from '../api/gym';
@@ -32,7 +33,8 @@ function loadText(loadType: LoadType, loadKg: number, unit: Unit) {
 const half = (kg: number) => Math.round(kg * 2) / 2;
 const signed = (v: number, fmt: (x: number) => string) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmt(Math.abs(v))}`;
 
-export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boolean; sessionId: string; onClose: () => void; onDone: () => void }) {
+/** celebrate: opened right after Finish (count-up + a short burst on the badge when something improved). */
+export function WorkoutSummary({ open, sessionId, onClose, onDone, celebrate = false }: { open: boolean; sessionId: string; onClose: () => void; onDone: () => void; celebrate?: boolean }) {
   const settings = useSettings();
   const data = useLiveQuery(() => (open ? run(sessionsSummary, { id: sessionId }) : undefined), [open, sessionId]);
   const exMap = useLiveQuery(async () => {
@@ -48,7 +50,7 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
         <div className="sum">
           <p className="faint sum-when">{relDay(Date.parse(data.startedAt))}{data.live ? ' · in progress' : ''}</p>
 
-          <Badge data={data} />
+          <Badge data={data} celebrate={celebrate} />
 
           <div className="sum-strip sum-in" style={{ '--i': 1 } as CSSProperties}>
             <StripStat icon="bolt" tone="gold" value={<>{data.workoutNumber.toLocaleString()}<small>{ordinal(data.workoutNumber)}</small></>} label="workout" />
@@ -75,7 +77,7 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
 
           {data.muscles.length > 0 && <MuscleRows data={data} />}
 
-          {settings.features.survey && <Survey data={data} />}
+          {settings.features.survey && <Survey sessionId={data.sessionId} survey={data.survey} />}
 
           <div className="sum-done">
             <button className="btn primary lg block" onClick={onDone}>Done</button>
@@ -89,12 +91,16 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone }: { open: boo
 const ordinal = (n: number) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; };
 
 /** One big badge with the number of improvements (PR sets + sets that beat last time). */
-function Badge({ data }: { data: WorkoutSummaryData }) {
+function Badge({ data, celebrate }: { data: WorkoutSummaryData; celebrate: boolean }) {
   const n = data.improvements;
   const prs = data.exercises.reduce((a, e) => a + e.prSets, 0);
   const ups = n - prs;
+  const reduce = useReducedMotion();
+  const party = celebrate && n > 0 && !reduce;
+  const shown = useCountUp(n, party);
   return (
-    <div className="sum-badge sum-in" style={{ '--i': 0 } as CSSProperties}>
+    <div className={'sum-badge sum-in' + (party ? ' party' : celebrate && n > 0 ? ' glow' : '')} style={{ '--i': 0 } as CSSProperties}>
+      {party && <Burst gold={prs > 0} />}
       <svg viewBox="0 0 200 150" width="200" height="150" aria-hidden className="sum-badge-art">
         <defs>
           <linearGradient id="sum-gold" x1="0" y1="0" x2="0" y2="1">
@@ -111,7 +117,7 @@ function Badge({ data }: { data: WorkoutSummaryData }) {
         <path d="M100 14l16.5 33.4 36.9 5.4-26.7 26 6.3 36.7L100 98.2l-33 17.3 6.3-36.7-26.7-26 36.9-5.4z"
           fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="2" strokeLinejoin="round" transform="translate(0 -1)" />
       </svg>
-      <span className="sum-badge-num num" aria-hidden>{n > 0 ? n : <Icon name="check" size={40} stroke={3.4} />}</span>
+      <span className="sum-badge-num num" aria-hidden>{n > 0 ? shown : <Icon name="check" size={40} stroke={3.4} />}</span>
       <p className="sum-badge-cap">
         {n > 0 ? <>
           {prs > 0 && <span className="pr-text"><Icon name="medal" size={16} stroke={2} />{plural(prs, 'PR', 'PRs')}</span>}
@@ -132,6 +138,58 @@ function StripStat({ icon, tone, value, label, srLabel }: { icon: string; tone: 
         {srLabel && <span className="sr-only">{srLabel}</span>}
       </span>
     </div>
+  );
+}
+
+/** 0 → n over ~0.7 s (ease-out), once, when on; otherwise n straight away. */
+function useCountUp(n: number, on: boolean) {
+  const [v, setV] = useState(on ? 0 : n);
+  useEffect(() => {
+    if (!on) { setV(n); return; }
+    let raf = 0; const t0 = performance.now(), dur = Math.min(900, 380 + n * 90);
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      setV(Math.round(n * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [n, on]);
+  return v;
+}
+
+/** A single quiet burst of small sparks from behind the badge: transform + opacity only, ~0.9 s, never loops. */
+function Burst({ gold }: { gold: boolean }) {
+  const sparks = Array.from({ length: 14 }, (_, i) => {
+    const a = (i / 14) * Math.PI * 2 + (i % 2 ? 0.18 : 0);
+    const d = 74 + (i % 3) * 16;
+    return { x: Math.cos(a) * d, y: Math.sin(a) * d * 0.8, s: i % 3 === 0 ? 7 : 5, delay: (i % 4) * 25, tone: gold ? (i % 3 === 0 ? 'good' : 'gold') : (i % 3 === 0 ? 'gold' : 'good') };
+  });
+  return (
+    <span className="sum-burst" aria-hidden>
+      {sparks.map((p, i) => <i key={i} className={p.tone} style={{ '--x': `${p.x}px`, '--y': `${p.y}px`, '--s': `${p.s}px`, animationDelay: `${120 + p.delay}ms` } as CSSProperties} />)}
+    </span>
+  );
+}
+
+/** Post-workout survey as its own step between Finish and the summary: same questions and command, big targets,
+ *  Skip / Done. The answers stay editable on the summary afterwards. */
+export function SurveyStep({ open, sessionId, onNext }: { open: boolean; sessionId: string; onNext: () => void }) {
+  const data = useLiveQuery(() => (open ? run(sessionsSummary, { id: sessionId }) : undefined), [open, sessionId]);
+  const answered = !!data && (data.survey.sessionRpe != null || data.survey.sleep != null || data.survey.soreness != null);
+  return (
+    <Sheet open={open} onClose={onNext} full role="gym" title="How was it?">
+      {data && (
+        <div className="sum survey-step">
+          <p className="muted t-15" style={{ margin: '0 2px 4px' }}>Three taps, all optional. Helps spot what makes a good session.</p>
+          <Survey sessionId={data.sessionId} survey={data.survey} bare />
+          <div className="survey-actions">
+            <button className="btn lg" onClick={onNext}>Skip</button>
+            <button className="btn primary lg" onClick={onNext}>{answered ? 'Done' : 'Next'}</button>
+          </div>
+        </div>
+      )}
+    </Sheet>
   );
 }
 
@@ -168,7 +226,7 @@ function ExerciseRow({ e, ex, unit }: { e: Ex; ex?: Exercise; unit: Unit }) {
       </button>
       {open && (
         <div className="sum-detail num">
-          {b && <div>Best set {loadText(e.loadType, b.loadKg, unit)} × {b.reps}{b.e1rmKg != null && ` · est. 1RM ${b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}</div>}
+          {b && <div>Best set {loadText(e.loadType, b.loadKg, unit)} × {b.reps}{b.e1rmKg != null && ` · est. 1RM ${b.e1rmLowerBound ? '≥' : b.e1rmReliable ? '' : '≈'}${fmtWeight(half(b.e1rmKg), unit)}`}</div>}
           <div>{t.sym !== 'New' && <span className={'sum-trend-inline ' + t.cls} aria-hidden>{t.sym} </span>}{t.label.charAt(0).toUpperCase() + t.label.slice(1)}
             {e.beatByE1rm && e.e1rmDeltaKg ? ` · est. 1RM +${fmtWeight(half(e.e1rmDeltaKg), unit)}` : ''}</div>
           {records.length > 0 && <div className="pr-text">{records.join(' · ')}</div>}
@@ -182,6 +240,7 @@ function ExerciseRow({ e, ex, unit }: { e: Ex; ex?: Exercise; unit: Unit }) {
 /** Muscle rows: a small body figure with that muscle lit, share of today's sets, sets today and this week. */
 function MuscleRows({ data }: { data: WorkoutSummaryData }) {
   const total = data.muscles.reduce((a, m) => a + m.fractional, 0) || 1;
+  const maxF = Math.max(1, ...data.muscles.map((m) => m.fractional));
   const n = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
   return (
     <>
@@ -192,22 +251,25 @@ function MuscleRows({ data }: { data: WorkoutSummaryData }) {
             <span className="mm-tile" aria-hidden><MuscleMap primary={[m.muscle]} view="auto" height={54} label="" /></span>
             <span className="grow" style={{ minWidth: 0 }}>
               <span className="ex-row-name ellipsis">{titleCase(m.muscle)}</span>
-              <span className="ex-row-sub num">{Math.round((m.fractional / total) * 100)}% · {plural(Number(n(m.fractional)), 'set', 'sets')}<span className="faint"> · {n(m.week.fractional)} this week</span></span>
+              <span className="ex-row-sub num">{m.direct > 0 ? <>{plural(m.direct, 'set', 'sets')}{m.indirect > 0 && <span className="faint"> + {n(m.indirect)} indirect</span>}</> : <span className="faint">{n(m.indirect)} indirect</span>} · {Math.round((m.fractional / total) * 100)}%<span className="faint"> · week {m.week.direct > 0 ? n(m.week.direct) : ''}{m.week.indirect > 0 ? `${m.week.direct > 0 ? ' + ' : '+'}${n(m.week.indirect)}` : ''}</span></span>
+              <span className="m-track sum-mtrack" aria-hidden>
+                {m.direct > 0 && <span className="m-bar" style={{ width: `${(m.direct / maxF) * 100}%` }} />}
+                {m.indirect > 0 && <span className="m-bar ind" style={{ left: `${(m.direct / maxF) * 100}%`, width: `${(m.indirect / 2 / maxF) * 100}%` }} />}
+              </span>
             </span>
           </div>
         ))}
       </div>
-      <p className="faint sum-caption" style={{ textAlign: 'left' }}>Secondary muscles count ½ a set, a common convention. Week = since Monday.</p>
+      <p className="faint sum-caption" style={{ textAlign: 'left' }}>Direct = the exercise's main muscles; indirect = assisting muscles (lighter bar), counted ½ a set, a common convention. % = share of today's sets. Week = since Monday.</p>
     </>
   );
 }
 
-function Survey({ data }: { data: WorkoutSummaryData }) {
-  const s = data.survey;
-  const rate = (p: Omit<z.input<typeof sessionsRate.input>, 'id'>) => run(sessionsRate, { id: data.sessionId, ...p });
+function Survey({ sessionId, survey: s, bare = false }: { sessionId: string; survey: WorkoutSummaryData['survey']; bare?: boolean }) {
+  const rate = (p: Omit<z.input<typeof sessionsRate.input>, 'id'>) => run(sessionsRate, { id: sessionId, ...p });
   return (
     <>
-      <div className="sum-head"><span className="faint">How was it?</span></div>
+      {!bare && <div className="sum-head"><span className="faint">How was it?</span></div>}
       <div className="card stack sum-survey" style={{ gap: 18 }}>
         <Q label="Effort" hint={s.sessionRpe != null ? (CR10[s.sessionRpe] ? `${s.sessionRpe} · ${CR10[s.sessionRpe]}` : String(s.sessionRpe)) : 'Whole session, 0–10'}>
           {/* CR-10 keeps its 0–10 values: 1–10 in a balanced 5 × 2 grid, 0 ("Rest") as a full-width row under it */}
@@ -226,11 +288,11 @@ function Survey({ data }: { data: WorkoutSummaryData }) {
         </Q>
         <label className="field">
           <span>Note</span>
-          <textarea key={data.sessionId} aria-label="Note" className="input" rows={2} style={{ padding: 12, resize: 'vertical' }} defaultValue={s.note ?? ''}
+          <textarea key={sessionId} aria-label="Note" className="input" rows={2} style={{ padding: 12, resize: 'vertical' }} defaultValue={s.note ?? ''}
             placeholder="Optional" onBlur={(e) => { if ((e.target.value || null) !== (s.note ?? null)) rate({ note: e.target.value || null }); }} />
         </label>
       </div>
-      <p className="faint sum-caption">All optional. Saved as you tap.</p>
+      {!bare && <p className="faint sum-caption">All optional. Saved as you tap.</p>}
     </>
   );
 }

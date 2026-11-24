@@ -3,10 +3,15 @@
 // background and pulls changes made elsewhere. Last-write-wins per record by client updatedAt.
 import { useSyncExternalStore } from 'react';
 import { db, onLocalChange } from '../db/db';
+import { chatBackupOn, hydrateChat, queueAllChats, syncCopy } from './agent/chats';
+import type { Chat } from './agent/types';
 
 /** Production API. Set after `wrangler deploy` (also overridable in Settings → Account for dev). */
 export const DEFAULT_API = 'https://tap-in.tap-in-server.workers.dev';
-const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories', 'journal'] as const;
+// chats: written by lib/agent/chats.ts (not db.save), pushed as syncCopy() in their own request, only while chat backup is on
+const TABLES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'sets', 'bodyweight', 'foods', 'entries', 'days', 'goals', 'supplements', 'stacks', 'supplogs', 'notes', 'memories', 'journal', 'chats'] as const;
+/** Last-write-wins stamp of a record. Chats keep updatedAt for list order (not bumped by rename / keep), so they carry syncAt. */
+const stampOf = (t: string, rec: { updatedAt?: number; syncAt?: number } | undefined) => (t === 'chats' ? rec?.syncAt ?? rec?.updatedAt : rec?.updatedAt) ?? 0;
 
 interface Account { api: string; token: string; user: { id: string; name: string } }
 export interface SyncState { account: Account | null; status: 'off' | 'idle' | 'syncing' | 'offline' | 'error'; pending: number; lastSync: number | null; error?: string }
@@ -39,9 +44,12 @@ export async function apiAuth(): Promise<{ api: string; token: string } | null> 
 async function link(acc: Account) {
   await setMeta('account', acc);
   await setMeta('syncCursor', 0);
+  await setMeta('chatsQueued', true); // link() below queues every chat itself
   set({ account: acc, status: 'idle' }); // signed in from here on, even if queueing the first upload fails
   // first link: upload everything that exists locally (the outbox only holds changes since install)
+  const backupChats = await chatBackupOn();
   for (const t of TABLES) {
+    if (t === 'chats' && !backupChats) continue;
     const ids = (await db.table(t).toCollection().primaryKeys()) as string[];
     const rows = t === 'exercises' ? (await db.exercises.toArray()).filter((e) => e.custom || e.updatedAt > 0).map((e) => e.id) : ids;
     await db.outbox.bulkAdd(rows.map((id) => ({ table: t, recordId: id, at: Date.now() })));
@@ -140,19 +148,42 @@ export function syncNow(opts: { keepalive?: boolean } = {}) {
 }
 
 async function push(keepalive?: boolean) {
+  const backupChats = await chatBackupOn();
   for (;;) {
     const batch = await db.outbox.orderBy('seq').limit(400).toArray();
     if (!batch.length) return;
     const maxSeq = batch[batch.length - 1].seq!;
-    const seen = new Set<string>(); const changes: { tbl: string; id: string; data: unknown; updatedAt: number }[] = [];
+    type Change = { tbl: string; id: string; data: unknown; updatedAt: number };
+    const seen = new Set<string>(); const changes: Change[] = []; const chats: Change[] = [];
     for (const o of [...batch].reverse()) { // newest first, one change per record
       const k = `${o.table}:${o.recordId}`; if (seen.has(k)) continue; seen.add(k);
+      if (o.table === 'chats' && !backupChats) continue; // backup off: drop queued chat changes
       const rec = await db.table(o.table).get(o.recordId);
-      if (rec) changes.push({ tbl: o.table, id: o.recordId, data: rec, updatedAt: rec.updatedAt ?? o.at });
+      if (!rec) continue;
+      if (o.table === 'chats') chats.push({ tbl: 'chats', id: o.recordId, data: syncCopy(rec as Chat), updatedAt: stampOf('chats', rec) || o.at });
+      else changes.push({ tbl: o.table, id: o.recordId, data: rec, updatedAt: rec.updatedAt ?? o.at });
     }
     if (changes.length) await api('/sync/push', { method: 'POST', body: JSON.stringify({ changes }), keepalive });
-    await db.outbox.where('seq').belowOrEqual(maxSeq).delete();
+    // Chats go in their own requests (small chunks: each can be up to ~60 KB), so a chat the server refuses (an older
+    // Worker without the chats table, or a record over the size limit) never holds up the rest of the data.
+    let retry: string[] = [];
+    for (let i = 0; i < chats.length; i += 8) {
+      const part = chats.slice(i, i + 8);
+      // no keepalive: browsers cap keepalive bodies at 64 KiB and a chunk of chats can be bigger (the next open syncs them)
+      try { await api('/sync/push', { method: 'POST', body: JSON.stringify({ changes: part }) }); }
+      catch (e) {
+        const st = (e as { status?: number }).status;
+        if (st === 401 || !navigator.onLine || st === undefined) throw e; // signed out / offline / network: the normal path
+        if (st !== 413) retry = retry.concat(part.map((c) => c.id)); // 400 / 5xx: try again next sync; 413 can never pass
+        console.warn('chat backup failed', st, (e as Error).message);
+      }
+    }
+    await db.transaction('rw', db.outbox, async () => {
+      await db.outbox.where('seq').belowOrEqual(maxSeq).delete();
+      if (retry.length) await db.outbox.bulkAdd(retry.map((recordId) => ({ table: 'chats', recordId, at: Date.now() })));
+    });
     set({ pending: await db.outbox.count() });
+    if (retry.length) return; // the re-queued chats would come straight back in the next batch: leave them for the next sync
   }
 }
 
@@ -165,7 +196,9 @@ async function pull() {
         for (const c of r.changes) {
           if (!(TABLES as readonly string[]).includes(c.tbl)) continue;
           const local = await db.table(c.tbl).get(c.id);
-          if (!local || (local.updatedAt ?? 0) < c.updatedAt) await db.table(c.tbl).put(c.data); // LWW, no outbox (came from server)
+          if (local && stampOf(c.tbl, local) >= c.updatedAt) continue; // LWW, no outbox (came from server)
+          // a chat from the server is the stripped copy: keep this device's photos / full tool output where they line up
+          await db.table(c.tbl).put(c.tbl === 'chats' ? hydrateChat({ ...(c.data as unknown as Chat), syncAt: c.updatedAt }, local as Chat | undefined) : c.data);
         }
       });
     }
@@ -186,5 +219,7 @@ export async function startSync() {
     else void syncNow();
   });
   setInterval(() => { if (document.visibilityState === 'visible') void syncNow(); }, 30_000);
+  // installs linked before chats synced: upload the existing chats once
+  if (acc && !(await meta<boolean>('chatsQueued'))) { await queueAllChats(); await setMeta('chatsQueued', true); }
   void syncNow();
 }

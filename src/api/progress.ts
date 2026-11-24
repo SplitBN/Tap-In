@@ -10,9 +10,9 @@ import type { Exercise, LoadType, Session, SetLog } from '../db/types';
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
-import { e1rm } from '../lib/science';
+import { e1rm, RELIABLE_MAX_RTF } from '../lib/science';
 import {
-  bestSet, compareToPrevious, effLoad, personalRecords, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount,
+  bestSet, compareToPrevious, effLoad, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount,
   type BestSet, type PRs, type StatSet, type Trend,
 } from '../lib/workoutStats';
 
@@ -76,7 +76,7 @@ async function timeline() {
   return { sessions, entries, exMap, sessionStats };
 }
 
-const bestOut = (b: BestSet | null) => b && ({ loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir, e1rmKg: b.e1rmKg > 0 ? r1(b.e1rmKg) : null, e1rmReliable: b.reliable });
+const bestOut = (b: BestSet | null) => b && ({ loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir, e1rmKg: b.e1rmKg > 0 ? r1(b.e1rmKg) : null, e1rmReliable: b.reliable, e1rmLowerBound: b.lowerBound });
 const prsOut = (p: PRs) => ({
   e1rm: p.e1rm && { kg: r1(p.e1rm.kg), previousKg: r1(p.e1rm.previousKg) },
   weight: p.weight && { loadKg: r1(p.weight.loadKg), totalKg: r1(p.weight.totalKg), previousLoadKg: r1(p.weight.previousLoadKg) },
@@ -94,10 +94,10 @@ const mostReps = (sets: StatSet[]) => Math.max(0, ...sets.filter((s) => s.kind =
 // ---------------- progress.exercise ----------------
 export const progressExercise = defineCommand({ name: 'progress.exercise', kind: 'query',
   description: 'Progress of one exercise over time: one row per finished session (optionally within from/to dates, oldest first) and all-time records. ' +
-    'Per session: workingSets, volumeKg (Σ total load × reps of working sets + drop steps, warm-ups excluded), bestSet (working set with the highest Epley e1RM on reps + RIR; ' +
-    'e1rmKg null when it cannot be estimated, e.g. a bodyweight lift with no weigh-in; e1rmReliable false past 10 reps to failure), heaviest (heaviest working set on the logged-load axis: ' +
+    'Per session: workingSets, volumeKg (Σ total load × reps of working sets + drop steps, warm-ups excluded), bestSet (working set with the highest e1RM: Wathen on reps-to-failure = reps + RIR; ' +
+    `e1rmKg null when it cannot be estimated, e.g. a bodyweight lift with no weigh-in; e1rmReliable false past ${RELIABLE_MAX_RTF} reps to failure; e1rmLowerBound true when no effort was logged (reps alone, so the real e1RM is at least this)), heaviest (heaviest` + ' working set on the logged-load axis: ' +
     'the weight; added weight for bodyweight lifts; least assistance for assisted), mostReps (most reps in one working set), prs (all-time PRs set that session, same rules as sessions.summary), ' +
-    'trend up|same|down|new vs the previous session, and the raw sets. Loads are kg; totalKg includes bodyweight for bodyweight/assisted lifts. ' +
+    'trend up|same|down|new vs the previous session, and the raw sets (each with e1rm: {kg, reliable, lowerBound, repsToFailure} for working sets, null otherwise — the set table score). Loads are kg; totalKg includes bodyweight for bodyweight/assisted lifts. ' +
     'records (always all-time, ignoring from/to): bestE1rm (reliable estimates preferred), heaviest, bestVolume, mostReps, and repRecords = most reps ever done at each logged load (heaviest loads first). Each record has its date and sessionId.',
   input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional() }),
   run: async ({ exerciseId, from, to }) => {
@@ -109,13 +109,13 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
       workingSets: e.working, volumeKg: r1(e.volume), bestSet: bestOut(e.best), heaviest: heaviest(e.sets), mostReps: mostReps(e.sets),
       prs: prsOut(e.prs), prCount: prCount(e.prs), trend: e.trend,
       bodyweight: e.loadType === 'weighted' ? null : e.sets.some((x) => x.bwMissing) ? 'missing' as const : e.sets.some((x) => x.bwEstimated) ? 'estimated' as const : 'logged' as const,
-      sets: e.raw.map((x) => ({ id: x.id, kind: x.kind, setNo: x.setNo, dropNo: x.dropNo, side: x.side, loadType: x.loadType, loadKg: x.loadKg, reps: x.reps, rir: x.rir, rpe: x.rpe, bodyweightKg: x.bodyweightKg ?? null })),
+      sets: e.raw.map((x) => ({ id: x.id, kind: x.kind, setNo: x.setNo, dropNo: x.dropNo, side: x.side, loadType: x.loadType, loadKg: x.loadKg, reps: x.reps, rir: x.rir, rpe: x.rpe, effortInput: x.effortInput, bodyweightKg: x.bodyweightKg ?? null, e1rm: setE1rmView(x) })),
     });
     const all = mine.map(row);
 
     // ---- all-time records ----
     const at = (e: ExEntry) => ({ date: dateKey(e.session.startedAt), sessionId: e.session.id });
-    let bestE: { kg: number; reliable: boolean; loadKg: number; totalKg: number; reps: number; rir: number | null; date: string; sessionId: string } | null = null;
+    let bestE: { kg: number; reliable: boolean; lowerBound: boolean; loadKg: number; totalKg: number; reps: number; rir: number | null; date: string; sessionId: string } | null = null;
     let heavy: { loadKg: number; totalKg: number; reps: number; eff: number; date: string; sessionId: string } | null = null;
     let vol: { kg: number; date: string; sessionId: string } | null = null;
     let reps: { reps: number; loadKg: number; totalKg: number; eff: number; date: string; sessionId: string } | null = null;
@@ -123,10 +123,10 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
     for (const e of mine) {
       for (const s of e.sets) {
         if (s.kind !== 'working' || s.reps <= 0) continue;
-        const est = e1rm(s.totalKg, s.reps, s.rir ?? 0);
+        const est = e1rm(s.totalKg, s.reps, s.rir);
         // reliable estimates beat unreliable ones; within the same class the higher estimate wins
         if (est.kg > 0 && (!bestE || (est.reliable && !bestE.reliable) || (est.reliable === bestE.reliable && est.kg > bestE.kg)))
-          bestE = { kg: est.kg, reliable: est.reliable, loadKg: s.loadKg, totalKg: s.totalKg, reps: s.reps, rir: s.rir, ...at(e) };
+          bestE = { kg: est.kg, reliable: est.reliable, lowerBound: est.lowerBound, loadKg: s.loadKg, totalKg: s.totalKg, reps: s.reps, rir: s.rir, ...at(e) };
         if (!heavy || effLoad(s) > heavy.eff || (effLoad(s) === heavy.eff && s.reps > heavy.reps)) heavy = { loadKg: s.loadKg, totalKg: s.totalKg, reps: s.reps, eff: effLoad(s), ...at(e) };
         if (!reps || s.reps > reps.reps || (s.reps === reps.reps && effLoad(s) > reps.eff)) reps = { reps: s.reps, loadKg: s.loadKg, totalKg: s.totalKg, eff: effLoad(s), ...at(e) };
         const k = Math.round(effLoad(s) * 100) / 100; const cur = repAt.get(k);
@@ -145,7 +145,7 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
       totalSessions: mine.length, firstDate: all[0]?.date ?? null, lastDate: all.at(-1)?.date ?? null,
       sessions: all.filter((r) => (!from || r.date >= from) && (!to || r.date <= to)),
       records: {
-        bestE1rm: bestE && { kg: r1(bestE.kg), reliable: bestE.reliable, loadKg: r1(bestE.loadKg), totalKg: r1(bestE.totalKg), reps: bestE.reps, rir: bestE.rir, date: bestE.date, sessionId: bestE.sessionId },
+        bestE1rm: bestE && { kg: r1(bestE.kg), reliable: bestE.reliable, lowerBound: bestE.lowerBound, loadKg: r1(bestE.loadKg), totalKg: r1(bestE.totalKg), reps: bestE.reps, rir: bestE.rir, date: bestE.date, sessionId: bestE.sessionId },
         heaviest: heavy && { loadKg: r1(heavy.loadKg), totalKg: r1(heavy.totalKg), reps: heavy.reps, date: heavy.date, sessionId: heavy.sessionId },
         bestVolume: vol && { kg: r1(vol.kg), date: vol.date, sessionId: vol.sessionId },
         mostReps: reps && { reps: reps.reps, loadKg: r1(reps.loadKg), totalKg: r1(reps.totalKg), date: reps.date, sessionId: reps.sessionId },
@@ -161,7 +161,7 @@ export const progressWeekly = defineCommand({ name: 'progress.weekly', kind: 'qu
     'minutes (total workout time = end − start), avgMinutes, workingSets, volumeKg (Σ total load × reps, working sets + drop steps, warm-ups excluded), prs (all-time PRs set that week: ' +
     'e1RM, weight and rep PRs each count 1, same rules as sessions.summary), inProgress (the current week). ' +
     'muscles[]: hard (working) sets per muscle this week vs the average of earlier full weeks in the window (weeksAveraged; weeks before the first logged workout are not counted): ' +
-    'direct = 1 per set for primary muscles; fractional = direct + 0.5 × secondary-muscle sets (0.5 is a convention). Weekly sets per muscle is the dose studied by Schoenfeld, Ogborn & Krieger 2017 ' +
+    'direct = 1 per set for primary muscles; indirect = sets where it is a secondary muscle; fractional = direct + 0.5 × secondary-muscle sets (0.5 is a convention). Weekly sets per muscle is the dose studied by Schoenfeld, Ogborn & Krieger 2017 ' +
     '(J Sports Sci 35(11):1073–1082: ≥10 weekly sets per muscle was their highest category and gave more growth than <5; it is not an upper limit). totals sums the whole window.',
   input: z.object({ weeks: z.number().int().min(1).max(104).default(12) }),
   run: async ({ weeks }) => {
@@ -189,7 +189,7 @@ export const progressWeekly = defineCommand({ name: 'progress.weekly', kind: 'qu
     const muscles = [...names].map((muscle) => {
       const t = muscleWeeks[cur][muscle];
       const avg = (k: 'direct' | 'fractional') => (avgIdx.length ? r1(avgIdx.reduce((a, i) => a + (muscleWeeks[i][muscle]?.[k] ?? 0), 0) / avgIdx.length) : null);
-      return { muscle, thisWeek: { direct: t?.direct ?? 0, fractional: t?.fractional ?? 0 }, average: { direct: avg('direct'), fractional: avg('fractional') } };
+      return { muscle, thisWeek: { direct: t?.direct ?? 0, indirect: t?.indirect ?? 0, fractional: t?.fractional ?? 0 }, average: { direct: avg('direct'), fractional: avg('fractional') } };
     }).sort((a, b) => b.thisWeek.direct - a.thisWeek.direct || (b.average.direct ?? 0) - (a.average.direct ?? 0) || a.muscle.localeCompare(b.muscle));
 
     const out = W.map((w, i) => ({ weekStart: w.weekStart, workouts: w.workouts, minutes: Math.round(w.minutes), avgMinutes: w.workouts ? Math.round(w.minutes / w.workouts) : null,

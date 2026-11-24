@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
     adaptiveMaintenance: true,
     agent: true,
     journal: true,
+    score: true,
   },
 };
 

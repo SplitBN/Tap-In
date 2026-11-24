@@ -7,7 +7,7 @@ import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
 import { activeSession, nextWorkoutId } from '../db/gym';
-import type { Plan, Workout } from '../db/types';
+import type { Exercise, Plan, Workout } from '../db/types';
 import { ThumbPill } from '../components/ExThumb';
 import { WorkoutPreview } from '../components/WorkoutPreview';
 import { useToday } from '../lib/today';
@@ -18,6 +18,8 @@ import { useSettings } from '../db/settings';
 import { run } from '../api/registry';
 import { plansCreate, plansDelete, plansReorder, plansSetActive, plansUpdate, sessionsStart, workoutsCreate } from '../api/gym';
 import { planStart, planWeek } from '../lib/planWeek';
+import { MuscleVolumeSection } from '../components/MuscleVolume';
+import { muscleRows, plannedSetsByMuscle } from '../lib/workoutStats';
 import { dateKey, keyToDate } from '../lib/nutrition';
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -266,6 +268,8 @@ export function PlanPage() {
   const settings = useSettings();
   const plan = useLiveQuery(() => db.plans.get(id!), [id]);
   const workouts = useLiveQuery(async () => (plan ? (await db.workouts.bulkGet(plan.workoutIds)).filter((w) => w && alive(w)) as Workout[] : []), [plan]) ?? [];
+  const exIdsKey = [...new Set(workouts.flatMap((w) => w.items.map((i) => i.exerciseId)))].join('|');
+  const exMap = useLiveQuery(async () => Object.fromEntries((await db.exercises.bulkGet(exIdsKey ? exIdsKey.split('|') : [])).filter(Boolean).map((e) => [e!.id, e!])) as Record<string, Exercise>, [exIdsKey]) ?? {};
   const [naming, setNaming] = useState(false);
   const [ordering, setOrdering] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -340,6 +344,10 @@ export function PlanPage() {
           <button className="btn primary" onClick={() => setNaming(true)}><Icon name="plus" size={18} /> Workout</button>
         </div>
       )}
+
+      {/* one rotation = every workout of the plan once; workout keys are prefixed so slots of different workouts never merge */}
+      <MuscleVolumeSection rows={muscleRows(plannedSetsByMuscle(workouts.flatMap((w) => w.items.map((i) => ({ ...i, key: `${w.id}:${i.key}` }))), exMap))}
+        note={`All ${plural(workouts.length, 'workout', 'workouts')} once`} />
 
       <nav className="text-links" aria-label="Plan">
         {items.length > 0 && <button className="text-link" onClick={() => setNaming(true)}>New workout</button>}

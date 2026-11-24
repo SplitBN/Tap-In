@@ -72,6 +72,7 @@ export function SettingsPage() {
         <div className="list">
           <Toggle label="Rest timer" on={f.restTimer} onChange={feat('restTimer')} />
           <Toggle label="RIR / RPE column" on={f.effort} onChange={feat('effort')} />
+          <Toggle label="e1RM column" sub="Estimated 1-rep max per set, from weight, reps and RIR" on={f.score !== false} onChange={feat('score')} />
           <Toggle label="Warm-up sets" on={f.warmups} onChange={feat('warmups')} />
           <Toggle label="Progression suggestions" sub="Today's target from your rep range. Off: last time's numbers" on={f.progression !== false} onChange={feat('progression')} />
           <Toggle label="Plan week" sub="“Week 3” next to your plan" on={f.planWeek !== false} onChange={feat('planWeek')} />

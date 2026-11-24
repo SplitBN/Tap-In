@@ -9,9 +9,10 @@ import { equipmentLabel, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ExerciseMenu, repsText } from '../components/ExerciseMenu';
 import { ExThumb } from '../components/ExThumb';
+import { MuscleMap } from '../components/MuscleMap';
 import { EffortExplainer, EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
 import { Sheet } from '../components/Sheet';
-import { WorkoutSummary } from '../components/WorkoutSummary';
+import { SurveyStep, WorkoutSummary } from '../components/WorkoutSummary';
 import { SaveAsWorkoutSheet, useRepeatWorkout } from '../components/RepeatWorkout';
 import { SortableItem, SortableList } from '../components/Sortable';
 import { alive, db } from '../db/db';
@@ -21,9 +22,9 @@ import { exercisesNextTarget, itemsAdd, itemsRemove, itemsReorder, itemsReplace,
 import { exerciseImage } from '../db/seed';
 import { useSettings } from '../db/settings';
 import type { Exercise, Session, SetKind, SetLog, Settings, Side, WorkoutItem } from '../db/types';
-import { fmtDate, fmtDuration, fmtNum, fmtWeight, plural, relDay, titleCase } from '../lib/format';
+import { effortText, fmtDate, fmtDuration, fmtWeight, plural, relDay, titleCase } from '../lib/format';
 import { rest, useRest, useTick, useWakeLock } from '../lib/rest';
-import { defaultRestSec, suggestDrop, defaultStepKg, fromKg, rirToRpe, snappedStepKg } from '../lib/science';
+import { defaultRestSec, suggestDrop, defaultStepKg, fromKg, rirOf, rirToRpe, setE1rm, snappedStepKg, type E1rm } from '../lib/science';
 import { workingSetCount } from '../lib/workoutStats';
 import { groupPos, itemPatch, useExerciseMap } from './WorkoutEditor';
 
@@ -87,6 +88,8 @@ export function SessionPage() {
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
   // summary sheet: 'finish' right after finishing (Done goes Home), 'view' for a past session (Done just closes)
   const [summary, setSummary] = useState<null | 'finish' | 'view'>(null);
+  // after Finish: the survey step first (if the survey is on), then the summary with its celebration
+  const [surveyStep, setSurveyStep] = useState(false);
   const [savingAs, setSavingAs] = useState(false);
   const repeat = useRepeatWorkout();
 
@@ -231,9 +234,10 @@ export function SessionPage() {
 
       <DetailsSheet open={menu === 'details'} onClose={() => setMenu(null)} session={session} onSave={(p) => run(sessionsUpdate, { id: session.id, ...p })} />
       <FinishSheet open={menu === 'finish'} onClose={() => setMenu(null)} session={session} doneCount={doneCount} sets={sets}
-        onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); setSummary('finish'); }} />
+        onFinished={() => { rest.stop(); nav(`/session/${session.id}`, { replace: true }); if (settings.features.survey) setSurveyStep(true); else setSummary('finish'); }} />
+      <SurveyStep open={surveyStep} sessionId={session.id} onNext={() => { setSurveyStep(false); setSummary('finish'); }} />
       {!live && <SaveAsWorkoutSheet open={savingAs} sessionId={session.id} sessionName={session.name} onClose={() => setSavingAs(false)} />}
-      <WorkoutSummary open={!!summary} sessionId={session.id} onClose={() => setSummary(null)}
+      <WorkoutSummary open={!!summary} sessionId={session.id} onClose={() => setSummary(null)} celebrate={summary === 'finish'}
         onDone={() => { const fromFinish = summary === 'finish'; setSummary(null); if (fromFinish) nav('/'); }} />
 
       <ExercisePicker open={!!picking} title={picking === 'replace' ? 'Replace exercise' : 'Add exercise'} onClose={() => setPicking(null)}
@@ -337,11 +341,24 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
     { loadKg: t.loadKg, reps: t.reps, ...(t.rir != null ? { rir: t.rir, rpe: rirToRpe(t.rir) } : {}) }]) : []), [target]);
   const badgeById = useMemo(() => new Map<string, SetBadge>((progress?.sets ?? []).filter((x) => x.itemKey === item.key).map((x) => [`working:${x.setNo}:0:${x.side}`, x.badge])), [progress, item.key]);
   const [whyOpen, setWhyOpen] = useState(false);
+  // reward pop: a row whose badge (↑ / PR) just appeared after a tick gets one soft pulse. Badges present on mount don't.
+  const [won, setWon] = useState<{ id: string; kind: Exclude<SetBadge, null> } | null>(null);
+  const prevBadges = useRef<Map<string, SetBadge> | null>(null);
+  useEffect(() => {
+    if (!progress) return;
+    const prevB = prevBadges.current;
+    if (prevB) for (const [id, b] of badgeById) if (b && prevB.get(id) !== b) { setWon({ id, kind: b }); break; }
+    prevBadges.current = badgeById;
+  }, [badgeById, progress]);
+  useEffect(() => { if (!won) return; const t = setTimeout(() => setWon(null), 950); return () => clearTimeout(t); }, [won]);
   const [effortInfo, setEffortInfo] = useState(false);
+  const [scoreInfo, setScoreInfo] = useState(false);
   const reduceMotion = useReducedMotion();
   const unit = settings.unit;
   const loadLabel = ex.loadType === 'bodyweight' ? `+${unit}` : ex.loadType === 'assisted' ? `assist` : unit;
   const effortOn = settings.features.effort;
+  const scoreOn = settings.features.score !== false;
+  const priorBest = progress?.priorBestE1rm?.[ex.id] ?? null;
   // warm-up rows fold behind a chip once they're done (or the working sets have started)
   const warmN = groups.filter((g) => g[0].kind === 'warmup').length;
   const [showWarm, setShowWarm] = useState(() => warmN > 0
@@ -429,6 +446,25 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
   };
 
   const effortVal = (l?: Partial<SetLog>) => (l == null ? null : settings.effortMode === 'rir' ? l.rir : l.rpe);
+  /** Effort shown in the cell: the chosen scale, or what was entered on the other scale where they don't map one-to-one. */
+  const effortShown = (l?: Partial<SetLog>) => (l == null ? null : effortText(l, settings.effortMode));
+  /** Score column: e1RM of what the row would be saved with (typed values, else the greyed suggestion), live as
+   *  weight / reps / RIR change. Working sets only (warm-ups aren't near failure, drop steps are pre-fatigued).
+   *  Bodyweight / assisted rows need a known bodyweight (the set's snapshot, else the latest weigh-in), else hidden. */
+  const scoreOf = (r: Row): { est: E1rm; typed: boolean; best: boolean } | null => {
+    if (!scoreOn || r.kind !== 'working') return null;
+    const l = byId.get(rowId(r));
+    const v = resolved(r);
+    const est = setE1rm({ loadType: ex.loadType, loadKg: v.loadKg, bodyweightKg: l?.bodyweightKg ?? bw ?? null, reps: v.reps, rir: rirOf(l) ?? rirOf(v) });
+    if (!est) return null;
+    const typed = !!l?.doneAt || (l?.loadKg != null && l?.reps != null);
+    // beats every earlier session's best reliable e1RM by the PR margin (same rule as the PR badge); only for real numbers
+    const best = typed && est.reliable && !!priorBest && est.kg > priorBest.kg + priorBest.marginKg;
+    return { est, typed, best };
+  };
+  const scoreNum = (e: E1rm) => (e.rtf <= 1 ? fmtWeight(e.kg, unit, false) : String(Math.round(fromKg(e.kg, unit))));
+  const scoreText = (e: E1rm) => (e.lowerBound ? '≥' : e.reliable ? '' : '≈') + scoreNum(e);
+  const scoreSpoken = (e: E1rm) => `${scoreNum(e)} ${unit}${e.lowerBound ? ', at least (no RIR logged)' : e.reliable ? '' : ', rough (over 12 reps to failure)'}`;
 
   let workNo = 0;
   return (
@@ -465,8 +501,8 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
 
       {/* set table */}
       <div style={{ marginTop: 16 }}>
-        <div className="set-grid set-head" data-effort={effortOn}>
-          <span aria-hidden>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <button type="button" className="set-head-btn" onClick={() => setEffortInfo(true)} aria-label={`${settings.effortMode === 'rir' ? 'Reps in reserve' : 'RPE'}: what is this?`}>{settings.effortMode.toUpperCase()}<Icon name="info" size={12} stroke={2.2} /></button>}<span />
+        <div className="set-grid set-head" data-effort={effortOn} data-score={scoreOn}>
+          <span aria-hidden>#</span><span>{loadLabel}</span><span>reps</span>{effortOn && <button type="button" className="set-head-btn" onClick={() => setEffortInfo(true)} aria-label={`${settings.effortMode === 'rir' ? 'Reps in reserve' : 'RPE'}: what is this?`}>{settings.effortMode.toUpperCase()}<Icon name="info" size={12} stroke={2.2} /></button>}{scoreOn && <button type="button" className="set-head-btn score-head" onClick={() => setScoreInfo(true)} aria-label="Estimated 1-rep max: what is this?">e1RM</button>}<span />
         </div>
         {shown.map((g) => {
           const head = g[0];
@@ -489,10 +525,11 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                 const hint = r.kind === 'working' && targetById.has(rowId(r)) ? 'target' : 'suggested';
                 const wSpoken = l?.loadKg != null ? fmtWeight(l.loadKg, unit) : sug?.loadKg != null ? `${fmtWeight(sug.loadKg, unit)} (${hint})` : 'empty';
                 const rSpoken = l?.reps != null ? String(l.reps) : repsPh !== '–' ? `${repsPh} (${hint})` : 'empty';
-                const eSpoken = effortVal(l) != null ? fmtNum(effortVal(l)!) : effortVal(sug) != null ? `${fmtNum(effortVal(sug)!)} (${hint})` : 'empty';
+                const eSpoken = effortShown(l) != null ? effortShown(l)! : effortShown(sug) != null ? `${effortShown(sug)} (${hint})` : 'empty';
+                const sc = scoreOf(r);
                 return (
-                  <motion.div key={rowId(r)} layout="position" data-effort={effortOn}
-                    className={`set-grid set-row ${state} ${r.kind}` + (shakeId === rowId(r) ? ' shake' : '')}>
+                  <motion.div key={rowId(r)} layout="position" data-effort={effortOn} data-score={scoreOn}
+                    className={`set-grid set-row ${state} ${r.kind}` + (shakeId === rowId(r) ? ' shake' : '') + (won?.id === rowId(r) ? ` won ${won.kind}` : '')}>
                     <span className="set-no num">
                       {r.side === 'right' && g.length > 1 ? '' : label}
                       {r.side !== 'both' && <small>{r.side === 'left' ? 'L' : 'R'}</small>}
@@ -505,9 +542,13 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
                     </button>
                     {effortOn && (
                       <button className="cell num" onClick={() => setEffortFor(r)} aria-label={`${settings.effortMode.toUpperCase()}, ${name}: ${eSpoken}`}>
-                        {effortVal(l) != null ? fmtNum(effortVal(l)!) : <span className="ph">{effortVal(sug) != null ? fmtNum(effortVal(sug)!) : '–'}</span>}
+                        {effortShown(l) != null ? <EffortCell text={effortShown(l)!} /> : <span className="ph">{effortShown(sug) != null ? <EffortCell text={effortShown(sug)!} /> : '–'}</span>}
                       </button>
                     )}
+                    {scoreOn && (sc
+                      ? <span className={'score num' + (sc.typed ? '' : ' ph') + (sc.est.reliable && !sc.est.lowerBound ? '' : ' rough') + (sc.best ? ' best' : '')}
+                          role="img" aria-label={`Estimated 1RM, ${name}: ${scoreSpoken(sc.est)}${sc.typed ? '' : ` (${hint})`}${sc.best ? ', above your previous best' : ''}`}>{scoreText(sc.est)}</span>
+                      : <span className="score" aria-hidden />)}
                     {progress && <AnimatePresence initial={false}>
                       {done && badgeById.get(rowId(r)) && (
                         <motion.span key={badgeById.get(rowId(r))} className={'set-badge ' + badgeById.get(rowId(r))} role="img"
@@ -544,18 +585,20 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
           <Icon name="chevronRight" size={16} />
         </div>
         {!!prev?.sets.length && (
-          <div className="set-grid set-row ghost hc-cols" data-effort={effortOn} aria-hidden>
-            <span className="set-no">#</span><span className="cell">{loadLabel}</span><span className="cell">reps</span>{effortOn && <span className="cell">{settings.effortMode}</span>}<span />
+          <div className="set-grid set-row ghost hc-cols" data-effort={effortOn} data-score={scoreOn} aria-hidden>
+            <span className="set-no">#</span><span className="cell">{loadLabel}</span><span className="cell">reps</span>{effortOn && <span className="cell">{settings.effortMode}</span>}{scoreOn && <span className="cell" style={{ textTransform: 'none' }}>e1RM</span>}<span />
           </div>
         )}
         {prev?.sets.sort(setOrder).map((l) => {
-          const e = settings.effortMode === 'rir' ? l.rir : l.rpe;
+          const e = effortText(l, settings.effortMode);
+          const ps = scoreOn && l.kind === 'working' ? setE1rm(l) : null;
           return (
-            <div key={l.id} className={'set-grid set-row ghost ' + l.kind} data-effort={effortOn}>
+            <div key={l.id} className={'set-grid set-row ghost ' + l.kind} data-effort={effortOn} data-score={scoreOn}>
               <span className="set-no num">{l.kind === 'warmup' ? 'W' : l.kind === 'drop' ? '↓' : l.setNo}{l.side !== 'both' && <small>{l.side === 'left' ? 'L' : 'R'}</small>}</span>
               <span className="cell num">{l.loadKg != null ? fmtWeight(l.loadKg, unit, false) : '–'}</span>
               <span className="cell num">{l.reps ?? '–'}</span>
-              {effortOn && <span className="cell num">{e != null ? fmtNum(e) : '–'}</span>}
+              {effortOn && <span className="cell num">{e != null ? <EffortCell text={e} /> : '–'}</span>}
+              {scoreOn && <span className={'cell num' + (ps && (!ps.reliable || ps.lowerBound) ? ' rough' : '')}>{ps ? scoreText(ps) : ''}</span>}
               <span />
             </div>
           );
@@ -564,6 +607,9 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
 
       <Sheet open={effortInfo} onClose={() => setEffortInfo(false)} title={settings.effortMode === 'rir' ? 'Reps in reserve (RIR)' : 'Rate of perceived exertion (RPE)'}>
         <EffortExplainer mode={settings.effortMode} />
+      </Sheet>
+      <Sheet open={scoreInfo} onClose={() => setScoreInfo(false)} title="Estimated 1-rep max">
+        <ScoreExplainer />
       </Sheet>
       <Sheet open={whyOpen} onClose={() => setWhyOpen(false)} title="Today's target">
         {target && <TargetWhy t={target} unit={unit} />}
@@ -579,6 +625,24 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
       <EffortSheet open={!!effortFor} onClose={() => setEffortFor(null)} mode={settings.effortMode}
         value={effortFor ? effortVal(byId.get(rowId(effortFor))) : null}
         onDone={(v, mode) => effortFor && upsert(effortFor, v == null ? { rir: null, rpe: null } : mode === 'rir' ? { rir: v } : { rpe: v })} />
+    </div>
+  );
+}
+
+/** Effort value; an entry on the other scale ("4 RIR" in RPE mode) shows its scale in small type so the cell stays compact. */
+function EffortCell({ text }: { text: string }) {
+  const m = /^(RPE) (.+)$|^(.+) (RIR)$/.exec(text);
+  if (!m) return <>{text}</>;
+  return m[1] ? <><small className="eff-scale">{m[1]}</small>{m[2]}</> : <>{m[3]}<small className="eff-scale">{m[4]}</small></>;
+}
+
+/** What the e1RM column means (header tap). */
+function ScoreExplainer() {
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <p className="muted t-15" style={{ margin: 0, lineHeight: 1.45 }}>The heaviest single you could lift today, estimated from the set: the reps you did plus reps in reserve, through the Wathen equation. One number to compare sets of different weights and reps.</p>
+      <p className="muted t-15" style={{ margin: 0, lineHeight: 1.45 }}><b>≥</b> no RIR logged: from reps alone, so the real value is at least this. <b>≈</b> more than 12 reps to failure: rough. <span className="score best inline">Green</span> beats your best so far.</p>
+      <p className="faint t-13" style={{ margin: 0 }}>Wathen 1994 · LeSuer et al. 1997 · Reynolds et al. 2006 · RIR: Zourdos et al. 2016</p>
     </div>
   );
 }
@@ -668,11 +732,14 @@ function NoteEditor({ value, onSave, onDone }: { value?: string; onSave: (v?: st
   const [draft, setDraft] = useState(value ?? '');
   const flush = useAutosave(draft, value, onSave);
   const commit = () => { flush(); onDone(); };
+  // Return = new line (a note can have several); ✓ (or tapping away) closes it. Saved as you type either way.
+  const grow = (el: HTMLTextAreaElement | null) => { if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; } };
   return (
     <div className="note-line editing">
-      <textarea autoFocus rows={2} value={draft} placeholder="Seat 4, grip, cues…" aria-label="Exercise note"
-        onChange={(e) => setDraft(e.target.value)} onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); } }} />
+      <textarea ref={grow} autoFocus rows={2} value={draft} placeholder="Seat 4, grip, cues…" aria-label="Exercise note"
+        onChange={(e) => { setDraft(e.target.value); grow(e.target); }} onBlur={commit} />
+      {/* pointerdown keeps focus in the textarea, so the blur doesn't unmount the editor under the tap */}
+      <button className="note-done pressable" aria-label="Done" onPointerDown={(e) => e.preventDefault()} onClick={commit}><Icon name="check" size={18} stroke={2.8} /></button>
     </div>
   );
 }
@@ -787,8 +854,14 @@ export function ExerciseInfo({ ex }: { ex: Exercise }) {
       )}
       <div className="chips" style={{ flexWrap: 'wrap' }}>
         <span className="badge">{titleCase(ex.mechanic)}</span><span className="badge">{equipmentLabel(ex.equipment)}</span>
-        {ex.muscles.map((m) => <span key={m} className="badge accent">{titleCase(m)}</span>)}
-        {ex.secondary.map((m) => <span key={m} className="badge">{titleCase(m)}</span>)}
+      </div>
+      {/* main vs assisting muscles in words, next to the body map (secondary = lighter) */}
+      <div className="ex-muscles">
+        {ex.muscles.length > 0 && <MuscleMap primary={ex.muscles} secondary={ex.secondary} height={96} label={`Main: ${ex.muscles.join(', ')}`} />}
+        <dl className="ex-muscle-list">
+          <dt>Main</dt><dd>{ex.muscles.length ? ex.muscles.map(titleCase).join(', ') : '–'}</dd>
+          <dt>Assists</dt><dd className="muted">{ex.secondary.length ? ex.secondary.map(titleCase).join(', ') : 'None'}</dd>
+        </dl>
       </div>
       {ex.instructions?.length ? <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.55 }}>{ex.instructions.map((s, i) => <li key={i} style={{ marginBottom: 6 }}>{s}</li>)}</ol>
         : <p className="muted">No instructions for this exercise.</p>}

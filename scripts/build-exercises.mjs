@@ -2,7 +2,7 @@
 // Source: https://github.com/yuhonas/free-exercise-db  (dist/exercises.json)
 // Usage (from the app folder): node scripts/build-exercises.mjs <path-to-exercises.json>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { ADD, DROP, EQUIPMENT, KEEP, REQUIRED } from './exercise-curation.mjs';
+import { ADD, DROP, EQUIPMENT, KEEP, MUSCLES, REQUIRED } from './exercise-curation.mjs';
 
 const src = process.argv[2];
 if (!src) throw new Error('pass the path to free-exercise-db dist/exercises.json');
@@ -36,8 +36,9 @@ const build = (id, s, name, o = {}) => {
     id, name,
     mechanic: o.mechanic ?? (s.mechanic === 'isolation' ? 'isolation' : 'compound'),
     equipment,
-    muscles: s.primaryMuscles,
-    secondary: s.secondaryMuscles,
+    // MUSCLES corrections by name; secondary never repeats a primary
+    muscles: MUSCLES[name]?.muscles ?? s.primaryMuscles,
+    secondary: [...new Set(MUSCLES[name]?.secondary ?? s.secondaryMuscles)].filter((m) => !(MUSCLES[name]?.muscles ?? s.primaryMuscles).includes(m)),
     loadType: o.loadType ?? loadType(name, equipment),
     unilateral: o.unilateral ?? UNILATERAL.test(name),
     images: s.images,
@@ -65,6 +66,7 @@ for (const e of out) {
   if (seen.has(key)) errors.push(`duplicate (name, equipment): ${e.name} / ${e.equipment} — ${seen.get(key)} and ${e.id}`);
   seen.set(key, e.id);
 }
+for (const n of Object.keys(MUSCLES)) if (!out.some((e) => e.name === n)) errors.push(`MUSCLES: no exercise named ${n}`);
 for (const n of REQUIRED) if (!out.some((e) => e.name === n)) errors.push(`required exercise missing: ${n}`);
 // equipment words belong in the equipment field, except where they are part of the movement's own name
 const EQUIP_WORD = /\b(barbell|dumbbell|machine|smith|ez|e-z|kettlebell)\b|\bcable\b(?! (crossover|row))/i;

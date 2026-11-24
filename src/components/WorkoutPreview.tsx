@@ -15,6 +15,8 @@ import { NameSheet } from '../pages/Plans';
 import { groupPos } from '../pages/WorkoutEditor';
 import { Icon } from './Icon';
 import { MuscleMap, musclesOf } from './MuscleMap';
+import { MuscleVolumeSection } from './MuscleVolume';
+import { muscleRows, plannedSetsByMuscle } from '../lib/workoutStats';
 import { ExThumb } from './ExThumb';
 import { Sheet } from './Sheet';
 
@@ -101,6 +103,8 @@ export function WorkoutPreview({ workoutId, planName, planWeek, onClose }: { wor
                 })}
               </div>
             ) : <p className="muted" style={{ margin: '20px 4px' }}>No exercises yet.</p>}
+
+            <MuscleVolumeSection rows={muscleRows(plannedSetsByMuscle(items, exs))} note="Planned working sets" />
 
             <nav className="text-links" aria-label="Workout">
               <button className="text-link" onClick={() => { onClose(); nav(`/workouts/${w.id}`); }}>Edit workout</button>

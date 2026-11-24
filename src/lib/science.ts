@@ -7,10 +7,28 @@ export const KG_PER_LB = 0.45359237; // exact, by definition (international poun
 export const toKg = (v: number, unit: Unit) => (unit === 'kg' ? v : v * KG_PER_LB);
 export const fromKg = (kg: number, unit: Unit) => (unit === 'kg' ? kg : kg / KG_PER_LB);
 
-/** RIR-based RPE scale: RPE 10 = 0 reps in reserve, RPE 9 = 1 RIR, ...; half steps allowed.
- *  Zourdos et al. 2016, J Strength Cond Res 30(1):267–275; Helms et al. 2016, Strength Cond J 38(4):42–49. */
-export const rpeToRir = (rpe: number) => Math.max(0, 10 - rpe);
-export const rirToRpe = (rir: number) => Math.min(10, Math.max(1, 10 - rir));
+/** RIR-based RPE scale (Zourdos et al. 2016, J Strength Cond Res 30(1):267–275, Table 1; Helms et al. 2016, Strength Cond J
+ *  38(4):42–49). The scale is NOT a clean "RPE = 10 − RIR" line; that only holds in its top range:
+ *    10 = max effort (0 RIR) · 9.5 = no further rep, but could add load · 9 = 1 RIR · 8.5 = 1–2 · 8 = 2 · 7.5 = 2–3 · 7 = 3
+ *    5–6 = 4–6 reps left (one band) · 3–4 = light effort · 1–2 = little to no effort (no RIR at all).
+ *  Where the naive line breaks: RPE 9.5 is 0 reps in reserve (not 0.5: e.g. a 1RM single that could take 2 kg more but
+ *  never a 2nd rep); RPE 5 and 6 are the same 4–6 band (not 5 and 4); RPE ≤ 4 says nothing about reps left (an easy
+ *  4-rep warm-up at RPE 3 is not "7 RIR"); RIR 4–6 maps only to the band "RPE 5–6", RIR > 6 to no RPE. So sets store
+ *  what the user entered (SetLog.effortInput) and the other scale is derived only where the table gives one value;
+ *  otherwise the derived field is null, never an invented number. RIR self-ratings are also less accurate further from
+ *  failure (Zourdos et al. 2016), so anything beyond ~3–4 RIR is a rough figure on either scale. */
+export function rpeToRir(rpe: number): number | null {
+  if (rpe >= 9.5) return 0; // 10 and 9.5: no rep left (9.5: the load could go up a little, the reps could not)
+  if (rpe >= 6.5) return 10 - rpe; // 9→1, 8.5→1.5 (scale "1–2"), 8→2, 7.5→2.5, 7→3; 6.5 (not on the scale) → 3.5, between 3 and the 4–6 band
+  if (rpe >= 5) return 5; // the 5–6 band = 4–6 reps left → its midpoint (±1 rep by definition)
+  return null; // light / little effort: not defined in reps in reserve
+}
+/** RPE for an RIR, only where the scale gives one value (0–3.5 RIR; 0.5 RIR ≈ 9.5). RIR 4–6 is the band "RPE 5–6",
+ *  beyond that the scale has nothing → null. */
+export const rirToRpe = (rir: number): number | null => (rir <= 3.5 ? 10 - Math.max(0, rir) : null);
+/** Reps in reserve of a set or suggestion: the stored RIR, else derived from an RPE-only record (null = effort unknown). */
+export const rirOf = (l: { rir?: number | null; rpe?: number | null } | null | undefined): number | null =>
+  l?.rir ?? (l?.rpe != null ? rpeToRir(l.rpe) : null);
 
 /** Total load actually moved, kg. Bodyweight exercises add the bodyweight snapshot. */
 export function totalLoadKg(loadType: LoadType, loadKg: number | null | undefined, bodyweightKg: number | null | undefined) {
@@ -20,19 +38,57 @@ export function totalLoadKg(loadType: LoadType, loadKg: number | null | undefine
   return loadType === 'assisted' ? bw - l : bw + l;
 }
 
-/** Estimated 1RM from a submaximal set.
- *  Reps-to-failure = reps + RIR (Helms et al. 2016), then Epley (1985): w·(1 + r/30).
- *  Accuracy drops beyond ~10 reps to failure (Reynolds, Gordon & Robergs 2006, JSCR 20(3):584–592),
- *  so `reliable` flags estimates from ≤ 10 reps-to-failure. */
-export function e1rm(weightKg: number, reps: number, rir = 0) {
-  const r = reps + rir;
-  if (r <= 0 || weightKg <= 0) return { kg: 0, reliable: false };
-  const kg = r === 1 ? weightKg : weightKg * (1 + r / 30);
-  return { kg, reliable: r <= 10 };
+/** Reps-to-failure above which an e1RM is shown with ≈ and left out of e1RM PRs / analysis. Reynolds, Gordon & Robergs
+ *  2006 (JSCR 20(3):584–592) conclude no more than 10 reps for LINEAR equations (Epley, Brzycki) and note non-linear
+ *  equations are used up to ~15 reps; Mayhew et al. 2008 (JSCR 22(5):1570–1577) find accuracy better below 10 reps to
+ *  fatigue. We use the non-linear Wathen equation, so 11–12 reps to failure still count (a few % more error) and
+ *  > 12 is flagged. One constant for the set table, PRs, charts and the agent, so the numbers agree everywhere. */
+export const RELIABLE_MAX_RTF = 12;
+
+/** Wathen (1994) ratio 1RM / load at r reps to failure. */
+const wathen = (r: number) => 1 / (0.488 + 0.538 * Math.exp(-0.075 * r));
+
+export interface E1rm {
+  kg: number; // 0 when it can't be estimated
+  /** reps to failure used = reps + RIR */
+  rtf: number;
+  /** rtf ≤ RELIABLE_MAX_RTF */
+  reliable: boolean;
+  /** no effort logged: computed from reps alone, so the true value is at least this (see below) */
+  lowerBound: boolean;
+}
+/** Estimated 1RM of one set — the single e1RM function used everywhere (set table, best set, PRs, charts, analysis).
+ *  Reps-to-failure = reps + RIR (the RIR approach of Helms et al. 2016 / Zourdos et al. 2016), then Wathen (1994,
+ *  NSCA Essentials of Strength Training and Conditioning, pp. 435–439): 1RM = w / (0.488 + 0.538·e^(−0.075·r)).
+ *  Why Wathen: LeSuer et al. 1997 (JSCR 11(4):211–213) compared seven equations (Brzycki, Epley, Lander, Lombardi,
+ *  Mayhew, O'Conner, Wathen) and only Mayhew and Wathen predicted bench press 1RM without significant error, and only
+ *  Wathen the squat (all underestimated the deadlift by ~9–14 %); form verified in Mayhew et al. 2008, Table 2. Within
+ *  2–10 reps it is within ~1 % of Epley, and it bends at high reps instead of growing linearly.
+ *  r ≤ 1 → the load itself (a 1-rep max is its own 1RM; Wathen would say 1.013·w). Between 1 and 2 reps to failure
+ *  (half-RIR entries) we blend linearly to Wathen(2), so the value never jumps.
+ *  Effort unknown (rir null): reps alone. Reps actually done can only be ≤ reps to failure, and the equations rise with
+ *  reps, so this is a LOWER BOUND, not "assumed failure" — shown as ≥ and still allowed to set a PR (beating a record
+ *  with a lower bound means the real value beat it too). Bodyweight lifts: pass the total load (bodyweight + added, or
+ *  bodyweight − assistance). */
+export function e1rm(weightKg: number, reps: number, rir: number | null | undefined): E1rm {
+  const lowerBound = rir == null;
+  const rtf = reps + Math.max(0, rir ?? 0);
+  if (reps <= 0 || weightKg <= 0) return { kg: 0, rtf, reliable: false, lowerBound };
+  const ratio = rtf <= 1 ? 1 : rtf < 2 ? 1 + (wathen(2) - 1) * (rtf - 1) : wathen(rtf);
+  return { kg: weightKg * ratio, rtf, reliable: rtf <= RELIABLE_MAX_RTF, lowerBound };
 }
 
-/** Weight you could lift for n reps at failure, inverting Epley. */
-export const nRepMax = (oneRm: number, n: number) => (n <= 1 ? oneRm : oneRm / (1 + n / 30));
+/** e1RM of a logged set (or a set being filled in): total load from its load type, RIR from rirOf. null when it can't
+ *  be estimated honestly: no reps or load, or a bodyweight/assisted set without a known bodyweight (no guessing). */
+export function setE1rm(s: { loadType: LoadType; loadKg?: number | null; bodyweightKg?: number | null; reps?: number | null; rir?: number | null; rpe?: number | null }): E1rm | null {
+  if (!s.reps || s.reps <= 0) return null;
+  if (s.loadType === 'weighted' ? s.loadKg == null : s.bodyweightKg == null) return null;
+  const est = e1rm(totalLoadKg(s.loadType, s.loadKg, s.bodyweightKg), s.reps, rirOf(s));
+  return est.kg > 0 ? est : null;
+}
+
+/** Weight you could lift for n reps to failure, inverting the same equation (10RM etc.). */
+export const nRepMax = (oneRm: number, n: number) => (n <= 1 ? oneRm : n < 2 ? oneRm / (1 + (wathen(2) - 1) * (n - 1)) : oneRm / wathen(n));
 
 /** Drop-set step: ~20–25% load reduction per drop is the typical protocol in the drop-set literature
  *  (Coleman et al. 2023, Sports Med Open, "Effects of Drop Sets on Skeletal Muscle Hypertrophy", PMC10390395;

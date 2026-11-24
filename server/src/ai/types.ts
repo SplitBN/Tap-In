@@ -12,6 +12,7 @@ export type AIMessage =
 export type AITool = { name: string; description: string; parameters: Record<string, unknown> };
 export type Effort = 'auto' | 'low' | 'medium' | 'high'; // auto = send no reasoning/effort parameter (model default)
 export const EFFORTS: Effort[] = ['auto', 'low', 'medium', 'high'];
+import type { VoiceConfig } from './voiceConfig';
 export type ProviderId = 'chatgpt' | 'openrouter';
 
 /** Per user: which provider to prefer when both are connected. */
@@ -25,6 +26,7 @@ export type AIGlobal = {
   titleEffort: Effort; // chat title call (/ai/turn effort:'title')
   extractEffort: Effort; // web/read extract
   webModel: string;
+  voice: VoiceConfig; // voice calls: STT / TTS models + voice (voiceConfig.ts)
 };
 
 export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; effort: Effort };

@@ -18,6 +18,8 @@ import { itemsAdd, itemsRemove, itemsReorder, itemsReplace, itemsRestore, itemsS
 import { plural } from '../lib/format';
 import { toast } from '../components/Toast';
 import { NameSheet } from './Plans';
+import { MuscleVolumeSection } from '../components/MuscleVolume';
+import { muscleRows, plannedSetsByMuscle } from '../lib/workoutStats';
 import { ExerciseInfo, moveItem } from './Session';
 
 /** Workout editor: large title + ⋯, the exercises as grouped rows with photos (tap = the exercise sheet), text links below. */
@@ -75,7 +77,7 @@ export function WorkoutEditorPage() {
         {items.length > 0 && <span className="num">{plural(items.length, 'exercise', 'exercises')} · {plural(sets, 'set', 'sets')}</span>}
       </div>
 
-      {items.length ? (
+      {items.length ? (<>
         <SortableList items={items} onReorder={reorder}>
           <div className="group">
             {items.map((it, i) => {
@@ -96,7 +98,8 @@ export function WorkoutEditorPage() {
             })}
           </div>
         </SortableList>
-      ) : (
+        <MuscleVolumeSection rows={muscleRows(plannedSetsByMuscle(items, exMap))} note="Planned working sets" />
+      </>) : (
         <div className="group empty compact">
           <Icon name="dumbbell" size={36} />
           <h3>No exercises yet</h3>

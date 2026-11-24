@@ -1,0 +1,2543 @@
+[
+ {
+  "id": "volume-hypertrophy",
+  "topic": "hypertrophy",
+  "tags": [
+   "volume",
+   "sets",
+   "weekly sets",
+   "muscle growth",
+   "dose-response",
+   "hypertrophy"
+  ],
+  "question": "How many sets per muscle per week for muscle growth?",
+  "finding": "Muscle growth rises with weekly sets in a graded dose-response: each extra weekly set added about 0.37% to the gain, and higher-volume groups gained about 3.9% more than lower-volume groups (15 studies). Groups doing 10+ sets per muscle per week tended to grow most. A 2026 Bayesian meta-regression confirmed more volume = more growth, but with diminishing returns.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults, mostly young men, novice to trained",
+  "practical": "Aim for roughly 10–20 hard sets per muscle per week; add sets gradually if a muscle lags and recovery allows. Gains per extra set shrink at high volumes.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Ogborn D, Krieger JW",
+    "year": 2017,
+    "title": "Dose-response relationship between weekly resistance training volume and increases in muscle mass: A systematic review and meta-analysis",
+    "journal": "J Sports Sci",
+    "doi": "10.1080/02640414.2016.1210197",
+    "pmid": "27433992",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/27433992/"
+   },
+   {
+    "authors": "Pelland JC, Remmert JF, Robinson ZP, et al.",
+    "year": 2026,
+    "title": "The Resistance Training Dose Response: Meta-Regressions Exploring the Effects of Weekly Volume and Frequency on Muscle Hypertrophy and Strength Gains",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-025-02344-w",
+    "pmid": "41343037",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41343037/"
+   }
+  ]
+ },
+ {
+  "id": "volume-strength",
+  "topic": "strength",
+  "tags": [
+   "volume",
+   "sets",
+   "strength",
+   "1rm",
+   "dose-response"
+  ],
+  "question": "Does more weekly volume make you stronger?",
+  "finding": "More weekly sets gave somewhat larger strength gains: high (10+ sets/exercise/week) vs low (<5) volume differed by an effect size of 0.18 (9 studies). The volume-strength curve flattens much sooner than the volume-hypertrophy curve.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Novice and intermediate adults, mostly men",
+  "practical": "For strength, moderate volume on the main lifts is enough; heavy practice of the lift matters more than piling on sets.",
+  "citations": [
+   {
+    "authors": "Ralston GW, Kilgore L, Wyatt FB, et al.",
+    "year": 2017,
+    "title": "The Effect of Weekly Set Volume on Strength Gain: A Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-017-0762-7",
+    "pmid": "28755103",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28755103/"
+   },
+   {
+    "authors": "Pelland JC, Remmert JF, Robinson ZP, et al.",
+    "year": 2026,
+    "title": "The Resistance Training Dose Response: Meta-Regressions Exploring the Effects of Weekly Volume and Frequency on Muscle Hypertrophy and Strength Gains",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-025-02344-w",
+    "pmid": "41343037",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41343037/"
+   }
+  ]
+ },
+ {
+  "id": "minimum-dose-strength",
+  "topic": "strength",
+  "tags": [
+   "minimum dose",
+   "busy",
+   "one set",
+   "maintenance",
+   "time-efficient",
+   "strength"
+  ],
+  "question": "What is the minimum training that still builds strength?",
+  "finding": "In resistance-trained men, one hard set of 6–12 reps at about 70–85% 1RM, 2–3 times a week for 8–12 weeks, still raised squat 1RM by about 17 kg and bench by about 8 kg (6 studies). Gains were smaller than with more volume but real.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Resistance-trained men",
+  "practical": "In a busy phase, 1 hard set per lift 2–3x/week keeps progress going; return to normal volume when you can.",
+  "citations": [
+   {
+    "authors": "Androulakis-Korakakis P, Fisher JP, Steele J",
+    "year": 2020,
+    "title": "The Minimum Effective Training Dose Required to Increase 1RM Strength in Resistance-Trained Men: A Systematic Review and Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-019-01236-0",
+    "pmid": "31797219",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/31797219/"
+   }
+  ]
+ },
+ {
+  "id": "frequency-hypertrophy",
+  "topic": "hypertrophy",
+  "tags": [
+   "frequency",
+   "split",
+   "full body",
+   "ppl",
+   "bro split",
+   "times per week"
+  ],
+  "question": "How often should each muscle be trained for growth?",
+  "finding": "When weekly volume is equal, training a muscle 1, 2 or 3+ times per week gives similar growth (25 studies), including in trained lifters. Higher frequency only helped when it added volume.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Adults, untrained and trained",
+  "practical": "Pick the split you can stick to. Training a muscle about twice a week is a practical way to spread 10–20 sets so each session stays high quality.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Grgic J, Krieger J",
+    "year": 2019,
+    "title": "How many times per week should a muscle be trained to maximize muscle hypertrophy? A systematic review and meta-analysis of studies examining the effects of resistance training frequency",
+    "journal": "J Sports Sci",
+    "doi": "10.1080/02640414.2018.1555906",
+    "pmid": "30558493",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/30558493/"
+   }
+  ]
+ },
+ {
+  "id": "frequency-strength",
+  "topic": "strength",
+  "tags": [
+   "frequency",
+   "strength",
+   "1rm",
+   "practice"
+  ],
+  "question": "Does training more often make you stronger?",
+  "finding": "Strength gains grew with frequency (effect sizes 0.74, 0.82, 0.93, 1.08 for 1, 2, 3, 4+ sessions/week; 22 studies), but the difference vanished when volume was equated. A 2026 meta-regression found frequency helps strength (not size) with diminishing returns.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Practise main lifts 2–3x per week if strength is the goal; spreading the same sets over more days can help skill.",
+  "citations": [
+   {
+    "authors": "Grgic J, Schoenfeld BJ, Davies TB, et al.",
+    "year": 2018,
+    "title": "Effect of Resistance Training Frequency on Gains in Muscular Strength: A Systematic Review and Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-018-0872-x",
+    "pmid": "29470825",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29470825/"
+   },
+   {
+    "authors": "Pelland JC, Remmert JF, Robinson ZP, et al.",
+    "year": 2026,
+    "title": "The Resistance Training Dose Response: Meta-Regressions Exploring the Effects of Weekly Volume and Frequency on Muscle Hypertrophy and Strength Gains",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-025-02344-w",
+    "pmid": "41343037",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41343037/"
+   }
+  ]
+ },
+ {
+  "id": "failure-hypertrophy",
+  "topic": "effort",
+  "tags": [
+   "failure",
+   "rir",
+   "reps in reserve",
+   "proximity to failure",
+   "intensity of effort",
+   "hypertrophy"
+  ],
+  "question": "Do I need to train to failure to grow?",
+  "finding": "Going all the way to failure gave only a trivial edge over stopping short (ES 0.19, and none when failure was strictly defined). Growth does improve as sets end closer to failure: a dose-response meta-regression found hypertrophy rises as RIR falls, while strength was similar across a wide RIR range.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults, mostly young",
+  "practical": "Most sets at about 0–3 RIR for growth; reserve true failure for the last set of safer exercises (machines, isolation). Strength work can stay further from failure.",
+  "citations": [
+   {
+    "authors": "Refalo MC, Helms ER, Trexler ET, et al.",
+    "year": 2023,
+    "title": "Influence of Resistance Training Proximity-to-Failure on Skeletal Muscle Hypertrophy: A Systematic Review with Meta-analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-022-01784-y",
+    "pmid": "36334240",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/36334240/"
+   },
+   {
+    "authors": "Robinson ZP, Pelland JC, Remmert JF, et al.",
+    "year": 2024,
+    "title": "Exploring the Dose-Response Relationship Between Estimated Resistance Training Proximity to Failure, Strength Gain, and Muscle Hypertrophy: A Series of Meta-Regressions",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-024-02069-2",
+    "pmid": "38970765",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/38970765/"
+   }
+  ]
+ },
+ {
+  "id": "failure-strength",
+  "topic": "effort",
+  "tags": [
+   "failure",
+   "strength",
+   "non-failure",
+   "fatigue"
+  ],
+  "question": "Is training to failure better for strength?",
+  "finding": "Failure vs non-failure training gave no difference in strength (ES −0.09) or hypertrophy overall (15 studies). When volume was not equated, non-failure training gave better strength gains (ES −0.32); in trained lifters failure gave a small hypertrophy edge (ES 0.15).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Young adults",
+  "practical": "Failure is not required. Stop compound lifts 1–3 reps short; it saves fatigue for more quality sets.",
+  "citations": [
+   {
+    "authors": "Grgic J, Schoenfeld BJ, Orazem J, et al.",
+    "year": 2022,
+    "title": "Effects of resistance training performed to repetition failure or non-failure on muscular strength and hypertrophy: A systematic review and meta-analysis",
+    "journal": "J Sport Health Sci",
+    "doi": "10.1016/j.jshs.2021.01.007",
+    "pmid": "33497853",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33497853/"
+   }
+  ]
+ },
+ {
+  "id": "rir-accuracy",
+  "topic": "effort",
+  "tags": [
+   "rir",
+   "rpe",
+   "accuracy",
+   "estimate",
+   "reps in reserve",
+   "autoregulation"
+  ],
+  "question": "How accurate are people at guessing reps in reserve?",
+  "finding": "People underpredict how many reps they have left by about 1 rep on average (0.95; 12 study clusters), with large variation. Predictions are better close to failure and in sets of 12 reps or fewer; much worse in high-rep sets. Training experience did not clearly improve accuracy.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults, novice to trained",
+  "practical": "Treat logged RIR as ±1–2 reps. For high-rep sets, RIR guesses are rough; occasionally take a set to failure to recalibrate.",
+  "citations": [
+   {
+    "authors": "Halperin I, Malleron T, Har-Nir I, et al.",
+    "year": 2022,
+    "title": "Accuracy in Predicting Repetitions to Task Failure in Resistance Exercise: A Scoping Review and Exploratory Meta-analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-021-01559-x",
+    "pmid": "34542869",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/34542869/"
+   }
+  ]
+ },
+ {
+  "id": "rpe-scale",
+  "topic": "effort",
+  "tags": [
+   "rpe",
+   "rir",
+   "scale",
+   "rpe 10",
+   "rpe 9.5",
+   "rpe vs rir",
+   "convert"
+  ],
+  "question": "How does RPE relate to RIR?",
+  "finding": "The lifting RPE scale is anchored to reps in reserve: RPE 10 = 0 RIR, 9 = 1 RIR, and so on near the top, and it tracked bar velocity well (r = −0.88 in experienced squatters). It is not a clean 10 − RIR line: in the published scale RPE 9.5 means no further rep (only more load), RPE 5–6 is one band of 4–6 reps left, and RPE ≤ 4 says nothing about reps left. Ratings far from failure are rough on either scale.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Experienced and novice squatters",
+  "practical": "Convert RPE↔RIR only in the 7–10 range (10 − RIR); below that treat RPE as a band, and never convert session or cardio RPE.",
+  "citations": [
+   {
+    "authors": "Zourdos MC, Klemp A, Dolan C, et al.",
+    "year": 2016,
+    "title": "Novel Resistance Training-Specific Rating of Perceived Exertion Scale Measuring Repetitions in Reserve",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0000000000001049",
+    "pmid": "26049792",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/26049792/"
+   },
+   {
+    "authors": "Helms ER, Cronin J, Storey A, et al.",
+    "year": 2016,
+    "title": "Application of the Repetitions in Reserve-Based Rating of Perceived Exertion Scale for Resistance Training",
+    "journal": "Strength Cond J",
+    "doi": "10.1519/SSC.0000000000000218",
+    "pmid": "27531969",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/27531969/"
+   }
+  ]
+ },
+ {
+  "id": "load-range",
+  "topic": "hypertrophy",
+  "tags": [
+   "load",
+   "rep range",
+   "heavy",
+   "light",
+   "high reps",
+   "low reps",
+   "%1rm"
+  ],
+  "question": "Heavy or light weights for muscle and strength?",
+  "finding": "With sets taken to (or near) failure, low loads (≤60% 1RM) and high loads build similar muscle (21 studies; network meta-analysis of 28 studies agrees). Heavy loads build more 1RM strength (high vs low load SMD about 0.6; moderate vs low about 0.35).",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults",
+  "practical": "For size, any rep range from about 5 to 30 works if sets are hard; most people do best with 6–15. For max strength, include heavy sets (≥80% 1RM, ~1–6 reps).",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Grgic J, Ogborn D, et al.",
+    "year": 2017,
+    "title": "Strength and Hypertrophy Adaptations Between Low- vs. High-Load Resistance Training: A Systematic Review and Meta-analysis",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0000000000002200",
+    "pmid": "28834797",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28834797/"
+   },
+   {
+    "authors": "Lopez P, Radaelli R, Taaffe DR, et al.",
+    "year": 2021,
+    "title": "Resistance Training Load Effects on Muscle Hypertrophy and Strength Gain: Systematic Review and Network Meta-analysis",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0000000000002585",
+    "pmid": "33433148",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33433148/"
+   }
+  ]
+ },
+ {
+  "id": "rest-intervals",
+  "topic": "hypertrophy",
+  "tags": [
+   "rest",
+   "rest time",
+   "rest interval",
+   "between sets",
+   "timer"
+  ],
+  "question": "How long should I rest between sets?",
+  "finding": "Resting more than about 60 s gave a small hypertrophy benefit over shorter rests, but beyond about 90 s no further difference was detected (Bayesian meta-analysis, 9 studies). In trained men, 3-min rests beat 1-min rests for strength and quad growth in an 8-week RCT, likely by preserving volume.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults; RCT in trained men",
+  "practical": "Rest about 1.5–3 min on most lifts (longer on heavy compounds) so the next set's reps don't drop much; shorter is fine for isolation work.",
+  "citations": [
+   {
+    "authors": "Singer A, Wolf M, Generoso L, et al.",
+    "year": 2024,
+    "title": "Give it a rest: a systematic review with Bayesian meta-analysis on the effect of inter-set rest interval duration on muscle hypertrophy",
+    "journal": "Front Sports Act Living",
+    "doi": "10.3389/fspor.2024.1429789",
+    "pmid": "39205815",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/39205815/"
+   },
+   {
+    "authors": "Schoenfeld BJ, Pope ZK, Benik FM, et al.",
+    "year": 2016,
+    "title": "Longer Interset Rest Periods Enhance Muscle Strength and Hypertrophy in Resistance-Trained Men",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0000000000001272",
+    "pmid": "26605807",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/26605807/"
+   }
+  ]
+ },
+ {
+  "id": "exercise-order",
+  "topic": "programming",
+  "tags": [
+   "exercise order",
+   "order",
+   "compound first",
+   "isolation first",
+   "pre-exhaust"
+  ],
+  "question": "Does exercise order matter?",
+  "finding": "Strength improves most on the exercises done first in a session (multi-joint first: ES 0.32 for those lifts; single-joint first: ES 0.58 for those). Muscle growth was similar whichever order was used (11 studies).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Put the lift you most want to improve first. For size, order matters little; arrange by preference and safety.",
+  "citations": [
+   {
+    "authors": "Nunes JP, Grgic J, Cunha PM, et al.",
+    "year": 2021,
+    "title": "What influence does resistance exercise order have on muscular strength gains and muscle hypertrophy? A systematic review and meta-analysis",
+    "journal": "Eur J Sport Sci",
+    "doi": "10.1080/17461391.2020.1733672",
+    "pmid": "32077380",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32077380/"
+   }
+  ]
+ },
+ {
+  "id": "range-of-motion",
+  "topic": "hypertrophy",
+  "tags": [
+   "rom",
+   "range of motion",
+   "partials",
+   "lengthened partials",
+   "stretch",
+   "full rom",
+   "deep squat"
+  ],
+  "question": "Full range of motion or partials? What about lengthened partials?",
+  "finding": "Full ROM beat partial ROM for strength (ES 0.56) and lower-body growth (ES 0.88; 16 studies). But training at long muscle lengths seems to matter: seated leg curls (hamstrings stretched) grew hamstrings more than prone curls (+14% vs +9%), and partial knee extensions in the stretched position grew quads more than full ROM in untrained women.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults; RCTs mostly in untrained people",
+  "practical": "Default to full ROM with emphasis on the stretched part; lengthened partials are a reasonable add-on at the end of sets. Short-range partials are the weakest option.",
+  "citations": [
+   {
+    "authors": "Pallarés JG, Hernández-Belmonte A, Martínez-Cava A, et al.",
+    "year": 2021,
+    "title": "Effects of range of motion on resistance training adaptations: A systematic review and meta-analysis",
+    "journal": "Scand J Med Sci Sports",
+    "doi": "10.1111/sms.14006",
+    "pmid": "34170576",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/34170576/"
+   },
+   {
+    "authors": "Maeo S, Huang M, Wu Y, et al.",
+    "year": 2021,
+    "title": "Greater Hamstrings Muscle Hypertrophy but Similar Damage Protection after Training at Long versus Short Muscle Lengths",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0000000000002523",
+    "pmid": "33009197",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33009197/"
+   },
+   {
+    "authors": "Pedrosa GF, Lima FV, Schoenfeld BJ, et al.",
+    "year": 2022,
+    "title": "Partial range of motion training elicits favorable improvements in muscular adaptations when carried out at long muscle lengths",
+    "journal": "Eur J Sport Sci",
+    "doi": "10.1080/17461391.2021.1927199",
+    "pmid": "33977835",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33977835/"
+   }
+  ]
+ },
+ {
+  "id": "rep-tempo",
+  "topic": "hypertrophy",
+  "tags": [
+   "tempo",
+   "rep speed",
+   "time under tension",
+   "slow reps",
+   "eccentric"
+  ],
+  "question": "Does lifting tempo matter for growth?",
+  "finding": "Repetition durations from 0.5 to 8 s gave similar growth. Very slow reps (>10 s per rep) seemed inferior, though few studies tested that.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Lift with control (about 1–3 s down, lift up with intent); don't chase time under tension.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Ogborn DI, Krieger JW",
+    "year": 2015,
+    "title": "Effect of repetition duration during resistance training on muscle hypertrophy: a systematic review and meta-analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-015-0304-0",
+    "pmid": "25601394",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25601394/"
+   }
+  ]
+ },
+ {
+  "id": "drop-sets",
+  "topic": "programming",
+  "tags": [
+   "drop sets",
+   "advanced techniques",
+   "time-efficient",
+   "supersets",
+   "intensity techniques"
+  ],
+  "question": "Do drop sets build more muscle?",
+  "finding": "Drop sets and traditional sets gave similar growth (between-group SMD 0.16, not significant; 5 studies), but some drop-set protocols took one half to one third of the time.",
+  "certainty": "low",
+  "evidenceType": "meta-analysis",
+  "population": "Young adults (142 participants)",
+  "practical": "Use drop sets to save time, mostly on isolation/machine work; they are not magic for growth.",
+  "citations": [
+   {
+    "authors": "Sødal LK, Kristiansen E, Larsen S, et al.",
+    "year": 2023,
+    "title": "Effects of Drop Sets on Skeletal Muscle Hypertrophy: A Systematic Review and Meta-analysis",
+    "journal": "Sports Med Open",
+    "doi": "10.1186/s40798-023-00620-5",
+    "pmid": "37523092",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/37523092/"
+   }
+  ]
+ },
+ {
+  "id": "free-weights-machines",
+  "topic": "programming",
+  "tags": [
+   "machines",
+   "free weights",
+   "equipment",
+   "barbell",
+   "dumbbell",
+   "cable"
+  ],
+  "question": "Free weights or machines?",
+  "finding": "Free weights and machines gave similar muscle growth (SMD −0.06) and similar strength when tested fairly (13 studies, 1016 people). Strength gains are specific: you get better at the type you train.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Choose by preference, safety and availability; test strength on the equipment you train with.",
+  "citations": [
+   {
+    "authors": "Haugen ME, Vårvik FT, Larsen S, et al.",
+    "year": 2023,
+    "title": "Effect of free-weight vs. machine-based strength training on maximal strength, hypertrophy and jump performance - a systematic review and meta-analysis",
+    "journal": "BMC Sports Sci Med Rehabil",
+    "doi": "10.1186/s13102-023-00713-4",
+    "pmid": "37582807",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/37582807/"
+   }
+  ]
+ },
+ {
+  "id": "periodization",
+  "topic": "programming",
+  "tags": [
+   "periodization",
+   "undulating",
+   "linear",
+   "dup",
+   "program"
+  ],
+  "question": "Does periodization help?",
+  "finding": "With volume equated, periodized programs raised 1RM more than non-periodized ones (ES 0.31), and undulating beat linear periodization in trained people (ES 0.61). Hypertrophy did not differ (35 studies).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "For strength, vary load and reps across days or weeks. For size, total hard sets matter more than the periodization model.",
+  "citations": [
+   {
+    "authors": "Moesgaard L, Beck MM, Christiansen L, et al.",
+    "year": 2022,
+    "title": "Effects of Periodization on Strength and Muscle Hypertrophy in Volume-Equated Resistance Training Programs: A Systematic Review and Meta-analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-021-01636-1",
+    "pmid": "35044672",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35044672/"
+   }
+  ]
+ },
+ {
+  "id": "acsm-2026",
+  "topic": "programming",
+  "tags": [
+   "position stand",
+   "acsm",
+   "guidelines",
+   "prescription",
+   "overview"
+  ],
+  "question": "What does the latest ACSM position stand recommend for resistance training?",
+  "finding": "The 2026 ACSM position stand (137 systematic reviews, >30,000 people) found strength was enhanced by heavier loads (≥80% 1RM), full ROM, 2–3 sets, doing the lift early in the session and ≥2 sessions/week. Hypertrophy was enhanced by higher volume (≥10 sets/week) and eccentric overload. Training to failure, equipment type, tempo and periodization did not consistently change outcomes.",
+  "certainty": "high",
+  "evidenceType": "position stand",
+  "population": "Healthy adults",
+  "practical": "Progressive training with ≥10 hard sets per muscle per week, full ROM and heavy work for the lifts you care about covers most of what matters.",
+  "citations": [
+   {
+    "authors": "Currier BS, D'Souza AC, Singh MAF, et al.",
+    "year": 2026,
+    "title": "American College of Sports Medicine Position Stand. Resistance Training Prescription for Muscle Function, Hypertrophy, and Physical Performance in Healthy Adults: An Overview of Reviews",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0000000000003897",
+    "pmid": "41843416",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41843416/"
+   },
+   {
+    "authors": "American College of Sports Medicine",
+    "year": 2009,
+    "title": "American College of Sports Medicine position stand. Progression models in resistance training for healthy adults",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0b013e3181915670",
+    "pmid": "19204579",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/19204579/"
+   }
+  ]
+ },
+ {
+  "id": "progression-methods",
+  "topic": "progression",
+  "tags": [
+   "progression",
+   "progressive overload",
+   "add weight",
+   "add reps",
+   "double progression"
+  ],
+  "question": "Should I progress by adding weight or adding reps?",
+  "finding": "Adding reps at the same load and adding load in a fixed rep range gave similar muscle growth and strength over 8 weeks (differences under 1 mm muscle thickness, ~2 kg strength). ACSM (2009) suggests raising load 2–10% once you beat the target reps by 1–2.",
+  "certainty": "moderate",
+  "evidenceType": "RCT",
+  "population": "Trained adults (RCT); healthy adults (position stand)",
+  "practical": "Double progression works: add reps until the top of the range at your target RIR, then add the smallest weight jump.",
+  "citations": [
+   {
+    "authors": "Plotkin D, Coleman M, Van Every D, et al.",
+    "year": 2022,
+    "title": "Progressive overload without progressing load? The effects of load or repetition progression on muscular adaptations",
+    "journal": "PeerJ",
+    "doi": "10.7717/peerj.14142",
+    "pmid": "36199287",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/36199287/"
+   },
+   {
+    "authors": "American College of Sports Medicine",
+    "year": 2009,
+    "title": "American College of Sports Medicine position stand. Progression models in resistance training for healthy adults",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0b013e3181915670",
+    "pmid": "19204579",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/19204579/"
+   }
+  ]
+ },
+ {
+  "id": "autoregulation",
+  "topic": "progression",
+  "tags": [
+   "autoregulation",
+   "rpe",
+   "velocity",
+   "velocity loss",
+   "flexible"
+  ],
+  "question": "Is autoregulated (RPE/velocity) training better than fixed percentages?",
+  "finding": "Autoregulated and fixed-percentage loading gave similar 1RM gains (+2 kg, not significant; 15 studies). Velocity-loss thresholds ≤25% favored strength, while >25% favored hypertrophy, likely from more volume.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Trained and untrained adults",
+  "practical": "RIR/RPE targets are a fine way to set daily load, especially when sleep or stress vary; they are not superior by themselves.",
+  "citations": [
+   {
+    "authors": "Hickmott LM, Chilibeck PD, Shaw KA, et al.",
+    "year": 2022,
+    "title": "The Effect of Load and Volume Autoregulation on Muscular Strength and Hypertrophy: A Systematic Review and Meta-Analysis",
+    "journal": "Sports Med Open",
+    "doi": "10.1186/s40798-021-00404-9",
+    "pmid": "35038063",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35038063/"
+   }
+  ]
+ },
+ {
+  "id": "e1rm-estimation",
+  "topic": "progression",
+  "tags": [
+   "1rm",
+   "e1rm",
+   "estimated 1rm",
+   "epley",
+   "brzycki",
+   "max",
+   "one rep max"
+  ],
+  "question": "How accurate is estimated 1RM from a set of reps?",
+  "finding": "1RM can be estimated well from multiple-rep sets; 5RM predicted best (R² 0.97–0.99), and accuracy drops as reps rise, so no more than about 10 reps should be used. Common equations correlate very highly with true 1RM but all seven tested underestimated deadlift 1RM.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Adults 18–69 (Reynolds); untrained college students (LeSuer)",
+  "practical": "Track e1RM from sets of ≤10 reps near failure; treat it as a trend line, not an exact max, and expect lift-specific error.",
+  "citations": [
+   {
+    "authors": "Reynolds JM, Gordon TJ, Robergs RA",
+    "year": 2006,
+    "title": "Prediction of one repetition maximum strength from multiple repetition maximum testing and anthropometry",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/R-15304.1",
+    "pmid": "16937972",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/16937972/"
+   },
+   {
+    "authors": "LeSuer DA, McCormick JH, Mayhew JL, et al.",
+    "year": 1997,
+    "title": "The Accuracy of Prediction Equations for Estimating 1-RM Performance in the Bench Press, Squat, and Deadlift",
+    "journal": "The Journal of Strength and Conditioning Research",
+    "doi": "10.1519/1533-4287(1997)011<0211:taopef>2.3.co;2",
+    "url": "https://doi.org/10.1519/1533-4287(1997)011%3C0211:taopef%3E2.3.co;2"
+   }
+  ]
+ },
+ {
+  "id": "deload",
+  "topic": "recovery",
+  "tags": [
+   "deload",
+   "rest week",
+   "break",
+   "fatigue",
+   "recovery week"
+  ],
+  "question": "Do I need deload weeks?",
+  "finding": "A 1-week full break in the middle of a 9-week program did not change muscle growth, but the group that kept training gained slightly more strength (RCT). Evidence on deloads is thin.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "Trained young adults",
+  "practical": "Deload when fatigue builds (stalled lifts, aches, poor sleep), e.g. a lighter week, rather than on a fixed schedule; you lose little muscle either way.",
+  "citations": [
+   {
+    "authors": "Coleman M, Burke R, Augustin F, et al.",
+    "year": 2024,
+    "title": "Gaining more from doing less? The effects of a one-week deload period during supervised resistance training on muscular adaptations",
+    "journal": "PeerJ",
+    "doi": "10.7717/peerj.16777",
+    "pmid": "38274324",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/38274324/"
+   }
+  ]
+ },
+ {
+  "id": "detraining",
+  "topic": "recovery",
+  "tags": [
+   "detraining",
+   "time off",
+   "vacation",
+   "break",
+   "muscle loss",
+   "strength loss"
+  ],
+  "question": "How fast do you lose strength when you stop training?",
+  "finding": "Stopping training reduces strength (submaximal SMD −0.62, max force −0.46, power −0.20; 103 studies), more the longer the break and more in people over 65. Short breaks cost little.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Adults of all ages",
+  "practical": "A week or two off is no problem. On longer breaks, keep some training if you can, and restart lighter.",
+  "citations": [
+   {
+    "authors": "Bosquet L, Berryman N, Dupuy O, et al.",
+    "year": 2013,
+    "title": "Effect of training cessation on muscular performance: a meta-analysis",
+    "journal": "Scand J Med Sci Sports",
+    "doi": "10.1111/sms.12047",
+    "pmid": "23347054",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/23347054/"
+   }
+  ]
+ },
+ {
+  "id": "retraining",
+  "topic": "recovery",
+  "tags": [
+   "retraining",
+   "muscle memory",
+   "coming back",
+   "regain",
+   "after break"
+  ],
+  "question": "Do you regain muscle quickly after a break?",
+  "finding": "Young men who trained with 3-week breaks every 6 weeks ended 24 weeks with the same muscle and strength gains as those training continuously; growth during retraining was faster.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "14 untrained young men, bench press",
+  "practical": "After a layoff, restart at lower volume and expect fast regain of lost size and strength.",
+  "citations": [
+   {
+    "authors": "Ogasawara R, Yasuda T, Ishii N, et al.",
+    "year": 2013,
+    "title": "Comparison of muscle hypertrophy following 6-month of continuous and periodic strength training",
+    "journal": "Eur J Appl Physiol",
+    "doi": "10.1007/s00421-012-2511-9",
+    "pmid": "23053130",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/23053130/"
+   }
+  ]
+ },
+ {
+  "id": "concurrent-training",
+  "topic": "recovery",
+  "tags": [
+   "cardio",
+   "concurrent",
+   "interference",
+   "running",
+   "cycling",
+   "endurance"
+  ],
+  "question": "Does cardio kill gains?",
+  "finding": "Updated meta-analysis (43 studies): adding aerobic training did not compromise hypertrophy (SMD −0.01) or max strength (−0.06), but blunted explosive strength (−0.28), mainly in same-session training. Older data suggest interference grows with more frequent/longer running.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Untrained and active adults",
+  "practical": "Do cardio. Keep hard lifting and hard cardio a few hours apart if possible, and prefer cycling/low-impact cardio for leg-day weeks if recovery suffers.",
+  "citations": [
+   {
+    "authors": "Schumann M, Feuerbacher JF, Sünkeler M, et al.",
+    "year": 2022,
+    "title": "Compatibility of Concurrent Aerobic and Strength Training for Skeletal Muscle Size and Function: An Updated Systematic Review and Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-021-01587-7",
+    "pmid": "34757594",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/34757594/"
+   },
+   {
+    "authors": "Wilson JM, Marin PJ, Rhea MR, et al.",
+    "year": 2012,
+    "title": "Concurrent training: a meta-analysis examining interference of aerobic and resistance exercises",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0b013e31823a3e2d",
+    "pmid": "22002517",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/22002517/"
+   }
+  ]
+ },
+ {
+  "id": "warm-up",
+  "topic": "recovery",
+  "tags": [
+   "warm-up",
+   "warmup",
+   "stretching",
+   "static stretching",
+   "dynamic",
+   "mobility"
+  ],
+  "question": "Should I warm up and stretch before lifting?",
+  "finding": "Warming up improved performance in 79% of criteria examined (32 studies). Static stretching right before exercise causes small drops (≈ −1% with <60 s per muscle, ≈ −4.6% with ≥60 s), which shrink when followed by dynamic activity; dynamic stretching gives small gains.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Healthy active adults",
+  "practical": "Warm up with a few lighter ramp-up sets of the first lift; keep static stretches short (<60 s per muscle) or after training.",
+  "citations": [
+   {
+    "authors": "Fradkin AJ, Zazryn TR, Smoliga JM",
+    "year": 2010,
+    "title": "Effects of warming-up on physical performance: a systematic review with meta-analysis",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0b013e3181c643a0",
+    "pmid": "19996770",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/19996770/"
+   },
+   {
+    "authors": "Behm DG, Blazevich AJ, Kay AD, et al.",
+    "year": 2016,
+    "title": "Acute effects of muscle stretching on physical performance, range of motion, and injury incidence in healthy active individuals: a systematic review",
+    "journal": "Appl Physiol Nutr Metab",
+    "doi": "10.1139/apnm-2015-0235",
+    "pmid": "26642915",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/26642915/"
+   }
+  ]
+ },
+ {
+  "id": "sex-differences",
+  "topic": "hypertrophy",
+  "tags": [
+   "women",
+   "female",
+   "sex differences",
+   "men vs women"
+  ],
+  "question": "Should women train differently than men?",
+  "finding": "Men and women gained similar relative muscle (ES 0.07) and lower-body strength with the same programs; women gained more relative upper-body strength (ES −0.60).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Young to middle-aged adults",
+  "practical": "Use the same training principles; no need for a separate \"women's program\".",
+  "citations": [
+   {
+    "authors": "Roberts BM, Nuckols G, Krieger JW",
+    "year": 2020,
+    "title": "Sex Differences in Resistance Training: A Systematic Review and Meta-Analysis",
+    "journal": "J Strength Cond Res",
+    "doi": "10.1519/JSC.0000000000003521",
+    "pmid": "32218059",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32218059/"
+   }
+  ]
+ },
+ {
+  "id": "menstrual-cycle",
+  "topic": "recovery",
+  "tags": [
+   "menstrual cycle",
+   "period",
+   "women",
+   "cycle phase",
+   "follicular"
+  ],
+  "question": "Does the menstrual cycle affect training performance?",
+  "finding": "Performance may be trivially lower in the early follicular phase (ES −0.06 vs other phases, 78 studies), with large variation and low-quality evidence. No general guideline can be formed.",
+  "certainty": "low",
+  "evidenceType": "meta-analysis",
+  "population": "Eumenorrheic women",
+  "practical": "Track your own response; adjust load on days you feel worse rather than following a fixed cycle-based plan.",
+  "citations": [
+   {
+    "authors": "McNulty KL, Elliott-Sale KJ, Dolan E, et al.",
+    "year": 2020,
+    "title": "The Effects of Menstrual Cycle Phase on Exercise Performance in Eumenorrheic Women: A Systematic Review and Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-020-01319-3",
+    "pmid": "32661839",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32661839/"
+   }
+  ]
+ },
+ {
+  "id": "protein-daily",
+  "topic": "protein",
+  "tags": [
+   "protein",
+   "grams per kg",
+   "how much protein",
+   "daily protein",
+   "muscle"
+  ],
+  "question": "How much protein per day to build muscle?",
+  "finding": "Protein supplementation increased gains in fat-free mass (+0.30 kg) and 1RM (+2.5 kg) during training (49 studies, 1863 people). Benefits plateaued at about 1.62 g/kg/day. ISSN recommends 1.4–2.0 g/kg/day for most exercising people.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults doing resistance training",
+  "practical": "Aim for about 1.6 g/kg/day; up to 2.2 g/kg/day is a safe margin. More is not harmful but unlikely to add muscle.",
+  "citations": [
+   {
+    "authors": "Morton RW, Murphy KT, McKellar SR, et al.",
+    "year": 2018,
+    "title": "A systematic review, meta-analysis and meta-regression of the effect of protein supplementation on resistance training-induced gains in muscle mass and strength in healthy adults",
+    "journal": "Br J Sports Med",
+    "doi": "10.1136/bjsports-2017-097608",
+    "pmid": "28698222",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28698222/"
+   },
+   {
+    "authors": "Jäger R, Kerksick CM, Campbell BI, et al.",
+    "year": 2017,
+    "title": "International Society of Sports Nutrition Position Stand: protein and exercise",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-017-0177-8",
+    "pmid": "28642676",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28642676/"
+   }
+  ]
+ },
+ {
+  "id": "protein-per-meal",
+  "topic": "protein",
+  "tags": [
+   "protein per meal",
+   "distribution",
+   "30g",
+   "absorb",
+   "meal",
+   "leucine"
+  ],
+  "question": "How much protein can the body use in one meal?",
+  "finding": "About 20 g whey maximally stimulated muscle protein synthesis at rest in young men, and 0.24 g/kg (young) to 0.40 g/kg (older) per meal plateaued it. But a 2023 trial found 100 g gave a larger and longer (>12 h) anabolic response than 25 g, so there is no hard per-meal \"limit\". Reviews suggest ~0.4 g/kg per meal over ≥4 meals.",
+  "certainty": "moderate",
+  "evidenceType": "RCT",
+  "population": "Young and older adults (tracer studies)",
+  "practical": "Spread protein over 3–5 meals of about 0.3–0.5 g/kg each, but don't worry if one meal is bigger: it is not wasted.",
+  "citations": [
+   {
+    "authors": "Witard OC, Jackman SR, Breen L, et al.",
+    "year": 2014,
+    "title": "Myofibrillar muscle protein synthesis rates subsequent to a meal in response to increasing doses of whey protein at rest and after resistance exercise",
+    "journal": "Am J Clin Nutr",
+    "doi": "10.3945/ajcn.112.055517",
+    "pmid": "24257722",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24257722/"
+   },
+   {
+    "authors": "Moore DR, Churchward-Venne TA, Witard O, et al.",
+    "year": 2015,
+    "title": "Protein ingestion to stimulate myofibrillar protein synthesis requires greater relative protein intakes in healthy older versus younger men",
+    "journal": "J Gerontol A Biol Sci Med Sci",
+    "doi": "10.1093/gerona/glu103",
+    "pmid": "25056502",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25056502/"
+   },
+   {
+    "authors": "Trommelen J, van Lieshout GAA, Nyakayiru J, et al.",
+    "year": 2023,
+    "title": "The anabolic response to protein ingestion during recovery from exercise has no upper limit in magnitude and duration in vivo in humans",
+    "journal": "Cell Rep Med",
+    "doi": "10.1016/j.xcrm.2023.101324",
+    "pmid": "38118410",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/38118410/"
+   },
+   {
+    "authors": "Schoenfeld BJ, Aragon AA",
+    "year": 2018,
+    "title": "How much protein can the body use in a single meal for muscle-building? Implications for daily protein distribution",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-018-0215-1",
+    "pmid": "29497353",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29497353/"
+   }
+  ]
+ },
+ {
+  "id": "protein-timing",
+  "topic": "protein",
+  "tags": [
+   "protein timing",
+   "anabolic window",
+   "post-workout",
+   "shake after gym"
+  ],
+  "question": "Is there an anabolic window after training?",
+  "finding": "When total protein intake is controlled, consuming protein around the workout did not improve strength or hypertrophy (23 studies). Total daily protein was the strongest predictor of growth.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Adults doing resistance training",
+  "practical": "Hit your daily protein; a meal within a few hours either side of training is plenty.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Aragon AA, Krieger JW",
+    "year": 2013,
+    "title": "The effect of protein timing on muscle strength and hypertrophy: a meta-analysis",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/1550-2783-10-53",
+    "pmid": "24299050",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24299050/"
+   }
+  ]
+ },
+ {
+  "id": "protein-before-sleep",
+  "topic": "protein",
+  "tags": [
+   "casein",
+   "before bed",
+   "pre-sleep",
+   "night protein"
+  ],
+  "question": "Does protein before bed help?",
+  "finding": "In a 12-week RCT, 27.5 g protein (casein drink) before sleep gave larger strength (+164 vs +130 kg total) and quad size gains (+8.4 vs +4.8 cm²) than placebo. Part of the effect may simply be more total daily protein.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "Young men (n=44)",
+  "practical": "A protein-rich snack before bed is a convenient way to reach your daily target.",
+  "citations": [
+   {
+    "authors": "Snijders T, Res PT, Smeets JS, et al.",
+    "year": 2015,
+    "title": "Protein Ingestion before Sleep Increases Muscle Mass and Strength Gains during Prolonged Resistance-Type Exercise Training in Healthy Young Men",
+    "journal": "J Nutr",
+    "doi": "10.3945/jn.114.208371",
+    "pmid": "25926415",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25926415/"
+   }
+  ]
+ },
+ {
+  "id": "protein-in-deficit",
+  "topic": "protein",
+  "tags": [
+   "protein",
+   "cut",
+   "cutting",
+   "deficit",
+   "diet",
+   "lean mass"
+  ],
+  "question": "How much protein when cutting?",
+  "finding": "For lean resistance-trained people in a deficit, a review estimated needs of 2.3–3.1 g/kg of fat-free mass per day, higher with leaner bodies and bigger deficits. ISSN echoes 2.3–3.1 g/kg/day to maximize lean mass retention when hypocaloric.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Lean resistance-trained athletes",
+  "practical": "During a cut, raise protein to about 2.0–2.4 g/kg bodyweight (≈2.3–3.1 g/kg lean mass).",
+  "citations": [
+   {
+    "authors": "Helms ER, Zinn C, Rowlands DS, et al.",
+    "year": 2014,
+    "title": "A systematic review of dietary protein during caloric restriction in resistance trained lean athletes: a case for higher intakes",
+    "journal": "Int J Sport Nutr Exerc Metab",
+    "doi": "10.1123/ijsnem.2013-0054",
+    "pmid": "24092765",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24092765/"
+   },
+   {
+    "authors": "Jäger R, Kerksick CM, Campbell BI, et al.",
+    "year": 2017,
+    "title": "International Society of Sports Nutrition Position Stand: protein and exercise",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-017-0177-8",
+    "pmid": "28642676",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28642676/"
+   }
+  ]
+ },
+ {
+  "id": "protein-kidney-safety",
+  "topic": "protein",
+  "tags": [
+   "protein",
+   "kidney",
+   "safety",
+   "high protein",
+   "gfr"
+  ],
+  "question": "Is a high-protein diet bad for the kidneys?",
+  "finding": "In healthy adults, higher-protein diets did not change kidney function (change in GFR SMD 0.11, not significant; 28 studies, 1358 people).",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults without kidney disease",
+  "practical": "High protein is fine for healthy kidneys; people with kidney disease should follow their doctor.",
+  "citations": [
+   {
+    "authors": "Devries MC, Sithamparapillai A, Brimble KS, et al.",
+    "year": 2018,
+    "title": "Changes in Kidney Function Do Not Differ between Healthy Adults Consuming Higher- Compared with Lower- or Normal-Protein Diets: A Systematic Review and Meta-Analysis",
+    "journal": "J Nutr",
+    "doi": "10.1093/jn/nxy197",
+    "pmid": "30383278",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/30383278/"
+   }
+  ]
+ },
+ {
+  "id": "plant-vs-animal-protein",
+  "topic": "protein",
+  "tags": [
+   "soy",
+   "plant protein",
+   "vegan",
+   "whey",
+   "animal protein"
+  ],
+  "question": "Is plant protein as good as whey?",
+  "finding": "Soy protein supplementation gave the same strength and lean mass gains as whey or other animal proteins during resistance training (9 studies, 266 people).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults doing resistance training",
+  "practical": "Plant protein works when total protein is adequate; slightly larger doses or blends help cover leucine.",
+  "citations": [
+   {
+    "authors": "Messina M, Lynch H, Dickinson JM, et al.",
+    "year": 2018,
+    "title": "No Difference Between the Effects of Supplementing With Soy Protein Versus Animal Protein on Gains in Muscle Mass and Strength in Response to Resistance Exercise",
+    "journal": "Int J Sport Nutr Exerc Metab",
+    "doi": "10.1123/ijsnem.2018-0071",
+    "pmid": "29722584",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29722584/"
+   }
+  ]
+ },
+ {
+  "id": "protein-powder",
+  "topic": "supplements",
+  "tags": [
+   "protein powder",
+   "whey",
+   "shake",
+   "supplement"
+  ],
+  "question": "Do I need protein powder?",
+  "finding": "Protein supplements help only by raising total protein: benefits stopped beyond about 1.6 g/kg/day total. Protein timing and source matter little once daily intake is met.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults doing resistance training",
+  "practical": "Powder is a convenient food, not a requirement. Use it if it helps you hit your protein target.",
+  "citations": [
+   {
+    "authors": "Morton RW, Murphy KT, McKellar SR, et al.",
+    "year": 2018,
+    "title": "A systematic review, meta-analysis and meta-regression of the effect of protein supplementation on resistance training-induced gains in muscle mass and strength in healthy adults",
+    "journal": "Br J Sports Med",
+    "doi": "10.1136/bjsports-2017-097608",
+    "pmid": "28698222",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28698222/"
+   },
+   {
+    "authors": "Schoenfeld BJ, Aragon AA, Krieger JW",
+    "year": 2013,
+    "title": "The effect of protein timing on muscle strength and hypertrophy: a meta-analysis",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/1550-2783-10-53",
+    "pmid": "24299050",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24299050/"
+   }
+  ]
+ },
+ {
+  "id": "deficit-lean-mass",
+  "topic": "energy",
+  "tags": [
+   "deficit",
+   "cut",
+   "lean mass",
+   "muscle loss",
+   "calories",
+   "recomp"
+  ],
+  "question": "Can I build muscle in a calorie deficit?",
+  "finding": "Training in an energy deficit impaired lean mass gains (ES −0.57) but not strength gains. A deficit of about 500 kcal/day was enough to prevent lean mass gains in the meta-regression.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults doing resistance training ≥3 weeks",
+  "practical": "To build muscle, eat near maintenance or above. To keep muscle while losing fat, keep the deficit moderate (≤~500 kcal/day) and train hard.",
+  "citations": [
+   {
+    "authors": "Murphy C, Koehler K",
+    "year": 2022,
+    "title": "Energy deficiency impairs resistance training gains in lean mass but not strength: A meta-analysis and meta-regression",
+    "journal": "Scand J Med Sci Sports",
+    "doi": "10.1111/sms.14075",
+    "pmid": "34623696",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/34623696/"
+   }
+  ]
+ },
+ {
+  "id": "weight-loss-rate",
+  "topic": "energy",
+  "tags": [
+   "rate of weight loss",
+   "how fast",
+   "cut",
+   "deficit",
+   "per week"
+  ],
+  "question": "How fast should I lose weight to keep muscle?",
+  "finding": "Athletes losing 0.7% of bodyweight per week gained lean mass (+2.1%) while those losing 1.4%/week did not (RCT). Contest-prep recommendations suggest 0.5–1% of bodyweight per week.",
+  "certainty": "moderate",
+  "evidenceType": "RCT",
+  "population": "Elite athletes (RCT); natural bodybuilders (review)",
+  "practical": "Aim for about 0.5–1% of bodyweight per week, nearer 0.5% when lean.",
+  "citations": [
+   {
+    "authors": "Garthe I, Raastad T, Refsnes PE, et al.",
+    "year": 2011,
+    "title": "Effect of two different weight-loss rates on body composition and strength and power-related performance in elite athletes",
+    "journal": "Int J Sport Nutr Exerc Metab",
+    "doi": "10.1123/ijsnem.21.2.97",
+    "pmid": "21558571",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/21558571/"
+   },
+   {
+    "authors": "Helms ER, Aragon AA, Fitschen PJ",
+    "year": 2014,
+    "title": "Evidence-based recommendations for natural bodybuilding contest preparation: nutrition and supplementation",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/1550-2783-11-20",
+    "pmid": "24864135",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24864135/"
+   }
+  ]
+ },
+ {
+  "id": "surplus-size",
+  "topic": "energy",
+  "tags": [
+   "bulk",
+   "bulking",
+   "surplus",
+   "lean bulk",
+   "weight gain"
+  ],
+  "question": "How big should a calorie surplus be for muscle gain?",
+  "finding": "In trained lifters over 8 weeks, faster weight gain (larger surplus) mostly increased fat gain, not muscle thickness or squat strength. Only a small possible benefit for the most-trained muscle was seen.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "Resistance-trained adults, mixed experience",
+  "practical": "Use a small surplus and slow weight gain; if waist or skinfolds climb fast, the surplus is mostly going to fat.",
+  "citations": [
+   {
+    "authors": "Helms ER, Spence AJ, Sousa C, et al.",
+    "year": 2023,
+    "title": "Effect of Small and Large Energy Surpluses on Strength, Muscle, and Skinfold Thickness in Resistance-Trained Individuals: A Parallel Groups Design",
+    "journal": "Sports Med Open",
+    "doi": "10.1186/s40798-023-00651-y",
+    "pmid": "37914977",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/37914977/"
+   }
+  ]
+ },
+ {
+  "id": "diet-breaks",
+  "topic": "energy",
+  "tags": [
+   "diet break",
+   "refeed",
+   "intermittent energy restriction",
+   "matador",
+   "maintenance week"
+  ],
+  "question": "Do diet breaks or refeeds help fat loss?",
+  "finding": "MATADOR (obese men): alternating 2 weeks of dieting with 2 weeks at maintenance gave more fat loss (12.3 vs 8.0 kg) than continuous dieting. In resistance-trained adults (ICECAP, 12 weeks) diet breaks gave similar fat loss and fat-free mass retention but lower hunger.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "Obese men; resistance-trained adults",
+  "practical": "Diet breaks are optional: use them if hunger or adherence is a problem, knowing the diet takes longer overall.",
+  "citations": [
+   {
+    "authors": "Byrne NM, Sainsbury A, King NA, et al.",
+    "year": 2018,
+    "title": "Intermittent energy restriction improves weight loss efficiency in obese men: the MATADOR study",
+    "journal": "Int J Obes (Lond)",
+    "doi": "10.1038/ijo.2017.206",
+    "pmid": "28925405",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28925405/"
+   },
+   {
+    "authors": "Peos JJ, Helms ER, Fournier PA, et al.",
+    "year": 2021,
+    "title": "Continuous versus Intermittent Dieting for Fat Loss and Fat-Free Mass Retention in Resistance-trained Adults: The ICECAP Trial",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0000000000002636",
+    "pmid": "33587549",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33587549/"
+   }
+  ]
+ },
+ {
+  "id": "adaptive-thermogenesis",
+  "topic": "energy",
+  "tags": [
+   "metabolic adaptation",
+   "adaptive thermogenesis",
+   "metabolism slow",
+   "plateau",
+   "starvation mode"
+  ],
+  "question": "Does dieting slow your metabolism?",
+  "finding": "Energy expenditure falls more than expected from lost mass during weight loss (adaptive thermogenesis), partly driven by leptin, and it can persist: Biggest Loser contestants were still ~500 kcal/day below prediction 6 years later. That cohort lost about 58 kg, an extreme case.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "People with obesity after large weight loss",
+  "practical": "Expect maintenance to drift down as you lose weight; re-estimate it from your own intake and weight trend every few weeks.",
+  "citations": [
+   {
+    "authors": "Rosenbaum M, Leibel RL",
+    "year": 2010,
+    "title": "Adaptive thermogenesis in humans",
+    "journal": "Int J Obes (Lond)",
+    "doi": "10.1038/ijo.2010.184",
+    "pmid": "20935667",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/20935667/"
+   },
+   {
+    "authors": "Fothergill E, Guo J, Howard L, et al.",
+    "year": 2016,
+    "title": "Persistent metabolic adaptation 6 years after \"The Biggest Loser\" competition",
+    "journal": "Obesity (Silver Spring)",
+    "doi": "10.1002/oby.21538",
+    "pmid": "27136388",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/27136388/"
+   }
+  ]
+ },
+ {
+  "id": "kcal-per-kg",
+  "topic": "energy",
+  "tags": [
+   "7700",
+   "3500",
+   "calories per kg",
+   "deficit math",
+   "prediction",
+   "energy density"
+  ],
+  "question": "Is 7700 kcal = 1 kg of fat accurate?",
+  "finding": "The 3500 kcal/lb (≈7700 kcal/kg) rule only roughly fits people with a lot of body fat; leaner people lose more lean mass and water, so each kg costs fewer kcal. Weight change is also dynamic: expenditure adapts, so the same deficit produces slowing loss, with half-times of about a year.",
+  "certainty": "high",
+  "evidenceType": "observational",
+  "population": "Modelling studies validated against human data",
+  "practical": "Use 7700 kcal/kg only as a rough guide for weeks-scale estimates; trust your measured trend over the math.",
+  "citations": [
+   {
+    "authors": "Hall KD",
+    "year": 2008,
+    "title": "What is the required energy deficit per unit weight loss?",
+    "journal": "Int J Obes (Lond)",
+    "doi": "10.1038/sj.ijo.0803720",
+    "pmid": "17848938",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/17848938/"
+   },
+   {
+    "authors": "Hall KD, Sacks G, Chandramohan D, et al.",
+    "year": 2011,
+    "title": "Quantification of the effect of energy imbalance on bodyweight",
+    "journal": "Lancet",
+    "doi": "10.1016/S0140-6736(11)60812-X",
+    "pmid": "21872751",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/21872751/"
+   }
+  ]
+ },
+ {
+  "id": "tdee-estimation",
+  "topic": "energy",
+  "tags": [
+   "tdee",
+   "bmr",
+   "rmr",
+   "maintenance",
+   "mifflin",
+   "calorie calculator"
+  ],
+  "question": "How accurate are calorie calculators?",
+  "finding": "Of common equations, Mifflin-St Jeor most often predicted resting metabolic rate within 10% of measured, but errors in individuals can be large. Activity multipliers add more error.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Healthy non-obese and obese adults",
+  "practical": "Start with an equation, then correct it after 2–4 weeks: maintenance ≈ average intake − (weight-trend change × ~7700 kcal/kg ÷ days).",
+  "citations": [
+   {
+    "authors": "Frankenfield D, Roth-Yousey L, Compher C",
+    "year": 2005,
+    "title": "Comparison of predictive equations for resting metabolic rate in healthy nonobese and obese adults: a systematic review",
+    "journal": "J Am Diet Assoc",
+    "doi": "10.1016/j.jada.2005.02.005",
+    "pmid": "15883556",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/15883556/"
+   }
+  ]
+ },
+ {
+  "id": "intake-underreporting",
+  "topic": "energy",
+  "tags": [
+   "underreporting",
+   "tracking accuracy",
+   "logging",
+   "calorie counting",
+   "not losing weight"
+  ],
+  "question": "Why am I not losing weight while eating little?",
+  "finding": "In people reporting \"diet resistance\", metabolism was normal; they underreported intake by 47% and overreported activity by 51%.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Obese adults with self-reported diet resistance",
+  "practical": "Weigh food for a while, log sauces, oils and drinks, and use the scale trend as the arbiter.",
+  "citations": [
+   {
+    "authors": "Lichtman SW, Pisarska K, Berman ER, et al.",
+    "year": 1992,
+    "title": "Discrepancy between self-reported and actual caloric intake and exercise in obese subjects",
+    "journal": "N Engl J Med",
+    "doi": "10.1056/NEJM199212313272701",
+    "pmid": "1454084",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/1454084/"
+   }
+  ]
+ },
+ {
+  "id": "carbs-for-training",
+  "topic": "diet",
+  "tags": [
+   "carbs",
+   "carbohydrates",
+   "low carb",
+   "keto",
+   "performance",
+   "glycogen"
+  ],
+  "question": "Do I need carbs to lift well?",
+  "finding": "In 49 studies, more carbohydrate rarely improved strength training performance: acute benefits appeared mainly vs a fasted control or in very high-volume sessions (>10 sets per muscle), and 15 of 17 long-term studies found no effect.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Strength trainees and athletes",
+  "practical": "Carbs are optional for typical lifting; eat some before long or high-volume sessions or if you train fasted and feel weak.",
+  "citations": [
+   {
+    "authors": "Henselmans M, Bjørnsen T, Hedderman R, et al.",
+    "year": 2022,
+    "title": "The Effect of Carbohydrate Intake on Strength and Resistance Training Performance: A Systematic Review",
+    "journal": "Nutrients",
+    "doi": "10.3390/nu14040856",
+    "pmid": "35215506",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35215506/"
+   }
+  ]
+ },
+ {
+  "id": "low-fat-testosterone",
+  "topic": "diet",
+  "tags": [
+   "fat",
+   "dietary fat",
+   "testosterone",
+   "hormones",
+   "low fat"
+  ],
+  "question": "Does a low-fat diet lower testosterone?",
+  "finding": "Low-fat vs high-fat diets lowered total testosterone modestly (SMD −0.38) and free testosterone (−0.37) in men (intervention studies; a 2026 corrigendum was published). Effects on muscle were not measured.",
+  "certainty": "low",
+  "evidenceType": "meta-analysis",
+  "population": "Men",
+  "practical": "Don't go very low fat; bodybuilding prep guidance uses 15–30% of calories from fat.",
+  "citations": [
+   {
+    "authors": "Whittaker J, Wu K",
+    "year": 2021,
+    "title": "Low-fat diets and testosterone in men: Systematic review and meta-analysis of intervention studies",
+    "journal": "J Steroid Biochem Mol Biol",
+    "doi": "10.1016/j.jsbmb.2021.105878",
+    "pmid": "33741447",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33741447/"
+   },
+   {
+    "authors": "Whittaker J, Wu K",
+    "year": 2026,
+    "title": "Corrigendum to \"Low-fat diets and testosterone in men: Systematic review and meta-analysis of intervention studies\" [Journal of Steroid Biochemistry and Molecular Biology, 210 (2021) 105878]",
+    "journal": "J Steroid Biochem Mol Biol",
+    "doi": "10.1016/j.jsbmb.2025.106880",
+    "pmid": "41139558",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41139558/"
+   },
+   {
+    "authors": "Helms ER, Aragon AA, Fitschen PJ",
+    "year": 2014,
+    "title": "Evidence-based recommendations for natural bodybuilding contest preparation: nutrition and supplementation",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/1550-2783-11-20",
+    "pmid": "24864135",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24864135/"
+   }
+  ]
+ },
+ {
+  "id": "low-carb-vs-low-fat",
+  "topic": "diet",
+  "tags": [
+   "low carb",
+   "low fat",
+   "keto",
+   "diet type",
+   "fat loss"
+  ],
+  "question": "Is low-carb better than low-fat for weight loss?",
+  "finding": "In a 12-month RCT of 609 adults, healthy low-fat and healthy low-carb diets produced similar weight loss (−5.3 vs −6.0 kg, no significant difference); genotype or insulin secretion did not predict who did better.",
+  "certainty": "high",
+  "evidenceType": "RCT",
+  "population": "Overweight adults",
+  "practical": "Pick the diet style you can stick to; calories and protein drive the result.",
+  "citations": [
+   {
+    "authors": "Gardner CD, Trepanowski JF, Del Gobbo LC, et al.",
+    "year": 2018,
+    "title": "Effect of Low-Fat vs Low-Carbohydrate Diet on 12-Month Weight Loss in Overweight Adults and the Association With Genotype Pattern or Insulin Secretion: The DIETFITS Randomized Clinical Trial",
+    "journal": "JAMA",
+    "doi": "10.1001/jama.2018.0245",
+    "pmid": "29466592",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29466592/"
+   }
+  ]
+ },
+ {
+  "id": "meal-frequency",
+  "topic": "diet",
+  "tags": [
+   "meal frequency",
+   "meals per day",
+   "metabolism",
+   "snacking"
+  ],
+  "question": "Does eating more often boost fat loss?",
+  "finding": "A meta-analysis found an apparent benefit of more frequent meals, but it was driven by a single study; with it removed, meal frequency had no clear effect on body composition.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Eat as many meals as suits you; spreading protein over 3–5 meals is a mild plus for muscle.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Aragon AA, Krieger JW",
+    "year": 2015,
+    "title": "Effects of meal frequency on weight loss and body composition: a meta-analysis",
+    "journal": "Nutr Rev",
+    "doi": "10.1093/nutrit/nuu017",
+    "pmid": "26024494",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/26024494/"
+   }
+  ]
+ },
+ {
+  "id": "intermittent-fasting",
+  "topic": "diet",
+  "tags": [
+   "intermittent fasting",
+   "if",
+   "5:2",
+   "fasting",
+   "time restricted eating"
+  ],
+  "question": "Is intermittent fasting better for weight loss?",
+  "finding": "Intermittent energy restriction gave the same weight loss as continuous restriction (difference −0.6 kg, not significant; 11 trials of 8–24 weeks).",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults with overweight or obesity",
+  "practical": "Fasting is a scheduling tool, not a metabolic advantage; use it if it makes the deficit easier.",
+  "citations": [
+   {
+    "authors": "Cioffi I, Evangelista A, Ponzo V, et al.",
+    "year": 2018,
+    "title": "Intermittent versus continuous energy restriction on weight loss and cardiometabolic outcomes: a systematic review and meta-analysis of randomized controlled trials",
+    "journal": "J Transl Med",
+    "doi": "10.1186/s12967-018-1748-4",
+    "pmid": "30583725",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/30583725/"
+   }
+  ]
+ },
+ {
+  "id": "nutrient-timing-carbs",
+  "topic": "diet",
+  "tags": [
+   "nutrient timing",
+   "carbs during exercise",
+   "glycogen",
+   "endurance",
+   "recovery"
+  ],
+  "question": "When do carbs around training matter?",
+  "finding": "ISSN: glycogen matters for long or repeated sessions. For fast recovery (<4 h) take ~1.2 g/kg/h carbs; during intense exercise over ~60–70 min take ~30–60 g carbs per hour.",
+  "certainty": "moderate",
+  "evidenceType": "position stand",
+  "population": "Healthy exercising adults, athletes",
+  "practical": "Only worry about carb timing for long endurance sessions or two sessions a day.",
+  "citations": [
+   {
+    "authors": "Kerksick CM, Arent S, Schoenfeld BJ, et al.",
+    "year": 2017,
+    "title": "International society of sports nutrition position stand: nutrient timing",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-017-0189-4",
+    "pmid": "28919842",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28919842/"
+   }
+  ]
+ },
+ {
+  "id": "alcohol",
+  "topic": "lifestyle",
+  "tags": [
+   "alcohol",
+   "beer",
+   "drinking",
+   "recovery",
+   "protein synthesis"
+  ],
+  "question": "Does alcohol hurt gains?",
+  "finding": "Heavy drinking (1.5 g/kg, about 12 standard drinks) after training cut muscle protein synthesis by 24% even with protein, and 37% with carbs instead (crossover RCT). Effects of moderate drinking are less clear.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "8 physically active men",
+  "practical": "Keep drinks low on training days; if you drink, also eat protein. Occasional moderate drinking is unlikely to matter much.",
+  "citations": [
+   {
+    "authors": "Parr EB, Camera DM, Areta JL, et al.",
+    "year": 2014,
+    "title": "Alcohol ingestion impairs maximal post-exercise rates of myofibrillar protein synthesis following a single bout of concurrent training",
+    "journal": "PLoS One",
+    "doi": "10.1371/journal.pone.0088384",
+    "pmid": "24533082",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24533082/"
+   }
+  ]
+ },
+ {
+  "id": "sleep-muscle",
+  "topic": "lifestyle",
+  "tags": [
+   "sleep",
+   "sleep deprivation",
+   "recovery",
+   "protein synthesis",
+   "testosterone"
+  ],
+  "question": "How does poor sleep affect muscle?",
+  "finding": "One night without sleep cut muscle protein synthesis by 18%, raised cortisol by 21% and lowered testosterone by 24% (crossover RCT). During a diet, sleeping 5.5 h instead of 8.5 h shifted weight loss away from fat (fat loss 0.6 vs 1.4 kg) toward lean mass (2.4 vs 1.5 kg).",
+  "certainty": "moderate",
+  "evidenceType": "RCT",
+  "population": "Healthy young adults; overweight adults dieting",
+  "practical": "Protect sleep, especially while cutting. Log bad nights so the app can explain off days.",
+  "citations": [
+   {
+    "authors": "Lamon S, Morabito A, Arentson-Lantz E, et al.",
+    "year": 2021,
+    "title": "The effect of acute sleep deprivation on skeletal muscle protein synthesis and the hormonal environment",
+    "journal": "Physiol Rep",
+    "doi": "10.14814/phy2.14660",
+    "pmid": "33400856",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33400856/"
+   },
+   {
+    "authors": "Nedeltcheva AV, Kilkus JM, Imperial J, et al.",
+    "year": 2010,
+    "title": "Insufficient sleep undermines dietary efforts to reduce adiposity",
+    "journal": "Ann Intern Med",
+    "doi": "10.7326/0003-4819-153-7-201010050-00006",
+    "pmid": "20921542",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/20921542/"
+   }
+  ]
+ },
+ {
+  "id": "sleep-performance",
+  "topic": "lifestyle",
+  "tags": [
+   "sleep",
+   "performance",
+   "strength",
+   "tired",
+   "bad night"
+  ],
+  "question": "Does a bad night hurt training performance?",
+  "finding": "Sleep loss lowered exercise performance by about 7.6% on average (69 studies), including strength. Effects were consistent with total deprivation and late-night restriction, grew ~0.4% per hour awake, and morning sessions were largely unaffected.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Mostly young men",
+  "practical": "After a short night, train earlier if possible and treat a weaker session as expected noise, not regression.",
+  "citations": [
+   {
+    "authors": "Craven J, McCartney D, Desbrow B, et al.",
+    "year": 2022,
+    "title": "Effects of Acute Sleep Loss on Physical Performance: A Systematic and Meta-Analytical Review",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-022-01706-y",
+    "pmid": "35708888",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35708888/"
+   }
+  ]
+ },
+ {
+  "id": "creatine-efficacy",
+  "topic": "supplements",
+  "tags": [
+   "creatine",
+   "strength",
+   "lean mass",
+   "monohydrate",
+   "supplement"
+  ],
+  "question": "Does creatine work?",
+  "finding": "Creatine with resistance training increased lean mass by about 1.1 kg more than placebo (35 RCTs) and improved upper-limb (ES 0.32; 53 studies) and lower-limb strength (ES 0.24; 60 studies). ISSN: safe and well tolerated in studies of up to 30 g/day for 5 years.",
+  "certainty": "high",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy adults; lean mass effect larger in men",
+  "practical": "Take 3–5 g creatine monohydrate daily, any time of day, consistently.",
+  "citations": [
+   {
+    "authors": "Delpino FM, Figueiredo LM, Forbes SC, et al.",
+    "year": 2022,
+    "title": "Influence of age, sex, and type of exercise on the efficacy of creatine supplementation on lean body mass: A systematic review and meta-analysis of randomized clinical trials",
+    "journal": "Nutrition",
+    "doi": "10.1016/j.nut.2022.111791",
+    "pmid": "35986981",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35986981/"
+   },
+   {
+    "authors": "Lanhers C, Pereira B, Naughton G, et al.",
+    "year": 2017,
+    "title": "Creatine Supplementation and Upper Limb Strength Performance: A Systematic Review and Meta-Analysis",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-016-0571-4",
+    "pmid": "27328852",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/27328852/"
+   },
+   {
+    "authors": "Lanhers C, Pereira B, Naughton G, et al.",
+    "year": 2015,
+    "title": "Creatine Supplementation and Lower Limb Strength Performance: A Systematic Review and Meta-Analyses",
+    "journal": "Sports Med",
+    "doi": "10.1007/s40279-015-0337-4",
+    "pmid": "25946994",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25946994/"
+   },
+   {
+    "authors": "Kreider RB, Kalman DS, Antonio J, et al.",
+    "year": 2017,
+    "title": "International Society of Sports Nutrition position stand: safety and efficacy of creatine supplementation in exercise, sport, and medicine",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-017-0173-z",
+    "pmid": "28615996",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28615996/"
+   }
+  ]
+ },
+ {
+  "id": "creatine-loading",
+  "topic": "supplements",
+  "tags": [
+   "creatine",
+   "loading",
+   "loading phase",
+   "20g",
+   "saturation"
+  ],
+  "question": "Do I need a creatine loading phase?",
+  "finding": "20 g/day for 6 days raised muscle creatine about 20%; 3 g/day reached the same ~20% increase over 28 days. After stopping, levels returned to baseline in about 30 days.",
+  "certainty": "high",
+  "evidenceType": "observational",
+  "population": "Healthy men (n=31, controlled dosing study)",
+  "practical": "Loading is optional: 3–5 g/day saturates in about 4 weeks; load (20 g/day split over the day for 5–7 days) only if you want effects sooner.",
+  "citations": [
+   {
+    "authors": "Hultman E, Söderlund K, Timmons JA, et al.",
+    "year": 1996,
+    "title": "Muscle creatine loading in men",
+    "journal": "J Appl Physiol (1985)",
+    "doi": "10.1152/jappl.1996.81.1.232",
+    "pmid": "8828669",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/8828669/"
+   },
+   {
+    "authors": "Antonio J, Candow DG, Forbes SC, et al.",
+    "year": 2021,
+    "title": "Common questions and misconceptions about creatine supplementation: what does the scientific evidence really show?",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-021-00412-w",
+    "pmid": "33557850",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33557850/"
+   }
+  ]
+ },
+ {
+  "id": "creatine-water-weight",
+  "topic": "supplements",
+  "tags": [
+   "creatine",
+   "water weight",
+   "bloating",
+   "weight gain",
+   "scale jump"
+  ],
+  "question": "Does creatine make me gain water weight?",
+  "finding": "Loading typically adds about 1–3 kg of body mass, mostly water, in the first week; longer studies show body water rises in proportion to muscle rather than as \"bloat\". No studies show creatine causes kidney damage in healthy people or hair loss (one unreplicated study saw a DHT rise).",
+  "certainty": "moderate",
+  "evidenceType": "consensus",
+  "population": "Healthy adults (expert review)",
+  "practical": "When starting creatine, expect a 1–3 kg scale jump that is not fat; mark the start in the journal so weight trends are read correctly.",
+  "citations": [
+   {
+    "authors": "Antonio J, Candow DG, Forbes SC, et al.",
+    "year": 2021,
+    "title": "Common questions and misconceptions about creatine supplementation: what does the scientific evidence really show?",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-021-00412-w",
+    "pmid": "33557850",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33557850/"
+   }
+  ]
+ },
+ {
+  "id": "caffeine",
+  "topic": "supplements",
+  "tags": [
+   "caffeine",
+   "pre-workout",
+   "coffee",
+   "stimulant",
+   "performance"
+  ],
+  "question": "Does caffeine improve training?",
+  "finding": "Caffeine at 3–6 mg/kg about 60 min before exercise consistently improves performance (ISSN). For strength the effect is small (SMD 0.20) and clearer for upper body; power SMD 0.17. Doses around 9 mg/kg add side effects without more benefit.",
+  "certainty": "high",
+  "evidenceType": "position stand",
+  "population": "Trained and untrained adults",
+  "practical": "About 3 mg/kg (≈200–250 mg for most) 30–60 min before training; take it earlier in the day if it hurts your sleep.",
+  "citations": [
+   {
+    "authors": "Guest NS, VanDusseldorp TA, Nelson MT, et al.",
+    "year": 2021,
+    "title": "International society of sports nutrition position stand: caffeine and exercise performance",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-020-00383-4",
+    "pmid": "33388079",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33388079/"
+   },
+   {
+    "authors": "Grgic J, Trexler ET, Lazinica B, et al.",
+    "year": 2018,
+    "title": "Effects of caffeine intake on muscle strength and power: a systematic review and meta-analysis",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-018-0216-0",
+    "pmid": "29527137",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/29527137/"
+   }
+  ]
+ },
+ {
+  "id": "beta-alanine",
+  "topic": "supplements",
+  "tags": [
+   "beta-alanine",
+   "tingling",
+   "endurance",
+   "carnosine",
+   "pre-workout"
+  ],
+  "question": "Does beta-alanine work?",
+  "finding": "4–6 g/day for at least 2–4 weeks raises muscle carnosine and improves efforts lasting about 1–4 min (ISSN). The overall effect is small (ES 0.18; 40 studies), larger for exercise capacity than performance. Tingling is harmless.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults",
+  "practical": "Useful mainly for high-rep sets or 1–4 min efforts; take 3–6 g/day split into smaller doses. Low priority for typical lifting.",
+  "citations": [
+   {
+    "authors": "Trexler ET, Smith-Ryan AE, Stout JR, et al.",
+    "year": 2015,
+    "title": "International society of sports nutrition position stand: Beta-Alanine",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-015-0090-y",
+    "pmid": "26175657",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/26175657/"
+   },
+   {
+    "authors": "Saunders B, Elliott-Sale K, Artioli GG, et al.",
+    "year": 2017,
+    "title": "β-alanine supplementation to improve exercise capacity and performance: a systematic review and meta-analysis",
+    "journal": "Br J Sports Med",
+    "doi": "10.1136/bjsports-2016-096396",
+    "pmid": "27797728",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/27797728/"
+   }
+  ]
+ },
+ {
+  "id": "citrulline",
+  "topic": "supplements",
+  "tags": [
+   "citrulline",
+   "citrulline malate",
+   "pump",
+   "pre-workout",
+   "nitric oxide"
+  ],
+  "question": "Does citrulline malate help lifting?",
+  "finding": "6–8 g citrulline malate 40–60 min before training increased reps to failure by about 3 reps (6.4%) vs placebo, a small effect (SMD 0.20; 8 studies, 137 people).",
+  "certainty": "low",
+  "evidenceType": "meta-analysis",
+  "population": "Mostly strength-trained men",
+  "practical": "Optional: a small rep boost at best. Not worth it unless budget is no issue.",
+  "citations": [
+   {
+    "authors": "Vårvik FT, Bjørnsen T, Gonzalez AM",
+    "year": 2021,
+    "title": "Acute Effect of Citrulline Malate on Repetition Performance During Strength Training: A Systematic Review and Meta-Analysis",
+    "journal": "Int J Sport Nutr Exerc Metab",
+    "doi": "10.1123/ijsnem.2020-0295",
+    "pmid": "34010809",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/34010809/"
+   }
+  ]
+ },
+ {
+  "id": "nitrate",
+  "topic": "supplements",
+  "tags": [
+   "nitrate",
+   "beetroot",
+   "beet juice",
+   "endurance"
+  ],
+  "question": "Does beetroot/nitrate help performance?",
+  "finding": "Nitrate gave a small overall performance benefit (d = 0.17; 80 studies) in recreationally active young men, but no clear benefit in women-only studies or in well-trained endurance athletes.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Young healthy adults",
+  "practical": "Minor benefit at best for recreational athletes; not a priority for lifting.",
+  "citations": [
+   {
+    "authors": "Senefeld JW, Wiggins CC, Regimbal RJ, et al.",
+    "year": 2020,
+    "title": "Ergogenic Effect of Nitrate Supplementation: A Systematic Review and Meta-analysis",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0000000000002363",
+    "pmid": "32936597",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32936597/"
+   }
+  ]
+ },
+ {
+  "id": "vitamin-d",
+  "topic": "supplements",
+  "tags": [
+   "vitamin d",
+   "sunshine",
+   "strength",
+   "deficiency"
+  ],
+  "question": "Should I take vitamin D?",
+  "finding": "In 25,871 adults (VITAL; men ≥50, women ≥55), 2000 IU/day did not reduce cancer or cardiovascular events. For muscle, small meta-analyses show modest strength gains (SMD ~0.3) in healthy adults, and benefit in athletes only for lower-limb strength (SMD 0.55; none overall).",
+  "certainty": "moderate",
+  "evidenceType": "RCT",
+  "population": "Adults ≥50 (VITAL); healthy adults and athletes (strength meta-analyses)",
+  "practical": "Supplement (VITAL used 2000 IU/day) if your blood level is low or sun exposure is poor; don't expect benefits if you are already sufficient.",
+  "citations": [
+   {
+    "authors": "Manson JE, Cook NR, Lee IM, et al.",
+    "year": 2019,
+    "title": "Vitamin D Supplements and Prevention of Cancer and Cardiovascular Disease",
+    "journal": "N Engl J Med",
+    "doi": "10.1056/NEJMoa1809944",
+    "pmid": "30415629",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/30415629/"
+   },
+   {
+    "authors": "Tomlinson PB, Joseph C, Angioi M",
+    "year": 2015,
+    "title": "Effects of vitamin D supplementation on upper and lower body muscle strength levels in healthy individuals. A systematic review with meta-analysis",
+    "journal": "J Sci Med Sport",
+    "doi": "10.1016/j.jsams.2014.07.022",
+    "pmid": "25156880",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25156880/"
+   },
+   {
+    "authors": "Zhang L, Quan M, Cao ZB",
+    "year": 2019,
+    "title": "Effect of vitamin D supplementation on upper and lower limb muscle strength and muscle power in athletes: A meta-analysis",
+    "journal": "PLoS One",
+    "doi": "10.1371/journal.pone.0215826",
+    "pmid": "31039170",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/31039170/"
+   }
+  ]
+ },
+ {
+  "id": "omega-3",
+  "topic": "supplements",
+  "tags": [
+   "omega-3",
+   "fish oil",
+   "epa",
+   "dha",
+   "heart"
+  ],
+  "question": "Is fish oil worth taking?",
+  "finding": "In VITAL, 1 g/day omega-3 did not reduce major cardiovascular events (HR 0.92, not significant) or cancer, though heart attacks were lower (HR 0.72, secondary outcome). In older adults, 6 months of fish oil increased thigh muscle volume by 3.6% and 1RM by 4% vs control (small RCT).",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "Adults ≥50 (VITAL); healthy older adults (muscle RCT)",
+  "practical": "Fish oil is optional for young lifters; maybe more useful in older adults.",
+  "citations": [
+   {
+    "authors": "Manson JE, Cook NR, Lee IM, et al.",
+    "year": 2019,
+    "title": "Marine n-3 Fatty Acids and Prevention of Cardiovascular Disease and Cancer",
+    "journal": "N Engl J Med",
+    "doi": "10.1056/NEJMoa1811403",
+    "pmid": "30415637",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/30415637/"
+   },
+   {
+    "authors": "Smith GI, Julliand S, Reeds DN, et al.",
+    "year": 2015,
+    "title": "Fish oil-derived n-3 PUFA therapy increases muscle mass and function in healthy older adults",
+    "journal": "Am J Clin Nutr",
+    "doi": "10.3945/ajcn.114.105833",
+    "pmid": "25994567",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25994567/"
+   }
+  ]
+ },
+ {
+  "id": "ashwagandha",
+  "topic": "supplements",
+  "tags": [
+   "ashwagandha",
+   "adaptogen",
+   "stress",
+   "testosterone",
+   "withania"
+  ],
+  "question": "Does ashwagandha improve performance?",
+  "finding": "A Bayesian meta-analysis of 12 small trials found ashwagandha beat placebo on strength/power, cardiorespiratory fitness and recovery measures, but studies were few and small; more trials in trained people are needed.",
+  "certainty": "low",
+  "evidenceType": "meta-analysis",
+  "population": "Healthy men and women",
+  "practical": "Promising but uncertain; if you try it, log it as an experiment and watch for side effects.",
+  "citations": [
+   {
+    "authors": "Bonilla DA, Moreno Y, Gho C, et al.",
+    "year": 2021,
+    "title": "Effects of Ashwagandha (Withania somnifera) on Physical Performance: Systematic Review and Bayesian Meta-Analysis",
+    "journal": "J Funct Morphol Kinesiol",
+    "doi": "10.3390/jfmk6010020",
+    "pmid": "33670194",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33670194/"
+   }
+  ]
+ },
+ {
+  "id": "weak-supplements",
+  "topic": "supplements",
+  "tags": [
+   "bcaa",
+   "hmb",
+   "testosterone booster",
+   "t booster",
+   "weak evidence",
+   "useless supplements"
+  ],
+  "question": "Which popular supplements don't work?",
+  "finding": "BCAAs alone do not create an anabolic response in humans; complete protein is needed. HMB did not improve fat-free mass or strength in young adults (11 studies). Of \"testosterone booster\" products, only 24.8% had any data supporting a T increase and 10% contained ingredients shown to lower it.",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Healthy adults",
+  "practical": "Skip BCAAs (if protein is adequate), HMB and T-boosters. Spend on food, creatine and maybe caffeine instead.",
+  "citations": [
+   {
+    "authors": "Wolfe RR",
+    "year": 2017,
+    "title": "Branched-chain amino acids and muscle protein synthesis in humans: myth or reality?",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-017-0184-9",
+    "pmid": "28852372",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28852372/"
+   },
+   {
+    "authors": "Jakubowski JS, Nunes EA, Teixeira FJ, et al.",
+    "year": 2020,
+    "title": "Supplementation with the Leucine Metabolite β-hydroxy-β-methylbutyrate (HMB) does not Improve Resistance Exercise-Induced Changes in Body Composition or Strength in Young Subjects: A Systematic Review and Meta-Analysis",
+    "journal": "Nutrients",
+    "doi": "10.3390/nu12051523",
+    "pmid": "32456217",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32456217/"
+   },
+   {
+    "authors": "Clemesha CG, Thaker H, Samplaski MK",
+    "year": 2020,
+    "title": "'Testosterone Boosting' Supplements Composition and Claims Are not Supported by the Academic Literature",
+    "journal": "World J Mens Health",
+    "doi": "10.5534/wjmh.190043",
+    "pmid": "31385468",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/31385468/"
+   }
+  ]
+ },
+ {
+  "id": "body-fat-measurement",
+  "topic": "body-composition",
+  "tags": [
+   "body fat",
+   "bia",
+   "smart scale",
+   "dexa",
+   "dxa",
+   "measurement error",
+   "body fat scale"
+  ],
+  "question": "How accurate are body-fat scales and DEXA?",
+  "finding": "BIA (smart scales) estimates fat-free mass from body water, and its results are affected by environment, ethnicity, menstrual phase and fluid status; it is only accurate in the populations and conditions it was calibrated for. DXA is more precise, but only when presentation is standardized (rested, overnight-fasted, minimal clothing, same positioning).",
+  "certainty": "moderate",
+  "evidenceType": "consensus",
+  "population": "Healthy adults and athletes (narrative reviews)",
+  "practical": "Treat smart-scale body-fat % as noisy; measure under the same conditions (morning, fasted, after toilet) and read multi-week trends. Waist and photos help.",
+  "citations": [
+   {
+    "authors": "Dehghan M, Merchant AT",
+    "year": 2008,
+    "title": "Is bioelectrical impedance accurate for use in large epidemiological studies?",
+    "journal": "Nutr J",
+    "doi": "10.1186/1475-2891-7-26",
+    "pmid": "18778488",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/18778488/"
+   },
+   {
+    "authors": "Kyle UG, Bosaeus I, De Lorenzo AD, et al.",
+    "year": 2004,
+    "title": "Bioelectrical impedance analysis--part I: review of principles and methods",
+    "journal": "Clin Nutr",
+    "doi": "10.1016/j.clnu.2004.06.004",
+    "pmid": "15380917",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/15380917/"
+   },
+   {
+    "authors": "Nana A, Slater GJ, Stewart AD, et al.",
+    "year": 2015,
+    "title": "Methodology review: using dual-energy X-ray absorptiometry (DXA) for the assessment of body composition in athletes and active people",
+    "journal": "Int J Sport Nutr Exerc Metab",
+    "doi": "10.1123/ijsnem.2013-0228",
+    "pmid": "25029265",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25029265/"
+   }
+  ]
+ },
+ {
+  "id": "weekly-weight-fluctuation",
+  "topic": "body-composition",
+  "tags": [
+   "weight fluctuation",
+   "weekend",
+   "scale",
+   "daily weight",
+   "noise",
+   "trend"
+  ],
+  "question": "Why does my weight jump around?",
+  "finding": "Weight follows a weekly rhythm: highest Sunday–Monday, falling through the week (within-week swings about 0.35%). Christmas added about 1.35% that was not fully lost afterwards. People who compensate on weekdays lose or maintain best.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Adults with daily smart-scale data",
+  "practical": "Compare weekly averages, not single days; expect Monday highs.",
+  "citations": [
+   {
+    "authors": "Orsama AL, Mattila E, Ermes M, et al.",
+    "year": 2014,
+    "title": "Weight rhythms: weight increases during weekends and decreases during weekdays",
+    "journal": "Obes Facts",
+    "doi": "10.1159/000356147",
+    "pmid": "24504358",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/24504358/"
+   },
+   {
+    "authors": "Turicchi J, O'Driscoll R, Horgan G, et al.",
+    "year": 2020,
+    "title": "Weekly, seasonal and holiday body weight fluctuation patterns among individuals engaged in a European multi-centre behavioural weight loss maintenance intervention",
+    "journal": "PLoS One",
+    "doi": "10.1371/journal.pone.0232152",
+    "pmid": "32353079",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/32353079/"
+   }
+  ]
+ },
+ {
+  "id": "glycogen-water",
+  "topic": "body-composition",
+  "tags": [
+   "glycogen",
+   "water weight",
+   "carbs",
+   "whoosh",
+   "refeed",
+   "low carb weight loss"
+  ],
+  "question": "Why does weight drop fast on low-carb or jump after a carb day?",
+  "finding": "Glycogen is stored with about 3–4 g of water per gram, so emptying or refilling glycogen moves body weight quickly without any fat change. This explains rapid early weight loss on low-carb or very-low-calorie diets and fast regain after carb loading.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Adults on very-low-calorie diets (small study)",
+  "practical": "After a high-carb day expect a quick scale jump that fades within days; judge fat loss on multi-week trends.",
+  "citations": [
+   {
+    "authors": "Kreitzman SN, Coxon AY, Szaz KF",
+    "year": 1992,
+    "title": "Glycogen storage: illusions of easy weight loss, excessive weight regain, and distortions in estimates of body composition",
+    "journal": "Am J Clin Nutr",
+    "doi": "10.1093/ajcn/56.1.292S",
+    "pmid": "1615908",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/1615908/"
+   }
+  ]
+ },
+ {
+  "id": "sodium-water",
+  "topic": "body-composition",
+  "tags": [
+   "sodium",
+   "salt",
+   "water retention",
+   "water weight",
+   "salty meal",
+   "weight fluctuation"
+  ],
+  "question": "Does salt make me retain water and gain weight?",
+  "finding": "In a randomized metabolic-ward study of 32 men, raising salt from 50 to 550 mmol/day increased plasma volume (by about 315 ml at the top dose) but did not increase total body water or body mass. The common belief that steady high salt stores water is weakly supported; short-term shifts after a sudden change are less studied.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "32 healthy men in a metabolic ward",
+  "practical": "Don't blame salt alone for multi-day weight gains; after a big salty, carb-heavy meal, check whether glycogen (carbs) and food volume explain the jump, and judge on weekly averages.",
+  "citations": [
+   {
+    "authors": "Heer M, Baisch F, Kropp J, et al.",
+    "year": 2000,
+    "title": "High dietary sodium chloride consumption may not induce body fluid retention in humans",
+    "journal": "Am J Physiol Renal Physiol",
+    "doi": "10.1152/ajprenal.2000.278.4.F585",
+    "pmid": "10751219",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/10751219/"
+   }
+  ]
+ },
+ {
+  "id": "menstrual-water",
+  "topic": "body-composition",
+  "tags": [
+   "menstrual cycle",
+   "water retention",
+   "bloating",
+   "period weight"
+  ],
+  "question": "Does the menstrual cycle change weight?",
+  "finding": "Self-reported fluid retention peaks on the first day of menstrual flow, is lowest mid-follicular and rises around ovulation (765 cycles, 62 women).",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Healthy premenopausal women",
+  "practical": "Compare weight to the same cycle phase in previous months, not to last week.",
+  "citations": [
+   {
+    "authors": "White CP, Hitchcock CL, Vigna YM, et al.",
+    "year": 2011,
+    "title": "Fluid Retention over the Menstrual Cycle: 1-Year Data from the Prospective Ovulation Cohort",
+    "journal": "Obstet Gynecol Int",
+    "doi": "10.1155/2011/138451",
+    "pmid": "21845193",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/21845193/"
+   }
+  ]
+ },
+ {
+  "id": "self-weighing",
+  "topic": "body-composition",
+  "tags": [
+   "daily weighing",
+   "self-weighing",
+   "scale",
+   "tracking",
+   "motivation"
+  ],
+  "question": "Is weighing daily good or bad?",
+  "finding": "Regular self-weighing was associated with more weight loss and not with depression or anxiety (17 studies).",
+  "certainty": "moderate",
+  "evidenceType": "systematic review",
+  "population": "Adults in weight-management studies",
+  "practical": "Weigh daily (same conditions) and look at the 7-day average; individual readings are noise.",
+  "citations": [
+   {
+    "authors": "Zheng Y, Klem ML, Sereika SM, et al.",
+    "year": 2015,
+    "title": "Self-weighing in weight management: a systematic literature review",
+    "journal": "Obesity (Silver Spring)",
+    "doi": "10.1002/oby.20946",
+    "pmid": "25521523",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25521523/"
+   }
+  ]
+ },
+ {
+  "id": "activity-guidelines",
+  "topic": "cardio",
+  "tags": [
+   "cardio",
+   "guidelines",
+   "who",
+   "health",
+   "minutes per week",
+   "aerobic"
+  ],
+  "question": "How much cardio do I need for health?",
+  "finding": "WHO 2020: adults should do 150–300 min/week of moderate or 75–150 min/week of vigorous aerobic activity (or a mix), plus muscle-strengthening on 2+ days, and reduce sitting.",
+  "certainty": "high",
+  "evidenceType": "position stand",
+  "population": "Adults",
+  "practical": "Aim for at least 150 min/week of moderate cardio (brisk walking counts) alongside lifting.",
+  "citations": [
+   {
+    "authors": "Bull FC, Al-Ansari SS, Biddle S, et al.",
+    "year": 2020,
+    "title": "World Health Organization 2020 guidelines on physical activity and sedentary behaviour",
+    "journal": "Br J Sports Med",
+    "doi": "10.1136/bjsports-2020-102955",
+    "pmid": "33239350",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/33239350/"
+   }
+  ]
+ },
+ {
+  "id": "cardio-fat-loss",
+  "topic": "cardio",
+  "tags": [
+   "cardio",
+   "fat loss",
+   "weight loss",
+   "exercise for weight loss"
+  ],
+  "question": "How much does cardio help fat loss?",
+  "finding": "ACSM: 150–250 min/week of moderate activity prevents weight gain but gives only modest weight loss; >250 min/week is linked to clinically significant loss, and more activity helps keep weight off. Diet does most of the work.",
+  "certainty": "moderate",
+  "evidenceType": "position stand",
+  "population": "Overweight and obese adults",
+  "practical": "Use cardio to support a diet and for health; don't rely on it alone for fat loss.",
+  "citations": [
+   {
+    "authors": "Donnelly JE, Blair SN, Jakicic JM, et al.",
+    "year": 2009,
+    "title": "American College of Sports Medicine Position Stand. Appropriate physical activity intervention strategies for weight loss and prevention of weight regain for adults",
+    "journal": "Med Sci Sports Exerc",
+    "doi": "10.1249/MSS.0b013e3181949333",
+    "pmid": "19127177",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/19127177/"
+   }
+  ]
+ },
+ {
+  "id": "hiit-vs-steady",
+  "topic": "cardio",
+  "tags": [
+   "hiit",
+   "intervals",
+   "steady state",
+   "liss",
+   "miss"
+  ],
+  "question": "Is HIIT better than steady cardio for fat loss?",
+  "finding": "HIIT and moderate continuous training reduced fat mass and waist similarly (13 studies), with HIIT taking about 40% less time.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Overweight and obese adults",
+  "practical": "Choose by preference and recovery; HIIT saves time but is harder to recover from alongside heavy leg training.",
+  "citations": [
+   {
+    "authors": "Wewege M, van den Berg R, Ward RE, et al.",
+    "year": 2017,
+    "title": "The effects of high-intensity interval training vs. moderate-intensity continuous training on body composition in overweight and obese adults: a systematic review and meta-analysis",
+    "journal": "Obes Rev",
+    "doi": "10.1111/obr.12532",
+    "pmid": "28401638",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/28401638/"
+   }
+  ]
+ },
+ {
+  "id": "fasted-cardio",
+  "topic": "cardio",
+  "tags": [
+   "fasted cardio",
+   "morning cardio",
+   "empty stomach"
+  ],
+  "question": "Is fasted cardio better for fat loss?",
+  "finding": "In a 4-week RCT with a calorie deficit, fasted and fed cardio gave the same weight and fat loss.",
+  "certainty": "low",
+  "evidenceType": "RCT",
+  "population": "20 young women",
+  "practical": "Do cardio whenever suits you; fasted or fed doesn't matter for fat loss.",
+  "citations": [
+   {
+    "authors": "Schoenfeld BJ, Aragon AA, Wilborn CD, et al.",
+    "year": 2014,
+    "title": "Body composition changes associated with fasted versus non-fasted aerobic exercise",
+    "journal": "J Int Soc Sports Nutr",
+    "doi": "10.1186/s12970-014-0054-7",
+    "pmid": "25429252",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/25429252/"
+   }
+  ]
+ },
+ {
+  "id": "daily-steps",
+  "topic": "cardio",
+  "tags": [
+   "steps",
+   "walking",
+   "10000 steps",
+   "neat",
+   "mortality"
+  ],
+  "question": "How many steps a day?",
+  "finding": "More steps were linked to lower mortality (vs ~3,500/day: HR 0.60 at ~5,800, 0.47 at ~10,900; 15 cohorts, 47,471 adults). Risk levelled off around 6,000–8,000 steps/day for adults 60+ and 8,000–10,000 for younger adults.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "Adults in 15 cohorts",
+  "practical": "Aim for about 7,000–10,000 steps/day; any increase from a low baseline helps.",
+  "citations": [
+   {
+    "authors": "Paluch AE, Bajpai S, Bassett DR, et al.",
+    "year": 2022,
+    "title": "Daily steps and all-cause mortality: a meta-analysis of 15 international cohorts",
+    "journal": "Lancet Public Health",
+    "doi": "10.1016/S2468-2667(21)00302-9",
+    "pmid": "35247352",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35247352/"
+   }
+  ]
+ },
+ {
+  "id": "neat-compensation",
+  "topic": "cardio",
+  "tags": [
+   "neat",
+   "non-exercise activity",
+   "fidgeting",
+   "overfeeding",
+   "metabolism"
+  ],
+  "question": "Why do people gain fat differently when overeating?",
+  "finding": "When 16 people overate by 1000 kcal/day for 8 weeks, two-thirds of the rise in energy expenditure came from NEAT (daily movement), which explained the 10-fold differences in fat gain.",
+  "certainty": "moderate",
+  "evidenceType": "observational",
+  "population": "16 non-obese adults (controlled overfeeding)",
+  "practical": "Daily movement (steps) swings energy needs a lot; track steps so maintenance estimates make sense, especially when dieting reduces NEAT.",
+  "citations": [
+   {
+    "authors": "Levine JA, Eberhardt NL, Jensen MD",
+    "year": 1999,
+    "title": "Role of nonexercise activity thermogenesis in resistance to fat gain in humans",
+    "journal": "Science",
+    "doi": "10.1126/science.283.5399.212",
+    "pmid": "9880251",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/9880251/"
+   }
+  ]
+ },
+ {
+  "id": "strength-training-health",
+  "topic": "cardio",
+  "tags": [
+   "health",
+   "longevity",
+   "mortality",
+   "strength training",
+   "disease"
+  ],
+  "question": "Is lifting good for long-term health?",
+  "finding": "Muscle-strengthening activities were associated with 10–17% lower risk of death, heart disease, cancer and diabetes (16 cohort studies), with the largest benefit at about 30–60 min/week; combining with aerobic activity was best.",
+  "certainty": "moderate",
+  "evidenceType": "meta-analysis",
+  "population": "Adults in prospective cohorts",
+  "practical": "Even 30–60 min/week of lifting gives most of the health benefit; combine with cardio.",
+  "citations": [
+   {
+    "authors": "Momma H, Kawakami R, Honda T, et al.",
+    "year": 2022,
+    "title": "Muscle-strengthening activities are associated with lower risk and mortality in major non-communicable diseases: a systematic review and meta-analysis of cohort studies",
+    "journal": "Br J Sports Med",
+    "doi": "10.1136/bjsports-2021-105061",
+    "pmid": "35228201",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/35228201/"
+   }
+  ]
+ }
+]

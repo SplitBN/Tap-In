@@ -1,7 +1,7 @@
 // Workout summary math: pure functions over raw logged sets (store raw, compute on read).
 // Every formula here is listed in docs/SPEC.md → "Science sources".
 import type { Exercise, LoadType, SetLog } from '../db/types';
-import { e1rm, totalLoadKg } from './science';
+import { e1rm, rirOf, setE1rm, totalLoadKg } from './science';
 
 /** A done set with its total load resolved (bodyweight snapshot, or a fallback weigh-in when the snapshot is missing). */
 export interface StatSet {
@@ -28,7 +28,7 @@ export function toStatSet(s: SetLog, bwFallback: number | undefined): StatSet {
     loadKg: s.loadKg ?? 0,
     // assisted with no bodyweight would go negative; clamp so volume is never wrong in the other direction
     totalKg: Math.max(0, totalLoadKg(s.loadType, s.loadKg, bw)),
-    reps: s.reps ?? 0, rir: s.rir ?? null,
+    reps: s.reps ?? 0, rir: rirOf(s), // RPE-only records → RIR via the scale table (null below RPE 5)
     bwEstimated: needsBw && snap == null && bwFallback != null,
     bwMissing: needsBw && bw == null,
   };
@@ -45,16 +45,16 @@ export const volumeKg = (sets: StatSet[]) => sets.filter((s) => s.kind !== 'warm
  *  Pass done sets of ONE session (slot keys repeat across sessions of the same plan workout). Works on raw SetLogs too. */
 export const workingSetCount = (sets: Pick<StatSet, 'kind' | 'itemKey' | 'setNo'>[]) => new Set(sets.filter((s) => s.kind === 'working').map((s) => `${s.itemKey}:${s.setNo}`)).size;
 
-export interface BestSet { loadKg: number; totalKg: number; reps: number; rir: number | null; e1rmKg: number; reliable: boolean }
-/** Best working set = highest estimated 1RM (Epley on reps + RIR, see science.ts e1rm); ties (incl. e1RM 0 when a
+export interface BestSet { loadKg: number; totalKg: number; reps: number; rir: number | null; e1rmKg: number; reliable: boolean; lowerBound: boolean }
+/** Best working set = highest estimated 1RM (science.ts e1rm: Wathen on reps + RIR); ties (incl. e1RM 0 when a
  *  bodyweight lift has no weigh-in) → heavier logged load, then more reps. Drops excluded. */
 export function bestSet(sets: StatSet[]): BestSet | null {
   let best: (BestSet & { eff: number }) | null = null;
   for (const s of sets) {
     if (s.kind !== 'working' || s.reps <= 0) continue;
-    const est = e1rm(s.totalKg, s.reps, s.rir ?? 0);
+    const est = e1rm(s.totalKg, s.reps, s.rir);
     const better = !best || est.kg > best.e1rmKg + 1e-9 || (Math.abs(est.kg - best.e1rmKg) < 1e-9 && (effLoad(s) > best.eff || (effLoad(s) === best.eff && s.reps > best.reps)));
-    if (better) best = { loadKg: s.loadKg, totalKg: s.totalKg, reps: s.reps, rir: s.rir, e1rmKg: est.kg, reliable: est.reliable, eff: effLoad(s) };
+    if (better) best = { loadKg: s.loadKg, totalKg: s.totalKg, reps: s.reps, rir: s.rir, e1rmKg: est.kg, reliable: est.reliable, lowerBound: est.lowerBound, eff: effLoad(s) };
   }
   if (!best) return null;
   const { eff: _e, ...out } = best;
@@ -63,7 +63,7 @@ export function bestSet(sets: StatSet[]): BestSet | null {
 
 /** Margin an e1RM must clear to count as higher/lower. Weighted lifts: any real increase.
  *  Bodyweight/assisted: 1%, so a few hundred grams of bodyweight drift alone never reads as progress (our own tolerance). */
-const margin = (loadType: LoadType, kg: number) => (loadType === 'weighted' ? 0.05 : kg * 0.01);
+export const e1rmMargin = (loadType: LoadType, kg: number) => (loadType === 'weighted' ? 0.05 : kg * 0.01);
 
 export type Trend = 'up' | 'same' | 'down' | 'new';
 export interface Comparison {
@@ -82,14 +82,14 @@ export function compareToPrevious(cur: StatSet[], prev: StatSet[] | null, loadTy
   const topReps = Math.max(...pw.filter((s) => effLoad(s) >= top - 0.01).map((s) => s.reps));
   const beatByReps = cur.some((s) => s.kind === 'working' && effLoad(s) >= top - 0.01 && s.reps > topReps);
   const hasE1rm = !!cb && !!pb && cb.e1rmKg > 0 && pb.e1rmKg > 0;
-  const m = pb ? margin(loadType, pb.e1rmKg) : 0;
+  const m = pb ? e1rmMargin(loadType, pb.e1rmKg) : 0;
   const beatByE1rm = hasE1rm && cb!.e1rmKg > pb!.e1rmKg + m;
   const trend: Trend = beatByE1rm || beatByReps ? 'up' : !cb || (hasE1rm && cb.e1rmKg < pb!.e1rmKg - m) ? 'down' : 'same';
   return { trend, beatByE1rm, beatByReps, e1rmDeltaKg: hasE1rm ? cb!.e1rmKg - pb!.e1rmKg : null };
 }
 
 export interface PRs {
-  e1rm: { kg: number; previousKg: number } | null; // best reliable e1RM (≤10 reps to failure) above every earlier one
+  e1rm: { kg: number; previousKg: number } | null; // best reliable e1RM (≤ RELIABLE_MAX_RTF reps to failure) above every earlier one
   weight: { loadKg: number; totalKg: number; previousLoadKg: number } | null; // heaviest set ever (logged-load axis)
   reps: { loadKg: number; totalKg: number; reps: number; previousReps: number } | null; // most reps ever at ≥ this load
 }
@@ -100,12 +100,12 @@ export function personalRecords(cur: StatSet[], prior: StatSet[], loadType: Load
   const out: PRs = { e1rm: null, weight: null, reps: null };
   if (!cw.length || !pw.length) return out;
 
-  // e1RM: reliable estimates only (Reynolds et al. 2006: accuracy drops past ~10 reps to failure)
-  const rel = (list: StatSet[]) => list.map((s) => e1rm(s.totalKg, s.reps, s.rir ?? 0)).filter((e) => e.reliable).map((e) => e.kg);
+  // e1RM: reliable estimates only (≤ RELIABLE_MAX_RTF reps to failure, see science.ts); a lower bound (no RIR) may set it
+  const rel = (list: StatSet[]) => list.map((s) => e1rm(s.totalKg, s.reps, s.rir)).filter((e) => e.reliable).map((e) => e.kg);
   const cE = rel(cw), pE = rel(pw);
   if (cE.length && pE.length) {
     const c = Math.max(...cE), p = Math.max(...pE);
-    if (c > p + margin(loadType, p)) out.e1rm = { kg: c, previousKg: p };
+    if (c > p + e1rmMargin(loadType, p)) out.e1rm = { kg: c, previousKg: p };
   }
   // weight: compares the logged load (added weight / less assistance for bodyweight lifts), so bodyweight drift isn't a PR
   const heaviest = cw.reduce((a, s) => (effLoad(s) > effLoad(a) ? s : a));
@@ -134,7 +134,7 @@ export interface MuscleSets { direct: number; indirect: number; fractional: numb
  *  Schoenfeld, Ogborn & Krieger 2017 (J Sports Sci 35(11):1073–1082); the 0.5 weight for secondary muscles is a
  *  convention (fractional counting, as proposed in Pelland et al., SportRxiv preprint), not an established standard.
  *  Warm-ups excluded; drop steps fold into their parent set; a left+right pair is one set. */
-export function setsByMuscle(sets: StatSet[], exercises: Record<string, Pick<Exercise, 'muscles' | 'secondary'> | undefined>) {
+export function setsByMuscle(sets: Pick<StatSet, 'kind' | 'itemKey' | 'exerciseId' | 'setNo'>[], exercises: Record<string, Pick<Exercise, 'muscles' | 'secondary'> | undefined>) {
   const out: Record<string, MuscleSets> = {};
   const seen = new Set<string>();
   const add = (m: string, k: 'direct' | 'indirect') => {
@@ -161,3 +161,22 @@ export function weekStartMs(ts: number) {
 }
 
 export const r1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Per-set e1RM as commands return it (sessions.get, progress.exercise) — the same value the set table's score column
+ *  shows. Working sets only: warm-ups are not near failure and drop steps are pre-fatigued, so an e1RM from them would
+ *  understate. null = can't be estimated (no reps/load, or bodyweight lift without a bodyweight snapshot). */
+export function setE1rmView(x: Pick<SetLog, 'kind' | 'loadType' | 'loadKg' | 'bodyweightKg' | 'reps' | 'rir' | 'rpe'>) {
+  const e = x.kind === 'working' ? setE1rm(x) : null;
+  return e && { kg: r1(e.kg), reliable: e.reliable, lowerBound: e.lowerBound, repsToFailure: e.rtf };
+}
+
+/** Planned sets per muscle of workout items (a plan workout, or several for a whole plan rotation): each item's
+ *  planned working sets, counted like setsByMuscle (primary = direct, secondary = indirect, fractional = direct + ½ indirect). */
+export function plannedSetsByMuscle(items: { key: string; exerciseId: string; sets: number }[],
+  exercises: Record<string, Pick<Exercise, 'muscles' | 'secondary'> | undefined>, keyPrefix = '') {
+  const sets = items.flatMap((i) => Array.from({ length: i.sets }, (_, n) => ({ kind: 'working' as const, itemKey: keyPrefix + i.key, exerciseId: i.exerciseId, setNo: n + 1 })));
+  return setsByMuscle(sets, exercises);
+}
+/** setsByMuscle output as rows, most-worked first (by fractional sets). */
+export const muscleRows = (m: Record<string, MuscleSets>) =>
+  Object.entries(m).map(([muscle, v]) => ({ muscle, ...v })).sort((a, b) => b.fractional - a.fractional || b.direct - a.direct);

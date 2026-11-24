@@ -5,6 +5,7 @@
 //   "show bench" → batched lookup → show_chart (source: progress.exercise, creatine band, journal overlay)
 //   "table" / "stats"     → show_table / show_stats
 //   comment on a food card → reply (card stays open); a comment with "200g" → revised request (replaces the card)
+//   "make a workout"      → lookup (plans, 3 exercises) → workouts.create → items.add → items.update ×3 (one card each, like the real flow)
 //   "remember X"          → memory_write
 //   "search X"            → web_answer
 //   anything else         → echoes the text, streamed
@@ -63,6 +64,7 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
     const note = last.content.length === 1 && last.content[0].type === 'text' ? last.content[0].text.match(/^<context>user (applied|rejected) the earlier request/) : null;
     if (note) return { text: note[1] === 'applied' ? 'Great — logged as shown.' : 'OK, left it out.' };
     if (food) return { call: { name: 'run_query', args: { queries: [{ name: 'foods.search', input: { query: food, limit: 5 } }] } } };
+    if (WORKOUT.test(said)) return { call: { name: 'run_query', args: { queries: [{ name: 'plans.list', input: {} }, ...WORKOUT_EX.map((q) => ({ name: 'exercises.search', input: { query: q, limit: 1 } }))] } } };
     if (/^show bench/i.test(said)) return { call: { name: 'run_query', args: { queries: [{ name: 'exercises.search', input: { query: 'bench press', limit: 1 } }, { name: 'supplements.list', input: {} }, { name: 'supplements.history', input: {} }] } } };
     if (/^table/i.test(said)) return { call: { name: 'show_table', args: { title: 'Last week', columns: ['Day', 'kcal', 'Protein g', 'Workout'], rows: [['Mon', 2450, 162, 'Push'], ['Tue', 2210, 148, null], ['Wed', 2600, 171, 'Pull'], ['Thu', 1980, 120, null], ['Fri', 2390, 158, 'Legs']] } } };
     if (/^stats/i.test(said)) return { call: { name: 'show_stats', args: { items: [{ label: 'Workouts', value: 4, delta: 1, good: 'up' }, { label: 'Avg protein', value: 152, unit: 'g', delta: -8, good: 'up' }, { label: 'Weight', value: 81.4, unit: 'kg', delta: -0.6, good: 'down' }, { label: 'Streak', value: '6 wk' }] } } };
@@ -77,6 +79,13 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
     switch (last.name) {
       case 'ask_user': return { call: { name: 'run_query', args: { queries: [{ name: 'foods.search', input: { query: 'rice cooked', limit: 5 } }, { name: 'foods.search', input: { query: 'chicken breast grilled', limit: 5 } }] } } };
       case 'run_query': {
+        if (WORKOUT.test(said)) {
+          const g = (Array.isArray(out) ? out : []) as { result?: unknown }[];
+          const plans = (g[0]?.result ?? []) as { id: string; name: string; active?: boolean }[];
+          const p = plans.find((x) => x.active) ?? plans[0];
+          if (!p) return { text: 'Make a plan first (Gym → New plan), then ask again.' };
+          return { text: 'Here’s a full-body day. First the workout itself:', call: { name: 'request_changes', args: { summary: `New workout: ${WORKOUT_NAME}`, actions: [{ name: 'workouts.create', input: { planId: p.id, name: WORKOUT_NAME } }] } } };
+        }
         if (/^show bench/i.test(said)) {
           const g = (Array.isArray(out) ? out : []) as { result?: unknown }[];
           const ex = (g[0]?.result as { id: string; name: string }[] | undefined)?.[0];
@@ -100,6 +109,7 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
       case 'request_changes': {
         const r = out as { status?: string; comment?: string; error?: string; applied?: { input: { items?: unknown[] } }[] };
         if (r.error) return { text: `That request didn't go through: ${r.error}` };
+        if (WORKOUT.test(said) && r.status === 'applied') return workoutStep(msgs, r as unknown as { applied?: { name: string }[]; results?: { result?: unknown }[] });
         if (r.status === 'applied') { const n = (r.applied ?? []).reduce((s, a) => s + (a.input.items?.length ?? 1), 0); return { text: `Logged ✓ (${n} item${n === 1 ? '' : 's'})` }; }
         if (r.status === 'rejected') return { text: r.comment ? `OK, not logged. You said: “${r.comment}”.` : 'OK, not logged.' };
         const grams = Number(r.comment?.match(/(\d+)\s*g\b/)?.[1]);
@@ -122,6 +132,34 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
     }
   }
   return { text: 'Hi!' };
+}
+
+// ---- "make a workout": three cards in a row, each using the ids the previous one returned ----
+const WORKOUT = /^make a workout/i;
+const WORKOUT_NAME = 'Full Body A';
+const WORKOUT_EX = ['bench press', 'barbell row', 'squat'];
+function workoutStep(msgs: AIMessage[], r: { applied?: { name: string }[]; results?: { result?: unknown }[] }): Plan {
+  const step = r.applied?.[0]?.name;
+  if (step === 'workouts.create') {
+    const workoutId = (r.results?.[0]?.result as { id?: string } | undefined)?.id;
+    const lookup = [...msgs].reverse().find((m) => m.role === 'tool' && m.name === 'run_query');
+    const groups = (lookup?.role === 'tool' ? parse(lookup.content) : []) as { result?: { id: string }[] }[];
+    const exerciseIds = (Array.isArray(groups) ? groups.slice(1) : []).map((x) => x.result?.[0]?.id).filter((x): x is string => !!x);
+    if (!workoutId || !exerciseIds.length) return { text: 'Created the workout, but I could not find the exercises.' };
+    return { text: 'Now the exercises:', call: { name: 'request_changes', args: { summary: `${WORKOUT_NAME}: exercises`, actions: [{ name: 'items.add', input: { workoutId, exerciseIds, sets: 3 } }] } } };
+  }
+  if (step === 'items.add') {
+    const w = r.results?.[0]?.result as { id: string; items: { key: string }[] } | undefined;
+    const slots = (w?.items ?? []).slice(-WORKOUT_EX.length);
+    const patches = [
+      { sets: 4, repsMin: 6, repsMax: 8, warmups: 2, rest: { mode: 'timer', sec: 180 }, notes: 'Pause 1 s on the chest\nElbows ~45°' },
+      { sets: 3, repsMin: 8, repsMax: 12, rest: { mode: 'timer', sec: 120 } },
+      { sets: 3, repsMin: 5, repsMax: 5, warmups: 1, rest: { mode: 'countup' }, notes: 'Belt on the top set' },
+    ];
+    return { text: 'And the sets, reps and rest:', call: { name: 'request_changes', args: { summary: `${WORKOUT_NAME}: sets, reps and rest`,
+      actions: slots.map((it, i) => ({ name: 'items.update', input: { workoutId: w!.id, itemKey: it.key, patch: patches[i] ?? { sets: 3 } } })) } } };
+  }
+  return { text: `${WORKOUT_NAME} is ready in your plan.` };
 }
 
 function title(body: TurnRequest): string {
