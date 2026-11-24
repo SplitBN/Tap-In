@@ -130,7 +130,7 @@ export const plansSetActive = defineCommand({ name: 'plans.setActive', kind: 'ac
 export const plansReorder = defineCommand({ name: 'plans.reorderWorkouts', kind: 'action', description: 'Set the rotation order of a plan\'s workouts: pass the full list of workout ids in the new order. Returns the plan record.',
   input: z.object({ id: zId, workoutIds: z.array(zId) }), run: async ({ id, workoutIds }) => save('plans', { ...(await need(db.plans.get(id), 'Plan')), workoutIds }) });
 
-export const workoutsCreate = defineCommand({ name: 'workouts.create', kind: 'action', description: 'Add an empty workout (e.g. "Push A") to the end of a plan\'s rotation. Returns the workout record (use its id with items.add).',
+export const workoutsCreate = defineCommand({ name: 'workouts.create', kind: 'action', description: 'Add an empty workout (e.g. "Push A") to the end of a plan\'s rotation. Returns the workout record. To build a whole workout in one request, follow it with items.add using workoutId "$<index>.id" (see request_changes).',
   input: z.object({ planId: zId, name: z.string().min(1) }), run: async ({ planId, name }) => createWorkout(await need(db.plans.get(planId), 'Plan'), name) });
 export const workoutsRename = defineCommand({ name: 'workouts.rename', kind: 'action', description: 'Rename a plan workout. Returns the workout record.',
   input: z.object({ id: zId, name: z.string().min(1) }), run: async ({ id, name }) => save('workouts', { ...(await need(db.workouts.get(id), 'Workout')), name }) });
@@ -161,16 +161,25 @@ const zTarget = {
 };
 const zTargetRefine = <T extends z.ZodObject>(o: T) => o.refine((v: { workoutId?: string; sessionId?: string }) => !!v.workoutId !== !!v.sessionId, 'Give exactly one of workoutId or sessionId');
 
+const zNewItem = zItemPatch.omit({ notes: true, repsMin: true, repsMax: true }).extend({
+  exerciseId: zId, repsMin: z.number().int().min(0).optional(), repsMax: z.number().int().min(0).optional(), notes: z.string().optional(),
+}).refine((v) => v.repsMin == null || v.repsMax == null || v.repsMin <= v.repsMax, 'repsMin must be ≤ repsMax').describe('One exercise to add, with its targets (same fields as items.update patch)');
 export const itemsAdd = defineCommand({ name: 'items.add', kind: 'action',
-  description: 'Add exercises to the end of a plan workout or a workout session (mid-workout too). Default 3 sets each. In a session, makeCurrent=true also switches the current exercise to the first one added. Returns the updated workout/session record (new slots are at the end of items).',
-  input: zTargetRefine(z.object({ ...zTarget, exerciseIds: z.array(zId).min(1), sets: z.number().int().min(1).max(20).optional(),
-    makeCurrent: z.boolean().optional().describe('Session only: make the first added exercise the current one') })),
-  run: async ({ exerciseIds, sets, makeCurrent, ...t }) => editItems(t, async (items) => {
-    const found = await db.exercises.bulkGet(exerciseIds);
-    const missing = exerciseIds.filter((_, i) => !found[i] || found[i]!.deletedAt);
+  description: 'Add exercises (each with its own sets, rep range, rest, warm-ups, drop sets and notes) to the end of a plan workout or a workout session (mid-workout too). ' +
+    'Give items: [{ exerciseId, sets?, repsMin?, repsMax?, warmups?, drops?, rest?: { mode: "timer", sec? } | { mode: "countup" }, notes? }] for fully specified exercises, ' +
+    'or the short form exerciseIds + sets (same set count for all, no targets). Default 3 sets, timer rest at the default length. In a session, makeCurrent=true also switches the current exercise to the first one added. Returns the updated workout/session record (new slots are at the end of items).',
+  input: zTargetRefine(z.object({ ...zTarget, exerciseIds: z.array(zId).min(1).optional(), items: z.array(zNewItem).min(1).max(30).optional(),
+    sets: z.number().int().min(1).max(20).optional().describe('Short form only: sets for every exercise in exerciseIds'),
+    makeCurrent: z.boolean().optional().describe('Session only: make the first added exercise the current one') }))
+    .refine((v) => !!v.exerciseIds !== !!v.items, 'Give exactly one of exerciseIds or items'),
+  run: async ({ exerciseIds, items: specs, sets, makeCurrent, ...t }) => editItems(t, async (items) => {
+    const list = specs ?? exerciseIds!.map((exerciseId) => ({ exerciseId, sets }));
+    const ids = list.map((x) => x.exerciseId);
+    const found = await db.exercises.bulkGet(ids);
+    const missing = ids.filter((_, i) => !found[i] || found[i]!.deletedAt);
     if (missing.length) throw new Error(`Exercise not found: ${missing.join(', ')} (use exercises.search to get ids)`);
-    const exs = found as Exercise[];
-    return [...items, ...exs.map((e) => ({ ...newItem(e), sets: sets ?? 3 }))];
+    const defined = (o: object) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+    return [...items, ...list.map(({ exerciseId: _id, ...p }, i) => applyPatch({ ...newItem(found[i] as Exercise), sets: 3 }, defined(p)))];
   }, makeCurrent ? (before, after) => after[before.length]?.key : undefined) });
 export const itemsUpdate = defineCommand({ name: 'items.update', kind: 'action',
   description: 'Change an exercise slot: sets, target reps, warm-ups, drop sets, rest, notes. Only fields in patch change; null clears repsMin/repsMax/notes. Works on plan workouts and sessions (in a session it edits the session copy only; sessions.finish with updatePlan=true carries it to the plan). In a session, lowering sets / warmups / drops deletes the extra sets of that slot beyond the new count (done ones too, so they no longer count anywhere); check sessions.get first if done sets would be lost. Returns the updated workout/session record.',

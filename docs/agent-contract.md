@@ -453,3 +453,44 @@ field). Defaults: `openai/gpt-transcribe`, `elevenlabs/eleven-v4-turbo`, voice `
   is held at 0,0 (scroll / focus pans undone), `html, body` are sized to `visualViewport.height`, and a touch guard
   blocks drags that would scroll the document (outside a scroller, or past a scroller's end). The quick-chat sheet sits
   on the keyboard's top edge. `/vvdebug` also shows `gap` = visible bottom − composer bottom.
+
+# One-card builds, item targets, food picking (2026-11-24, from real Sol chats) — override earlier sections where they differ
+
+- **Refs between actions** (`src/lib/agent/refs.ts`): in one `request_changes`, a later action's input may hold a string
+  `"$<index>.<path>"` — index = 0-based position of an *earlier* action in the same request, path = dot path into that
+  action's (deletedAt-stripped) result; negative array indexes count from the end (`"$0.id"`, `"$1.items.-1.key"`,
+  `"$0.0.id"` for an array result). The whole string must be the ref and the path needs at least one field name, so
+  `"$0.50"` stays text. Validation before the card: refs must point at an earlier action (else the whole request is
+  refused); otherwise the ref string stays in the input and is validated as a plain string (it passes `zId`, so ids can
+  be refs; a ref where a number is expected fails). Apply resolves refs in order right before each action runs, then
+  validates with zod; an unresolvable ref (earlier action failed / unchecked / no such field) fails that action.
+  Indexes are the request as shown — an unchecked food action keeps its index. Result: `{status:'applied', results,
+  applied}` where `applied` carries the **resolved** inputs; on a failure also `failedAt` (0-based) and a `note` that tells
+  the model what was applied and to propose only the missing part. Food actions may use a ref as `foodKey` (e.g.
+  `foods.create` + `entries.log`); such items need grams and show as a plain card (not the editable food card).
+- **Cards render refs readably** (`describeAction(a, all)` gets every action of the request): `"$0.id"` from
+  `workouts.create` → "the new workout ‘Chesty’" (same for plans, exercises, foods, supplements, stacks, journal);
+  an `items.add` slot ref → "Bench Press (added in step 2)"; anything else → "Id from step 1 (New workout)".
+  `workouts.create` says "Exercises: Added below" when a later `items.add` targets it. A card whose fields total ≤ 20 lines
+  shows every action's fields at once (no Details fold). A failed request's card shows per action Done / Failed: error /
+  Not applied (`Chat.cards[id].outcomes`).
+- **`items.add` per-exercise targets**: alongside `exerciseIds` + `sets` (unchanged), `items: [{ exerciseId, sets?,
+  repsMin?, repsMax?, warmups?, drops?, rest?: {mode:'timer', sec?} | {mode:'countup'}, notes? }]` (the `items.update`
+  patch fields; exactly one of the two forms; repsMin ≤ repsMax). The card shows one line per exercise
+  ("4 × 6–8 reps · rest 3:00 · 2 warm-ups", "default rest" when not given) and the full note under it.
+- **Instructions**: finish the whole task in as few cards as possible, ideally one request with every action (refs);
+  never ask approval for a part "first", never end a turn with "still pending" items it could propose now; truly needed
+  input → `ask_user` in the same turn. Food: read each candidate's name/alt (cooking method, added fat and which fat,
+  brand) and take the closest; never describe a food as something its database name doesn't say; no "with a little oil"
+  entry → the plain / no-added-fat entry + a separate oil line, never an entry with a different fat; `name` only
+  translates or shortens. After logging: one line with kcal and protein eaten vs goal and what's left (`goals.get` +
+  `entries.list` in one `run_query`), `show_stats` only if more helps.
+- **Food card**: when an item's `name` override differs from the database names, the row shows the override with the
+  database name always visible under it.
+- **Food search, mixed scripts** (`src/lib/foodRank.ts`): every food name field is single-language, so a query mixing
+  Hebrew and Latin words is also searched per script (Hebrew words / other words) and merged with the whole-query
+  results: an item matched by both halves scores its better half + half the gap to the other (gap capped at 2) − 1.5;
+  otherwise its best single score. Single-script queries rank exactly as before. Regression checks against the bundled
+  databases: `scripts/check-food-search.mjs` (`npm run check:search`, also part of `npm run build`).
+- **Fake provider**: "make a workout" → one request (`workouts.create` + `items.add` with `workoutId: "$0.id"` and
+  per-exercise targets); "make a broken workout" → same with a bogus exercise id (fails at step 2, the workout shell stays).

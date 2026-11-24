@@ -1,7 +1,7 @@
 import { alive, db, newRecord, save } from './db';
 import type { Food, FoodEntry, Macros, Meal, NutritionGoal, Portion } from './types';
 import { scale } from '../lib/nutrition';
-import { normalize, rank, tokenize } from '../lib/search';
+import { bundledItems, rankFoods } from '../lib/foodRank';
 
 /** Unified view of anything you can log: bundled databases and your own/scanned foods. */
 export interface FoodItem {
@@ -22,29 +22,12 @@ interface Bundled { items: FoodItem[]; byKey: Map<string, FoodItem>; byBarcode: 
 let bundled: Bundled | null = null;
 let loading: Promise<Bundled> | null = null;
 
-type UsdaRow = [number, string, number, number, number, number, number, number, [string, number][]];
-type MohRow = [number, string, string, number, number, number, number, number, [string, number][]];
-type IlRow = [string, string, string, string, number, number, number, number, number, number];
-
 /** Lazily loads the bundled food databases (cached by the service worker, so search works offline):
  *  Israeli MoH Tzameret + Israeli Open Food Facts products (il.json) and USDA SR Legacy (foods.json). */
 export function loadFoods(): Promise<Bundled> {
   if (bundled) return Promise.resolve(bundled);
   loading ??= Promise.all([import('../data/il.json'), import('../data/foods.json')]).then(([{ default: il }, { default: us }]) => {
-    const items: FoodItem[] = [];
-    for (const [code, he, en, kcal, p, c, f, fiber, portions] of il.moh as unknown as MohRow[]) {
-      items.push({ key: `moh:${code}`, source: 'moh', israeli: true, name: he, alt: en || undefined, category: 'Tzameret',
-        per100: { kcal, p, c, f, fiber }, portions: portions.map(([label, g]) => ({ label, g })) });
-    }
-    for (const [code, name, alt, brand, kcal, p, c, f, fiber, servingG] of il.off as unknown as IlRow[]) {
-      items.push({ key: `il:${code}`, source: 'off', israeli: true, name, alt: alt || undefined, brand: brand || undefined, barcode: code,
-        per100: { kcal, p, c, f, fiber }, portions: servingG ? [{ label: '1 serving', g: servingG }] : [] });
-    }
-    const cats = us.categories as string[];
-    for (const [id, name, cat, kcal, p, c, f, fiber, portions] of us.rows as unknown as UsdaRow[]) {
-      items.push({ key: `usda:${id}`, source: 'usda', name, category: cats[cat],
-        per100: { kcal, p, c, f, fiber }, portions: portions.map(([label, g]) => ({ label, g })) });
-    }
+    const items = bundledItems(il, us);
     const built: Bundled = {
       items, byKey: new Map(items.map((i) => [i.key, i])),
       byBarcode: new Map(items.filter((i) => i.barcode).map((i) => [i.barcode!, i])),
@@ -65,24 +48,6 @@ export async function getItem(key: string): Promise<FoodItem | undefined> {
   return f && alive(f) ? foodToItem(f) : undefined;
 }
 
-const PROCESSED = /Sausages and Luncheon|Fast Foods|Restaurant Foods|Baby Foods|Meals, Entrees|Snacks|American Indian/;
-/** Unusual variants that should not win a plain query ("milk" ≠ human milk). */
-const ODD = /\b(human|infant|baby|toddler|formula|camel|goat|sheep)\b|חלב אם|תינוק|פורמולה/i;
-const HEBREW = /\p{Script=Hebrew}/u;
-/** Each language's name is its own field (brand appended to both), so word positions aren't skewed
- *  by the other language: "banana" matches "Banana, raw" at position 0, not after five Hebrew words. */
-const tokenCache = new WeakMap<FoodItem, string[][]>();
-const tokensOf = (it: FoodItem) => {
-  let t = tokenCache.get(it);
-  if (!t) {
-    const brand = it.brand ? tokenize(it.brand) : [];
-    t = [[...tokenize(it.name), ...brand]];
-    if (it.alt) t.push([...tokenize(it.alt), ...brand]);
-    tokenCache.set(it, t);
-  }
-  return t;
-};
-
 /** How often/recently each food was logged (last year) — feeds the ranking. */
 export async function foodUsage() {
   const since = Date.now() - 365 * 86400000;
@@ -95,36 +60,11 @@ export async function foodUsage() {
   return m;
 }
 
-/** Forgiving search (typos, partial words, any order, Hebrew/English) ranked by match quality,
- *  then by how often you log it. Tiers nudge: your foods > Israeli (MoH + local products) > USDA. */
+/** Forgiving search (typos, any order, Hebrew/English, mixed-language queries) — see lib/foodRank.ts. */
 export async function searchFoods(q: string, limit = 60): Promise<FoodItem[]> {
   const mine = (await db.foods.filter(alive).toArray()).map(foodToItem);
   const [{ items }, usage] = await Promise.all([loadFoods(), foodUsage()]);
-  const hebrewQuery = HEBREW.test(q);
-  const pool = hebrewQuery ? [...mine, ...items.filter((i) => i.source !== 'usda')] : [...mine, ...items];
-  // Food tables name the base food first, then qualifiers after commas ("Rice, white, cooked"; "אורז, לבן").
-  // Query = that head noun → it's the food itself; query followed by another word ("Rice flour") → a derived product.
-  const qn = normalize(q).trim();
-  const head = (text: string | undefined) => {
-    const n = normalize(text ?? '').trim();
-    if (!qn || !n.startsWith(qn)) return 0;
-    const rest = (text ?? '').trim().slice(q.trim().length).trimStart();
-    return n === qn || rest.startsWith(',') || rest === '' ? -1.5 : 0.5;
-  };
-  const PREPARED = /\b(fried|chips|mix|popped|porridge|nuggets|patties|roll|salad|dried|powder|cake|pudding|coated|flavou?red|canned|sweetened|breaded|instant)\b|McDonald|מטוגן|אבקה|מיובש|תערובת/i;
-  const PLAIN = /\b(cooked|boiled|steamed|raw|plain|fresh|whole)\b|מבושל|טרי/i;
-  const headBias = (it: FoodItem) => {
-    const h = Math.min(head(it.name), head(it.alt));
-    if (h >= 0) return h;
-    const all = `${it.name} ${it.alt ?? ''}`;
-    // among foods that ARE the query: plain cooked/raw forms before prepared products
-    return h + (/uncooked|לא מבושל/i.test(all) ? 0.4 : 0) + (PREPARED.test(all) ? 0.8 : PLAIN.test(all) ? -0.4 : 0);
-  };
-  return rank(pool, q, {
-    tokensOf, keyOf: (it) => it.key, nameLength: (it) => it.name.length, usage, limit,
-    bias: (it) => (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
-      : it.israeli ? 0.4 : -1) + (ODD.test(`${it.name} ${it.alt ?? ''}`) ? 3 : 0) + headBias(it),
-  });
+  return rankFoods(q, mine, items, usage, limit);
 }
 
 /** Most recently logged distinct foods. */

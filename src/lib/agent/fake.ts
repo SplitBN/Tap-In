@@ -5,7 +5,8 @@
 //   "show bench" → batched lookup → show_chart (source: progress.exercise, creatine band, journal overlay)
 //   "table" / "stats"     → show_table / show_stats
 //   comment on a food card → reply (card stays open); a comment with "200g" → revised request (replaces the card)
-//   "make a workout"      → lookup (plans, 3 exercises) → workouts.create → items.add → items.update ×3 (one card each, like the real flow)
+//   "make a workout"      → lookup (plans, 3 exercises) → ONE request: workouts.create + items.add (workoutId "$0.id", per-exercise
+//                           sets / reps / rest / warm-ups / notes); "make a broken workout" = same with a bogus exercise id (fails mid-way)
 //   "remember X"          → memory_write
 //   "search X"            → web_answer
 //   anything else         → echoes the text, streamed
@@ -84,7 +85,13 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
           const plans = (g[0]?.result ?? []) as { id: string; name: string; active?: boolean }[];
           const p = plans.find((x) => x.active) ?? plans[0];
           if (!p) return { text: 'Make a plan first (Gym → New plan), then ask again.' };
-          return { text: 'Here’s a full-body day. First the workout itself:', call: { name: 'request_changes', args: { summary: `New workout: ${WORKOUT_NAME}`, actions: [{ name: 'workouts.create', input: { planId: p.id, name: WORKOUT_NAME } }] } } };
+          const ids = g.slice(1).map((x) => (x.result as { id: string }[] | undefined)?.[0]?.id).filter((x): x is string => !!x);
+          if (ids.length < WORKOUT_EX.length) return { text: 'I could not find all the exercises.' };
+          if (/broken/i.test(said)) ids[1] = 'no-such-exercise';
+          return { text: 'Here’s a full-body day:', call: { name: 'request_changes', args: { summary: `New workout: ${WORKOUT_NAME}`, actions: [
+            { name: 'workouts.create', input: { planId: p.id, name: WORKOUT_NAME } },
+            { name: 'items.add', input: { workoutId: '$0.id', items: WORKOUT_TARGETS.map((t, i) => ({ exerciseId: ids[i], ...t })) } },
+          ] } } };
         }
         if (/^show bench/i.test(said)) {
           const g = (Array.isArray(out) ? out : []) as { result?: unknown }[];
@@ -109,7 +116,12 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
       case 'request_changes': {
         const r = out as { status?: string; comment?: string; error?: string; applied?: { input: { items?: unknown[] } }[] };
         if (r.error) return { text: `That request didn't go through: ${r.error}` };
-        if (WORKOUT.test(said) && r.status === 'applied') return workoutStep(msgs, r as unknown as { applied?: { name: string }[]; results?: { result?: unknown }[] });
+        if (WORKOUT.test(said) && r.status === 'applied') {
+          const w = r as unknown as { failedAt?: number; results?: { ok: boolean; error?: string }[] };
+          if (w.failedAt === undefined) return { text: `${WORKOUT_NAME} is ready in your plan: 3 exercises with sets, reps and rest.` };
+          const why = w.results?.find((x) => !x.ok)?.error ?? 'an error';
+          return { text: `Step ${w.failedAt + 1} failed (${why}). ${w.failedAt > 0 ? 'The steps before it were applied, so the workout exists but has no exercises yet.' : 'Nothing was changed.'}` };
+        }
         if (r.status === 'applied') { const n = (r.applied ?? []).reduce((s, a) => s + (a.input.items?.length ?? 1), 0); return { text: `Logged ✓ (${n} item${n === 1 ? '' : 's'})` }; }
         if (r.status === 'rejected') return { text: r.comment ? `OK, not logged. You said: “${r.comment}”.` : 'OK, not logged.' };
         const grams = Number(r.comment?.match(/(\d+)\s*g\b/)?.[1]);
@@ -134,33 +146,15 @@ function plan(msgs: AIMessage[], tools: string[]): Plan {
   return { text: 'Hi!' };
 }
 
-// ---- "make a workout": three cards in a row, each using the ids the previous one returned ----
-const WORKOUT = /^make a workout/i;
+// ---- "make a workout": one card that creates the workout and fills it ----
+const WORKOUT = /^make a (broken )?workout/i;
 const WORKOUT_NAME = 'Full Body A';
 const WORKOUT_EX = ['bench press', 'barbell row', 'squat'];
-function workoutStep(msgs: AIMessage[], r: { applied?: { name: string }[]; results?: { result?: unknown }[] }): Plan {
-  const step = r.applied?.[0]?.name;
-  if (step === 'workouts.create') {
-    const workoutId = (r.results?.[0]?.result as { id?: string } | undefined)?.id;
-    const lookup = [...msgs].reverse().find((m) => m.role === 'tool' && m.name === 'run_query');
-    const groups = (lookup?.role === 'tool' ? parse(lookup.content) : []) as { result?: { id: string }[] }[];
-    const exerciseIds = (Array.isArray(groups) ? groups.slice(1) : []).map((x) => x.result?.[0]?.id).filter((x): x is string => !!x);
-    if (!workoutId || !exerciseIds.length) return { text: 'Created the workout, but I could not find the exercises.' };
-    return { text: 'Now the exercises:', call: { name: 'request_changes', args: { summary: `${WORKOUT_NAME}: exercises`, actions: [{ name: 'items.add', input: { workoutId, exerciseIds, sets: 3 } }] } } };
-  }
-  if (step === 'items.add') {
-    const w = r.results?.[0]?.result as { id: string; items: { key: string }[] } | undefined;
-    const slots = (w?.items ?? []).slice(-WORKOUT_EX.length);
-    const patches = [
-      { sets: 4, repsMin: 6, repsMax: 8, warmups: 2, rest: { mode: 'timer', sec: 180 }, notes: 'Pause 1 s on the chest\nElbows ~45°' },
-      { sets: 3, repsMin: 8, repsMax: 12, rest: { mode: 'timer', sec: 120 } },
-      { sets: 3, repsMin: 5, repsMax: 5, warmups: 1, rest: { mode: 'countup' }, notes: 'Belt on the top set' },
-    ];
-    return { text: 'And the sets, reps and rest:', call: { name: 'request_changes', args: { summary: `${WORKOUT_NAME}: sets, reps and rest`,
-      actions: slots.map((it, i) => ({ name: 'items.update', input: { workoutId: w!.id, itemKey: it.key, patch: patches[i] ?? { sets: 3 } } })) } } };
-  }
-  return { text: `${WORKOUT_NAME} is ready in your plan.` };
-}
+const WORKOUT_TARGETS = [
+  { sets: 4, repsMin: 6, repsMax: 8, warmups: 2, rest: { mode: 'timer', sec: 180 }, notes: 'Pause 1 s on the chest\nElbows ~45°' },
+  { sets: 3, repsMin: 8, repsMax: 12, rest: { mode: 'timer', sec: 120 } },
+  { sets: 3, repsMin: 5, repsMax: 5, warmups: 1, rest: { mode: 'countup' }, notes: 'Belt on the top set' },
+];
 
 function title(body: TurnRequest): string {
   const t = body.messages[0]?.role === 'user' ? body.messages[0].content.map((p) => (p.type === 'text' ? p.text : '')).join(' ') : '';

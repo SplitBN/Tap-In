@@ -8,6 +8,7 @@ import type { AgentCategory } from '../../db/types';
 import { webAnswer, webRead } from './client';
 import { appliedAction, isFoodAction, normalizeFoodAction } from './food';
 import { resolveChart, resolveStats, resolveTable } from './display';
+import { refErrors, resolveRefs } from './refs';
 import type { AITool, AIToolCall, AskQuestion, Display, PendingRequest, RequestAction } from './types';
 
 export const MAX_RESULT = 12_000;
@@ -89,7 +90,7 @@ export function toolList(env: ToolEnv): AITool[] {
       parameters: obj({ names: { type: 'array', items: { type: 'string' }, maxItems: 10 } }, ['names']) },
     { name: 'run_query', description: 'Run 1–8 [query] commands now, in parallel, read-only. Batch every independent lookup into one call. Results come back in order as [{name, result} | {name, error}]; long results are cut (narrow the input then).',
       parameters: obj({ queries: { type: 'array', minItems: 1, maxItems: 8, items: nameInput } }, ['queries']) },
-    { name: 'request_changes', description: 'Propose [action] commands. Every action is validated first (an invalid one fails the whole request and nothing is shown). The user sees a card and taps Apply / Log, or writes a comment; the result is {status:"applied",results,applied} (applied = the inputs as the user approved them, possibly edited) | {status:"rejected",comment?} | {status:"comment",comment}. Food: entries.log input and each entries.logMany item may carry alternatives: [foodKey…] (other good matches from your search) — the user can swap to one on the card. One card per reply; wait for its result.',
+    { name: 'request_changes', description: 'Propose [action] commands. Every action is validated first (an invalid one fails the whole request and nothing is shown). The user sees a card and taps Apply / Log, or writes a comment; the result is {status:"applied",results,applied} (applied = the inputs as the user approved them, possibly edited) | {status:"rejected",comment?} | {status:"comment",comment}. Put every action of the task in ONE request, in order: a later action may use an earlier one\'s result by a string "$<index>.<path>" (0-based index of the earlier action, dot path into its result), e.g. workouts.create then items.add with workoutId "$0.id"; "$1.items.-1.key" = the last slot of action 1\'s returned workout. Apply runs the actions in order and stops at the first failure (results say which). Food: entries.log input and each entries.logMany item may carry alternatives: [foodKey…] (other good matches from your search) — the user can swap to one on the card. One card per reply; wait for its result.',
       parameters: obj({ summary: { type: 'string', description: 'Short: what this does, e.g. "Lunch: rice and chicken"' },
         actions: { type: 'array', minItems: 1, maxItems: 20, items: nameInput } }, ['summary', 'actions']) },
     { name: 'ask_user', description: 'Ask the user one or more multiple-choice questions in ONE card (tappable options, optional free text when other:true). Use only when the answer really changes the result, and put every question you have in this one call. Result: {answers:{[id]: string | string[]}, text?}.',
@@ -132,6 +133,8 @@ export async function validateRequest(args: Record<string, unknown>): Promise<{ 
     if (!c) { errors.push(`#${i + 1}: unknown command "${String(name)}"`); continue; }
     if (isBlocked(c.name)) { errors.push(`#${i + 1}: ${c.name} is not available to the assistant`); continue; }
     if (c.kind !== 'action') { errors.push(`#${i + 1}: ${c.name} is a query; use run_query`); continue; }
+    const bad = refErrors(input, i, list.length);
+    if (bad.length) { errors.push(`#${i + 1} ${c.name}: ${bad.join('; ')}`); continue; }
     let act: RequestAction = { name: c.name, input };
     if (isFoodAction(c.name)) {
       try { act = await normalizeFoodAction(c.name, input); } catch (e) { errors.push(`#${i + 1} ${c.name}: ${(e as Error).message}`); continue; }
@@ -145,25 +148,46 @@ export async function validateRequest(args: Record<string, unknown>): Promise<{ 
 }
 
 export type ApplyResult = { name: string; ok: boolean; result?: unknown; error?: string };
+/** Per action of the request as shown (same order): what happened to it. */
+export type ActionOutcome = { status: 'done' | 'failed' | 'skipped' | 'unchecked'; error?: string };
 const strip = (v: unknown) => (v === undefined ? { ok: true } : JSON.parse(JSON.stringify(v, (k, x) => (k === 'deletedAt' ? undefined : x))));
 
-/** Run the approved actions (unchecked food items removed) in order; stops at the first failure. */
-export async function applyActions(actions0: RequestAction[]): Promise<{ results: ApplyResult[]; failed: boolean; applied: RequestAction[] }> {
-  const actions = actions0.map(appliedAction).filter((a): a is RequestAction => !!a);
+/** Run the approved actions (unchecked food items removed) in order, substituting "$<index>.<path>" refs with the
+ *  results of earlier actions; stops at the first failure. applied = the inputs as run (refs resolved). */
+export async function applyActions(actions0: RequestAction[]): Promise<{ results: ApplyResult[]; failed: boolean; applied: RequestAction[]; outcomes: ActionOutcome[]; failedAt?: number }> {
   const results: ApplyResult[] = [];
-  let failed = false;
-  for (const a of actions) {
-    if (failed) { results.push({ name: a.name, ok: false, error: 'skipped (an earlier action failed)' }); continue; }
+  const applied: RequestAction[] = [];
+  const outcomes: ActionOutcome[] = [];
+  const outputs = new Map<number, { name: string; result?: unknown; ok: boolean }>(); // by index in the request as shown
+  let failedAt: number | undefined;
+  for (const [i, a0] of actions0.entries()) {
+    const a = appliedAction(a0);
+    if (!a) { outcomes.push({ status: 'unchecked' }); continue; }
+    if (failedAt !== undefined) { results.push({ name: a.name, ok: false, error: 'skipped (an earlier action failed)' }); applied.push(a); outcomes.push({ status: 'skipped' }); continue; }
     const c = findCommand(a.name);
+    let input = a.input;
     try {
       if (!c || c.kind !== 'action' || isBlocked(c.name)) throw new Error('not allowed');
-      const p = c.input.safeParse(a.input);
+      input = await resolveRefs(a.input, outputs);
+      const p = c.input.safeParse(input);
       if (!p.success) throw new Error(z.prettifyError(p.error));
-      results.push({ name: c.name, ok: true, result: strip(await c.run(p.data)) });
-    } catch (e) { failed = true; results.push({ name: a.name, ok: false, error: (e as Error).message }); }
+      const result = strip(await c.run(p.data));
+      outputs.set(i, { name: c.name, result, ok: true });
+      results.push({ name: c.name, ok: true, result });
+      outcomes.push({ status: 'done' });
+    } catch (e) {
+      failedAt = i;
+      outputs.set(i, { name: a.name, ok: false });
+      results.push({ name: a.name, ok: false, error: `action $${i}: ${(e as Error).message}` });
+      outcomes.push({ status: 'failed', error: (e as Error).message });
+    }
+    applied.push({ ...a, input });
   }
-  return { results, failed, applied: actions };
+  return { results, failed: failedAt !== undefined, applied, outcomes, ...(failedAt !== undefined ? { failedAt } : {}) };
 }
+/** The note for the model when an action failed mid-way. */
+export const failNote = (actions: RequestAction[], at: number, outcomes: ActionOutcome[]) =>
+  `Action $${at} (${actions[at]?.name}) failed: ${outcomes[at]?.error ?? 'error'}. Actions before it were applied (they stay); actions after it were skipped. Tell the user exactly that, then propose only the missing part (using the real ids from results).`;
 export const appliedSummary = (applied: RequestAction[]) => applied.map((a) => ({ name: a.name, input: a.input }));
 
 async function runOne(q: unknown, max: number): Promise<unknown> {
@@ -184,7 +208,7 @@ async function runOne(q: unknown, max: number): Promise<unknown> {
 export type ToolOutcome =
   | { content: string; display?: Display }
   | { pending: PendingRequest; content?: undefined }
-  | { applied: { summary: string; actions: RequestAction[]; failed: boolean }; content: string };
+  | { applied: { summary: string; actions: RequestAction[]; failed: boolean; outcomes: ActionOutcome[] }; content: string };
 
 /** Read-only tools: safe to run in parallel within a step. */
 export const isParallelSafe = (name: string) => ['describe_commands', 'run_query', 'memory_read', 'web_answer', 'web_read', 'show_chart', 'show_table', 'show_stats'].includes(name);
@@ -227,8 +251,8 @@ export async function executeTool(call: AIToolCall, env: ToolEnv): Promise<ToolO
         const v = await validateRequest(a);
         if ('error' in v) return { content: err(v.error) };
         if (autoApplies(v.actions, env.permissions)) {
-          const { results, failed, applied } = await applyActions(v.actions);
-          return { applied: { ...v, failed }, content: cap({ status: 'applied', results, applied: appliedSummary(applied) }) };
+          const { results, failed, applied, outcomes, failedAt } = await applyActions(v.actions);
+          return { applied: { ...v, failed, outcomes }, content: cap({ status: 'applied', results, applied: appliedSummary(applied), ...(failedAt !== undefined ? { failedAt, note: failNote(v.actions, failedAt, outcomes) } : {}) }) };
         }
         return { pending: { kind: 'request', toolCallId: call.id, summary: v.summary, actions: v.actions, status: 'pending' } };
       }

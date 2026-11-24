@@ -1384,6 +1384,7 @@ select.inline-select { border: 0; background: none; color: var(--text-2); font-w
 .frow-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .frow-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 650; font-size: var(--fs-15); line-height: 1.25; unicode-bidi: plaintext; text-align: start; }
 .frow-macros { font-size: var(--fs-13); font-weight: 700; }
+.frow-db { display: block; color: var(--text-2); font-size: var(--fs-13); line-height: 1.25; unicode-bidi: plaintext; text-align: start; overflow-wrap: anywhere; }
 .frow-macros .mc-c { color: var(--mc-c); } .frow-macros .mc-p { color: var(--mc-p); } .frow-macros .mc-f { color: var(--mc-f); }
 .frow-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .frow-kcal { font-weight: 750; font-size: var(--fs-15); }
@@ -1408,6 +1409,8 @@ button.frow-amt::after { content: ''; position: absolute; inset: -12px -8px; }
 .arow-more svg { transition: rotate 200ms var(--ease-out); }
 .arow-more.open svg { rotate: 180deg; }
 .arow-fields { padding: 0 12px 12px 60px; }
+.arow-step { display: flex; align-items: center; gap: 4px; margin: 0; padding: 0 12px 10px; font-size: var(--fs-13); font-weight: 650; overflow-wrap: anywhere; }
+.arow-step.good { color: var(--good); } .arow-step.bad { color: var(--warn); } .arow-step.muted { color: var(--text-2); }
 .afields { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-15); line-height: 1.35; }
 .afield { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
 .afield > dt { color: var(--text-2); font-weight: 560; }

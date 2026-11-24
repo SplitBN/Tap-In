@@ -3,6 +3,7 @@
 // Apply runs exactly what the card shows.
 import { defaultAmount, findPortion, isBaseUnit, resolveAmount } from '../../api/food';
 import { getItem, type FoodItem } from '../../db/food';
+import { isRef } from './refs';
 import type { RequestAction } from './types';
 
 export const isFoodAction = (name: string) => name === 'entries.log' || name === 'entries.logMany';
@@ -13,6 +14,11 @@ type Item = { foodKey: string; grams?: number; qty?: number; unit?: string; name
  *  alternative keys. Throws with a model-readable message when a food is unknown. */
 export async function normalizeFoodAction(name: string, input: Record<string, unknown>): Promise<RequestAction> {
   const fix = async (it: Item) => {
+    if (isRef(it.foodKey)) { // a food created earlier in the same request ("$0.id"): nothing to look up yet
+      if (it.grams == null) throw new Error(`Give grams for "${it.foodKey}" (a food created in this request)`);
+      const { alternatives: _a, ...rest } = it;
+      return { item: rest as Item & { grams: number; qty: number; unit: string }, alts: [] as string[] };
+    }
     const food = await getItem(it.foodKey);
     if (!food) throw new Error(`Unknown food key "${it.foodKey}" (use a key from foods.search)`);
     const { alternatives, ...rest } = it;
@@ -100,7 +106,7 @@ export function appliedAction(a: RequestAction): RequestAction | null {
 const EMOJI: [RegExp, string][] = [
   [/egg|ביצ/i, '🥚'], [/rice|אורז/i, '🍚'], [/chicken|עוף|drumstick|שוק/i, '🍗'], [/beef|steak|בקר|סטייק/i, '🥩'], [/fish|salmon|tuna|דג|סלמון|טונה/i, '🐟'],
   [/bread|toast|pita|לחם|פיתה|טוסט/i, '🍞'], [/pasta|spaghetti|פסטה/i, '🍝'], [/pizza|פיצה/i, '🍕'], [/burger|המבורגר/i, '🍔'], [/salad|סלט/i, '🥗'],
-  [/banana|בננה/i, '🍌'], [/apple|תפוח(?! אדמה)/i, '🍎'], [/potato|fries|תפוח אדמה|צ'יפס/i, '🥔'], [/milk|חלב/i, '🥛'], [/cheese|גבינ/i, '🧀'],
+  [/banana|בננה/i, '🍌'], [/potato|fries|תפוחי? אדמה|צ'יפס/i, '🥔'], [/apple|תפוח(?!י? אדמה)/i, '🍎'], [/milk|חלב/i, '🥛'], [/cheese|גבינ/i, '🧀'],
   [/yogurt|יוגורט/i, '🥣'], [/oat|שיבולת/i, '🥣'], [/coffee|קפה/i, '☕'], [/tomato|עגבני/i, '🍅'], [/cucumber|מלפפון/i, '🥒'], [/avocado|אבוקדו/i, '🥑'],
   [/hummus|חומוס/i, '🫘'], [/bean|lentil|שעועית|עדשים/i, '🫘'], [/nut|almond|peanut|bamba|אגוז|שקד|בוטן|במבה/i, '🥜'], [/chocolate|שוקולד/i, '🍫'], [/cake|cookie|עוגה|עוגי/i, '🍪'],
   [/protein|whey|חלבון/i, '🥤'], [/juice|מיץ/i, '🧃'], [/soup|מרק/i, '🍲'], [/orange|תפוז/i, '🍊'], [/berr|תות/i, '🍓'], [/corn|תירס/i, '🌽'],

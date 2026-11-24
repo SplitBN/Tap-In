@@ -8,6 +8,7 @@ import { getItem, type FoodItem } from '../db/food';
 import { describeAction, fieldLines, type Described, type Field } from '../lib/agent/describe';
 import { foodEmoji, foodLines, isFoodAction, setAmount, swapFood, toggleLine, type FoodLine } from '../lib/agent/food';
 import { resolvePending, updatePendingActions } from '../lib/agent/loop';
+import { isRef } from '../lib/agent/refs';
 import type { AskQuestion, Chat, PendingRequest, RequestAction } from '../lib/agent/types';
 import { unitLabel } from '../lib/units';
 
@@ -38,6 +39,11 @@ const fmtQ = (v: number) => (Math.round(v * 100) / 100).toString();
 const english = (it?: FoodItem) => !!it?.alt && /\p{Script=Hebrew}/u.test(it.name);
 /** Display name: English when the item has one (keeps rows short and LTR); Hebrew otherwise, rendered dir=auto. */
 const shown = (it?: FoodItem) => (it ? (english(it) ? it.alt! : it.name) : '…');
+/** The agent's entry-name override, when it says something other than the database names (shown above the real name). */
+const override = (name: string | undefined, it?: FoodItem) => {
+  const n = name?.trim();
+  return n && it && n !== it.name && n !== it.alt ? n : undefined;
+};
 function amountText(line: FoodLine, it?: FoodItem) {
   const base = it?.unitBase ?? 'g';
   const u = line.item.unit;
@@ -79,12 +85,14 @@ export function FoodCard({ chatId, p, outcome, onChange }: { chatId: string; p: 
         {shownRows.map(({ a, ai, l, li }) => {
           const it = foods.get(l.item.foodKey);
           const f = (l.item.grams || 0) / 100;
+          const label = override(l.item.name, it);
           return (
             <div key={`${ai}-${li}`} className={'frow-wrap' + (l.off ? ' off' : '')}>
               <div className="frow">
                 <span className="frow-emoji" aria-hidden>{foodEmoji(`${it?.name ?? ''} ${it?.alt ?? ''}`)}</span>
                 <span className="grow frow-main">
-                  <span className="frow-name" dir="auto">{shown(it)}</span>
+                  <span className="frow-name" dir="auto">{label ?? shown(it)}</span>
+                  {label && <span className="frow-db" dir="auto" title="Food in the database">{shown(it)}</span>}
                   {it && <span className="frow-macros num"><b className="mc-c">{r0(it.per100.c * f)}C</b> <b className="mc-p">{r0(it.per100.p * f)}P</b> <b className="mc-f">{r0(it.per100.f * f)}F</b></span>}
                 </span>
                 <span className="frow-right">
@@ -107,7 +115,7 @@ export function FoodCard({ chatId, p, outcome, onChange }: { chatId: string; p: 
             </div>
           );
         })}
-        {groups.filter((g) => !g.lines.length).map((g) => <PlainAction key={g.ai} a={g.a} />)}
+        {groups.filter((g) => !g.lines.length).map((g) => <PlainAction key={g.ai} a={g.a} all={p.actions} />)}
       </div>
       {active && (
         <div className="fcard-buttons">
@@ -128,14 +136,21 @@ export function FoodCard({ chatId, p, outcome, onChange }: { chatId: string; p: 
 function useDescribed(actions: RequestAction[]) {
   const [d, setD] = useState<Described[] | null>(null);
   const key = JSON.stringify(actions);
-  useEffect(() => { let alive = true; Promise.all(actions.map(describeAction)).then((x) => alive && setD(x)); return () => { alive = false; }; }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // every action is described with its siblings, so refs to earlier ones ("$0.id") read as "the new workout ‘Chesty’"
+  useEffect(() => { let alive = true; Promise.all(actions.map((a) => describeAction(a, actions))).then((x) => alive && setD(x)); return () => { alive = false; }; }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   return d;
 }
 
-function PlainAction({ a }: { a: RequestAction }) {
-  const [d] = useDescribed([a]) ?? [];
+function PlainAction({ a, all }: { a: RequestAction; all: RequestAction[] }) {
+  const d = useDescribed(all)?.[all.indexOf(a)];
   return <ActionRow d={d ?? { title: a.name, icon: 'bolt', fields: [] }} limit={3} />;
 }
+
+type ActionOutcome = NonNullable<NonNullable<Chat['cards']>[string]['outcomes']>[number];
+const STEP: Record<ActionOutcome['status'], { icon: string; text: string; cls: string }> = {
+  done: { icon: 'check', text: 'Done', cls: 'good' }, failed: { icon: 'info', text: 'Failed', cls: 'bad' },
+  skipped: { icon: 'close', text: 'Not applied (an earlier step failed)', cls: 'muted' }, unchecked: { icon: 'close', text: 'Unchecked', cls: 'muted' },
+};
 
 /** Every field that will be applied, as a nested label / value list. */
 function FieldList({ fields, depth = 0 }: { fields: Field[]; depth?: number }) {
@@ -157,7 +172,7 @@ function FieldList({ fields, depth = 0 }: { fields: Field[]; depth?: number }) {
 
 /** One proposed action: icon, title, one-line summary, then everything it will apply. Short ones show it all; long ones
  *  fold it behind "Details" (limit = how many lines may show without folding). */
-function ActionRow({ d, limit }: { d: Described; limit: number }) {
+function ActionRow({ d, limit, step }: { d: Described; limit: number; step?: ActionOutcome }) {
   const lines = fieldLines(d.fields);
   const inline = lines <= limit;
   const [open, setOpen] = useState(false);
@@ -178,14 +193,20 @@ function ActionRow({ d, limit }: { d: Described; limit: number }) {
           </button>
         )}
       </div>
+      {step && <p className={'arow-step ' + STEP[step.status].cls} dir="auto"><Icon name={STEP[step.status].icon} size={13} stroke={2.6} />{STEP[step.status].text}{step.error ? `: ${step.error}` : ''}</p>}
       {(inline || open) && d.fields.length > 0 && <div id={detailsId} className="arow-fields"><FieldList fields={d.fields} /></div>}
     </div>
   );
 }
 
 /** Any other change request: friendly rows, Skip / Apply. */
-export function RequestCard({ chatId, p, outcome, comment, onChange }: { chatId: string; p: PendingRequest; outcome?: Outcome; comment?: string; onChange?: () => void }) {
+/** Up to this many field lines in the whole card, every action shows its fields at once (a one-card build stays readable). */
+const CARD_INLINE_LINES = 20;
+
+export function RequestCard({ chatId, p, outcome, comment, outcomes, onChange }: { chatId: string; p: PendingRequest; outcome?: Outcome; comment?: string; outcomes?: ActionOutcome[]; onChange?: () => void }) {
   const described = useDescribed(p.actions);
+  const total = described ? described.reduce((t, d) => t + 1 + fieldLines(d.fields), 0) : 0;
+  const limit = total <= CARD_INLINE_LINES ? Infinity : p.actions.length === 1 ? 8 : 3;
   const active = !outcome;
   const busy = p.status === 'applying';
   const o = outcome ? OUTCOME[outcome] : null;
@@ -196,7 +217,7 @@ export function RequestCard({ chatId, p, outcome, comment, onChange }: { chatId:
         {o && <span className={'req-outcome ' + o.cls}><Icon name={o.icon} size={14} stroke={2.6} />{o.text}</span>}
       </div>
       <div className="rcard-rows">
-        {(described ?? p.actions.map((a) => ({ title: a.name, icon: 'bolt', fields: [] }))).map((d, i) => <ActionRow key={i} d={d} limit={p.actions.length === 1 ? 8 : 3} />)}
+        {(described ?? p.actions.map((a) => ({ title: a.name, icon: 'bolt', fields: [] }))).map((d, i) => <ActionRow key={i} d={d} limit={limit} step={outcome === 'failed' ? outcomes?.[i] : undefined} />)}
       </div>
       {comment && <p className="req-comment" dir="auto">“{comment}”</p>}
       {active && (
@@ -253,11 +274,12 @@ export function AskCard({ chatId, questions, answered }: { chatId: string; quest
 }
 
 /** Pick the right card for a request. */
-export function RequestBlockCard({ chatId, p, outcome, comment, onChange }: { chatId: string; p: PendingRequest; outcome?: Outcome; comment?: string; onChange?: () => void }) {
-  // v1 food requests (stored before amounts were filled in) lack grams/unit: show them as plain rows
+export function RequestBlockCard({ chatId, p, outcome, comment, outcomes, onChange }: { chatId: string; p: PendingRequest; outcome?: Outcome; comment?: string; outcomes?: ActionOutcome[]; onChange?: () => void }) {
+  // v1 food requests (stored before amounts were filled in) lack grams/unit, and a food created in the same request
+  // (foodKey "$0.id") can't be looked up yet: show them as plain rows
   const editable = p.actions.some((a) => isFoodAction(a.name)) && p.actions.filter((a) => isFoodAction(a.name))
-    .every((a) => foodLines(a).every((l) => typeof l.item?.grams === 'number' && typeof l.item?.unit === 'string' && typeof l.item?.qty === 'number'));
+    .every((a) => foodLines(a).every((l) => typeof l.item?.grams === 'number' && typeof l.item?.unit === 'string' && typeof l.item?.qty === 'number' && !isRef(l.item.foodKey)));
   return editable
     ? <FoodCard chatId={chatId} p={p} outcome={outcome} onChange={onChange} />
-    : <RequestCard chatId={chatId} p={p} outcome={outcome} comment={comment} onChange={onChange} />;
+    : <RequestCard chatId={chatId} p={p} outcome={outcome} comment={comment} outcomes={outcomes} onChange={onChange} />;
 }

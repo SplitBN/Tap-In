@@ -7,7 +7,7 @@ import { getSettings } from '../../db/settings';
 import { getStatus, isFake, turn } from './client';
 import { getChat, newChat, patchChat, recentQuickChat } from './chats';
 import { buildInstructions, contextBlock, isContextPart, TITLE_INSTRUCTIONS } from './instructions';
-import { applyActions, appliedSummary, cap, executeTool, isBlocking, isParallelSafe, toolList, type ToolEnv, type ToolOutcome } from './tools';
+import { applyActions, appliedSummary, cap, executeTool, failNote, isBlocking, isParallelSafe, toolList, type ToolEnv, type ToolOutcome } from './tools';
 import type { AIMessage, AIPart, AIStatus, AIToolCall, AgentContext, Chat, RequestAction } from './types';
 
 export const MAX_STEPS = 12;
@@ -120,9 +120,9 @@ async function resolveOnce(chatId: string, d: Decision) {
     card = { kind: 'ask', summary: p.summary, actions: [], questions: p.questions, answers, outcome: 'answered', ...(text ? { comment: text } : {}) };
   } else if (d.type === 'apply') {
     await patchChat(chatId, { pending: { ...p, status: 'applying' } }); // never re-run if the app dies mid-apply
-    const { results, failed, applied } = await applyActions(p.actions);
-    content = cap({ status: 'applied', results, applied: appliedSummary(applied), ...(failed ? { note: 'An action failed; actions after it were skipped. Earlier ones were applied.' } : {}) });
-    card = { summary: p.summary, actions: p.actions, outcome: failed ? 'failed' : 'applied' };
+    const { results, failed, applied, outcomes, failedAt } = await applyActions(p.actions);
+    content = cap({ status: 'applied', results, applied: appliedSummary(applied), ...(failedAt !== undefined ? { failedAt, note: failNote(p.actions, failedAt, outcomes) } : {}) });
+    card = { summary: p.summary, actions: p.actions, outcome: failed ? 'failed' : 'applied', ...(failed ? { outcomes } : {}) };
   } else if (d.type === 'reject') {
     content = cap({ status: 'rejected', ...(d.comment?.trim() ? { comment: d.comment.trim() } : {}) });
     card = { summary: p.summary, actions: p.actions, outcome: 'rejected', comment: d.comment?.trim() || undefined };
@@ -141,8 +141,8 @@ async function resolveOnce(chatId: string, d: Decision) {
   }
   if (p.answered) {
     // the tool call already has its (comment) result: tell the model what happened in a user-side note instead
-    const res = JSON.parse(content) as { status: string; results?: unknown; comment?: string };
-    const note = res.status === 'applied' ? `user applied the earlier request "${p.summary}" as shown on the card: ${cap({ results: res.results, applied: (res as { applied?: unknown }).applied }, 6000)}`
+    const res = JSON.parse(content) as { status: string; results?: unknown; comment?: string; failedAt?: number; note?: string };
+    const note = res.status === 'applied' ? `user applied the earlier request "${p.summary}" as shown on the card: ${cap({ results: res.results, applied: (res as { applied?: unknown }).applied, ...(res.failedAt !== undefined ? { failedAt: res.failedAt, note: res.note } : {}) }, 6000)}`
       : `user rejected the earlier request "${p.summary}"${res.comment ? `: ${res.comment}` : ''}`;
     await patchChat(chatId, { error: null, pending: null, cards: { ...now.cards, [p.toolCallId]: card },
       messages: [...now.messages, { role: 'user', content: [{ type: 'text', text: `<context>${note}</context>` }] }] });
@@ -226,7 +226,7 @@ export async function runLoop(chatId: string) {
           pending = out.pending; continue;
         }
         if ('display' in out && out.display) displays[x.id] = out.display;
-        if ('applied' in out) cards[x.id] = { summary: out.applied.summary, actions: out.applied.actions, outcome: out.applied.failed ? 'failed' : 'applied' };
+        if ('applied' in out) cards[x.id] = { summary: out.applied.summary, actions: out.applied.actions, outcome: out.applied.failed ? 'failed' : 'applied', ...(out.applied.failed ? { outcomes: out.applied.outcomes } : {}) };
         messages.push({ role: 'tool', toolCallId: x.id, name: x.name, content: out.content! });
       }
       setLive(chatId, { text: '' });

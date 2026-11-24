@@ -100,6 +100,8 @@ export interface Chat {
   pending?: PendingRequest | null;
   /** past cards by toolCallId, so the chat can still render them after they were answered */
   cards?: Record<string, { summary: string; actions: RequestAction[]; outcome: 'applied' | 'rejected' | 'comment' | 'failed' | 'answered' | 'replaced'; comment?: string;
+    /** a failed request: what happened to each action (same order as actions) */
+    outcomes?: { status: 'done' | 'failed' | 'skipped' | 'unchecked'; error?: string }[];
     kind?: 'request' | 'ask'; questions?: AskQuestion[]; answers?: Record<string, string | string[]> }>;
   /** charts / tables / stat tiles by toolCallId, resolved on the client (source queries run here, points capped) */
   displays?: Record<string, Display>;

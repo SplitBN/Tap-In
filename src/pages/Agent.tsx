@@ -428,7 +428,7 @@ function CardBlock({ call, chat, result, onChange }: { call: AIToolCall; chat: C
     return <AskCard chatId={chat.id} questions={qs} answered={p ? undefined : { answers: done?.answers, text: done?.comment }} />;
   }
   if (p) return <RequestBlockCard chatId={chat.id} p={p} onChange={onChange} />;
-  if (done) return <RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.outcome === 'rejected' ? done.comment : undefined} />;
+  if (done) return <RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.outcome === 'rejected' ? done.comment : undefined} outcomes={done.outcomes} />;
   if (result && isError(result)) return <div className="tool-chips"><span className="tool-chip failed"><Icon name="info" size={13} stroke={2.2} />{call.name === 'ask_user' ? 'Question' : 'Request'} didn’t validate · retrying</span></div>;
   return null;
 }

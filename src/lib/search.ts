@@ -96,11 +96,16 @@ export function usageBoost(u: { n: number; last: number } | undefined) {
 }
 
 /** Generic ranker. `tokensOf` should be cached by the caller for big lists. */
-export function rank<T>(items: T[], query: string, opts: {
+export function rank<T>(items: T[], query: string, opts: RankOpts<T>): T[] {
+  return rankScored(items, query, opts).map((x) => x[1]);
+}
+export type RankOpts<T> = {
   /** one token list, or several fields (e.g. Hebrew name, English name) scored separately — best field wins */
   tokensOf: (it: T) => string[] | string[][]; nameLength: (it: T) => number; keyOf: (it: T) => string;
   usage?: Map<string, { n: number; last: number }>; bias?: (it: T) => number; limit?: number;
-}): T[] {
+};
+/** Like rank, with each item's final score (lower = better), for callers that merge several searches. */
+export function rankScored<T>(items: T[], query: string, opts: RankOpts<T>): [number, T][] {
   const words = tokenize(query);
   if (!words.length) return [];
   const out: [number, T][] = [];
@@ -117,5 +122,5 @@ export function rank<T>(items: T[], query: string, opts: {
     out.push([m + (opts.bias?.(it) ?? 0) - usageBoost(opts.usage?.get(opts.keyOf(it))), it]);
   }
   out.sort((a, b) => a[0] - b[0]);
-  return out.slice(0, opts.limit ?? 60).map((x) => x[1]);
+  return out.slice(0, opts.limit ?? 60);
 }

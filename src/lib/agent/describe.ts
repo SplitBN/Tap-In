@@ -8,6 +8,7 @@ import type { Schedule, WorkoutItem } from '../../db/types';
 import { scheduleText } from '../../db/supps';
 import { exerciseLabel } from '../equipment';
 import { keyToDate } from '../nutrition';
+import { mapRefs, parseRef } from './refs';
 import { findCommand } from './tools';
 import type { RequestAction } from './types';
 
@@ -42,15 +43,43 @@ const LABELS: Record<string, string> = { p: 'Protein g', c: 'Carbs g', f: 'Fat g
 const humanize = (k: string) => LABELS[k] ?? k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (x) => x.toUpperCase());
 const fallbackTitle = (name: string) => { const [a, v = ''] = name.split('.'); return `${humanize(v)} · ${a}`; };
 
+// ---------------- refs to earlier actions of the same request ("$0.id") ----------------
+// Before rendering, every ref in the input is replaced by REF_MARK + a readable label ("the new workout ‘Chesty’");
+// the name lookups below return that label for a marked value, so every renderer shows it without knowing about refs.
+const REF_MARK = '\u2063';
+const isMarked = (v: unknown): v is string => typeof v === 'string' && v.startsWith(REF_MARK);
+const marked = (fn: (id: string) => Promise<string | undefined>) => async (id: string) => (isMarked(id) ? id.slice(1) : fn(id));
+const NEW_NOUN: Record<string, string> = { 'workouts.create': 'workout', 'workouts.createFromSession': 'workout', 'plans.create': 'plan', 'exercises.create': 'exercise',
+  'exercises.duplicate': 'exercise', 'foods.create': 'food', 'supplements.save': 'supplement', 'stacks.save': 'stack', 'journal.add': 'journal entry', 'sessions.start': 'workout session' };
+async function refLabel(ref: string, all: RequestAction[], depth = 0): Promise<string> {
+  const r = parseRef(ref)!;
+  const src = all[r.index];
+  const step = `step ${r.index + 1}`;
+  if (!src || depth > 3) return `result of ${step}`;
+  const nm = typeof src.input.name === 'string' ? src.input.name : undefined;
+  const last = r.path[r.path.length - 1];
+  if (src.name === 'items.add' && r.path.length === 3 && r.path[0] === 'items' && last === 'key') {
+    // a slot that items.add creates: count from the end ("-1") or from the workout's current length
+    const added = Array.isArray(src.input.items) ? (src.input.items as { exerciseId?: unknown }[]).map((x) => x.exerciseId) : (src.input.exerciseIds as unknown[] | undefined) ?? [];
+    const existing = parseRef(src.input.workoutId) || parseRef(src.input.sessionId) ? 0 : (await slotsOf(src.input)).length;
+    const n = Number(r.path[1]); const k = n < 0 ? added.length + n : n - existing;
+    const id = added[k];
+    if (typeof id === 'string') return `${parseRef(id) ? await refLabel(id, all, depth + 1) : (await exName(id)) ?? 'Exercise'} (added in ${step})`;
+  }
+  if (NEW_NOUN[src.name] && r.path.length === 1 && last === 'id') return `the new ${NEW_NOUN[src.name]}${nm ? ` ‘${nm}’` : typeof src.input.title === 'string' ? ` ‘${src.input.title}’` : ''}`;
+  return `${humanize(last)} from ${step} (${TITLES[src.name] ?? src.name})`;
+}
+
 // ---------------- name lookups ----------------
 const safe = async <T,>(p: Promise<T>) => { try { return await p; } catch { return undefined; } };
-const exName = async (id: string) => { const e = await safe(db.exercises.get(id)); return e ? exerciseLabel(e) : undefined; };
-const planName = async (id: string) => (await safe(db.plans.get(id)))?.name;
-const workoutName = async (id: string) => (await safe(db.workouts.get(id)))?.name;
-const sessionName = async (id: string) => { const s = await safe(db.sessions.get(id)); return s && `${s.name}${s.endedAt ? ` · ${new Date(s.startedAt).toLocaleDateString()}` : ' · live'}`; };
-const suppName = async (id: string) => (await safe(db.supplements.get(id)))?.name;
+const exName = marked(async (id) => { const e = await safe(db.exercises.get(id)); return e ? exerciseLabel(e) : undefined; });
+const planName = marked(async (id) => (await safe(db.plans.get(id)))?.name);
+const workoutName = marked(async (id) => (await safe(db.workouts.get(id)))?.name);
+const sessionName = marked(async (id) => { const s = await safe(db.sessions.get(id)); return s && `${s.name}${s.endedAt ? ` · ${new Date(s.startedAt).toLocaleDateString()}` : ' · live'}`; });
+const suppName = marked(async (id) => (await safe(db.supplements.get(id)))?.name);
+const foodName = marked(async (k) => (await safe(getItem(k)))?.name);
 const ID_RESOLVERS: Record<string, (id: string) => Promise<string | undefined>> = {
-  foodKey: async (k) => (await safe(getItem(k)))?.name, foodId: async (k) => (await safe(getItem(k)))?.name,
+  foodKey: foodName, foodId: foodName,
   exerciseId: exName, supplementId: suppName, workoutId: workoutName, planId: planName, activePlanId: planName, sessionId: sessionName,
 };
 /** `id` means a different table per command area. */
@@ -70,6 +99,7 @@ async function slotsOf(input: Record<string, unknown>): Promise<WorkoutItem[]> {
   return [];
 }
 const slotName = async (items: WorkoutItem[], key: unknown) => {
+  if (isMarked(key)) return key.slice(1);
   const it = items.find((i) => i.key === key);
   return it ? (await exName(it.exerciseId)) ?? 'Exercise' : `Exercise ${String(key).slice(0, 6)}`;
 };
@@ -95,6 +125,7 @@ async function toField(key: string, v: unknown, area: string, label = humanize(k
   if (typeof v === 'boolean') return f(label, v ? 'Yes' : 'No');
   if (typeof v === 'number') return f(label, num(v));
   if (typeof v === 'string') {
+    if (isMarked(v)) return f(label, v.slice(1));
     const r = key === 'id' ? BY_AREA[area] : ID_RESOLVERS[key];
     const name = r ? await r(v) : undefined;
     return f(label, name ?? (isDate(v) ? day(v) : v));
@@ -135,7 +166,9 @@ async function genericFields(data: Record<string, unknown>, area: string) {
 }
 
 // ---------------- hand-written renderers ----------------
-type R = (i: Record<string, unknown>, area: string) => Promise<{ title?: string; summary?: string; fields: Field[] }>;
+/** ctx: every action of the request and this one's index (so a renderer can see what later actions do with it). */
+type Ctx = { all: RequestAction[]; index: number };
+type R = (i: Record<string, unknown>, area: string, ctx: Ctx) => Promise<{ title?: string; summary?: string; fields: Field[] }>;
 const s = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const n = (v: unknown) => (typeof v === 'number' ? v : undefined);
 
@@ -167,6 +200,17 @@ function patchSummary(p: Record<string, unknown>) {
   if (p.notes !== undefined) bits.push(p.notes ? 'note' : 'clear note');
   return bits.join(' · ');
 }
+/** A new exercise slot in one line: sets × reps, rest (default timer when not given), warm-ups, drop sets. */
+function newItemSummary(p: Record<string, unknown>) {
+  const sets = n(p.sets) ?? 3;
+  const reps = repsText(n(p.repsMin), n(p.repsMax));
+  const bits = [reps ? `${sets} × ${reps}` : plural(sets, 'set')];
+  const r = p.rest as { mode: string; sec?: number } | undefined;
+  bits.push(!r ? 'default rest' : r.mode === 'countup' ? 'count-up rest' : r.sec ? `rest ${mmss(r.sec)}` : 'default rest');
+  if (n(p.warmups)) bits.push(plural(n(p.warmups)!, 'warm-up'));
+  if (n(p.drops)) bits.push(plural(n(p.drops)!, 'drop set'));
+  return bits.join(' · ');
+}
 const SCHED_KIND: Record<string, string> = { daily: 'Every day', weekdays: 'On weekdays', interval: 'Every N days', weekly: 'Weekly', asNeeded: 'As needed' };
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function scheduleFields(sc: Record<string, unknown>): Field[] {
@@ -191,19 +235,24 @@ const RENDER: Record<string, R> = {
     if (i.startDate !== undefined) fields.push(f('Week 1 starts', i.startDate === null ? 'When the plan was created' : day(String(i.startDate))));
     return { fields };
   },
-  'workouts.create': async (i) => {
+  'workouts.create': async (i, _a, { all, index }) => {
     const plan = (await planName(s(i.planId)!)) ?? 'Plan';
-    return { summary: `${s(i.name)} · in ${plan}`, fields: [f('Name', s(i.name)), f('Plan', plan), f('Exercises', 'None yet (added next)')] };
+    const filled = all.some((x, k) => k > index && x.name === 'items.add' && parseRef(x.input.workoutId)?.index === index);
+    return { summary: `${s(i.name)} · in ${plan}`, fields: [f('Name', s(i.name)), f('Plan', plan), f('Exercises', filled ? 'Added below' : 'None yet')] };
   },
   'workouts.rename': async (i) => ({ summary: `${(await workoutName(s(i.id)!)) ?? 'Workout'} → ${s(i.name)}`, fields: [f('Workout', await workoutName(s(i.id)!)), f('New name', s(i.name))] }),
   'items.add': async (i) => {
-    const ids = (i.exerciseIds as string[]) ?? [];
-    const sets = n(i.sets);
-    const names = await Promise.all(ids.map(async (id) => (await exName(id)) ?? 'Unknown exercise'));
+    // short form (exerciseIds + sets) or full (items with per-exercise targets): one line each, "4 × 6–8 reps · rest 3:00 · 2 warm-ups", note below
+    const specs = Array.isArray(i.items) ? (i.items as Record<string, unknown>[]) : ((i.exerciseIds as string[]) ?? []).map((exerciseId): Record<string, unknown> => ({ exerciseId, sets: i.sets }));
     const t = await target(i);
-    const fields = [t, f('Exercises', plural(ids.length, 'exercise'), names.map((nm, k) => f(`${k + 1}. ${nm}`, sets ? plural(sets, 'set') : '3 sets (default)')))];
+    const rows = await Promise.all(specs.map(async (sp, k) => {
+      const nm = (await exName(String(sp.exerciseId))) ?? 'Unknown exercise';
+      const note = s(sp.notes)?.trim();
+      return f(`${k + 1}. ${nm}`, newItemSummary(sp), note ? [f('Note', note)] : undefined);
+    }));
+    const fields = [t, f('Exercises', plural(specs.length, 'exercise'), rows)];
     if (i.makeCurrent) fields.push(f('Switch to it now', 'Yes'));
-    return { summary: `${plural(ids.length, 'exercise')} → ${t.value}`, fields };
+    return { summary: `${plural(specs.length, 'exercise')} → ${t.value}`, fields };
   },
   'items.update': async (i) => {
     const slots = await slotsOf(i);
@@ -307,14 +356,17 @@ const RENDER: Record<string, R> = {
 };
 function safeSched(sc: Schedule) { try { return scheduleText({ ...sc, times: sc.times ?? [] }); } catch { return undefined; } }
 
-export async function describeAction(a: RequestAction): Promise<Described> {
+/** all = every action of the request (for refs like "$0.id" to earlier ones); defaults to just this one. */
+export async function describeAction(a: RequestAction, all: RequestAction[] = [a]): Promise<Described> {
   const c = findCommand(a.name);
-  const parsed = c?.input.safeParse(a.input);
-  const data = ((parsed?.success ? parsed.data : a.input) ?? {}) as Record<string, unknown>;
+  const index = Math.max(0, all.indexOf(a));
+  const input = (await mapRefs(a.input, async (r) => REF_MARK + await refLabel(r, all))) as Record<string, unknown>;
+  const parsed = c?.input.safeParse(input);
+  const data = ((parsed?.success ? parsed.data : input) ?? {}) as Record<string, unknown>;
   const area = a.name.split('.')[0];
   const base = { title: TITLES[a.name] ?? fallbackTitle(a.name), icon: ICONS[area] ?? 'bolt' };
   const r = RENDER[a.name];
-  if (r) { try { return { ...base, ...(await r(data, area)) }; } catch { /* fall through to the generic tree */ } }
+  if (r) { try { return { ...base, ...(await r(data, area, { all, index })) }; } catch { /* fall through to the generic tree */ } }
   const fields = await genericFields(data, area);
   // short flat actions ("Delete weigh-in · 81 kg") read best as one line
   const flat = fields.length <= 2 && fields.every((x) => !x.children);

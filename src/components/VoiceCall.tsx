@@ -247,7 +247,7 @@ function FeedCard({ call, chat, result }: { call: AIToolCall; chat: Chat; result
     return <div className="vc-card"><AskCard chatId={chat.id} questions={p?.questions ?? done?.questions ?? []} answered={p ? undefined : { answers: done?.answers, text: done?.comment }} /></div>;
   }
   if (p) return <div className="vc-card"><RequestBlockCard chatId={chat.id} p={p} /></div>;
-  if (done) return <div className="vc-card"><RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.outcome === 'rejected' ? done.comment : undefined} /></div>;
+  if (done) return <div className="vc-card"><RequestBlockCard chatId={chat.id} p={{ toolCallId: call.id, summary: done.summary, actions: done.actions, status: 'pending' }} outcome={done.outcome} comment={done.outcome === 'rejected' ? done.comment : undefined} outcomes={done.outcomes} /></div>;
   void result;
   return null;
 }
