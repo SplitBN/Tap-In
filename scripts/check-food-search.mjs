@@ -33,7 +33,8 @@ top('olive oil שמן זית', 1, /שמן זית/, /olive/i);
 top('milk 3% חלב', 3, /חלב/, /3%/);
 
 // single-script behaviour unchanged
-top('אורז לבן מבושל', 3, /אורז/, /מבושל/);
+top('אורז לבן מבושל', 1, /אורז/, /מבושל/, cooked); // "מבושל" must not match "לא מבושל" first
+top('אורז לבן לא מבושל', 1, /אורז/, (it) => /uncooked|לא מבושל/i.test(`${it.name} ${it.alt ?? ''}`));
 top('rice cooked', 3, /rice|אורז/i, /cooked|מבושל/i, cooked);
 const milk = top('milk', 5, /milk|חלב/i);
 check('"milk" does not start with an odd variant', !/human|infant|goat|sheep|camel|חלב אם/i.test(`${milk[0]?.name} ${milk[0]?.alt ?? ''}`), milk[0] && label(milk[0]));

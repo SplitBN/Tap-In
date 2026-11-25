@@ -70,9 +70,20 @@ function scoredFoods(q: string, mine: FoodItem[], items: FoodItem[], usage: Usag
     // among foods that ARE the query: plain cooked/raw forms before prepared products
     return h + (/uncooked|לא מבושל/i.test(all) ? 0.4 : 0) + (PREPARED.test(all) ? 0.8 : PLAIN.test(all) ? -0.4 : 0);
   };
+  // Negation: "מבושל" is a token of "לא מבושל" (not cooked), so a "cooked" query matched uncooked foods first.
+  // When the query asks for one state, push foods in the opposite state down (and vice versa for raw/uncooked).
+  const wantsRaw = /\b(uncooked|raw|dry)\b|לא מבושל|לא מבושלת|נא\b|יבש/i.test(q);
+  const wantsCooked = !wantsRaw && /\b(cooked|boiled|steamed|baked|roasted|grilled)\b|מבושל|מבושלת|אפוי|צלוי|קלוי/i.test(q);
+  const stateBias = (it: FoodItem) => {
+    const all = `${it.name} ${it.alt ?? ''}`;
+    const uncooked = /\buncooked\b|\bdry\b|לא מבושל|\braw\b/i.test(all);
+    if (wantsCooked && uncooked) return 2.5;
+    if (wantsRaw && !uncooked && /\b(cooked|boiled)\b|מבושל/i.test(all)) return 2.5;
+    return 0;
+  };
   return rankScored(pool, q, {
     tokensOf, keyOf: (it) => it.key, nameLength: (it) => it.name.length, usage, limit,
-    bias: (it) => (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
+    bias: (it) => stateBias(it) + (it.source === 'usda' ? 1.5 + (it.category && PROCESSED.test(it.category) ? 1.5 : 0) + (/\braw\b/i.test(it.name) ? -0.5 : 0)
       : it.israeli ? 0.4 : -1) + (ODD.test(`${it.name} ${it.alt ?? ''}`) ? 3 : 0) + headBias(it),
   });
 }
