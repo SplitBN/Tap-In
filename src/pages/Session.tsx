@@ -8,6 +8,7 @@ import { ExercisePicker, ExerciseEditor } from '../components/ExercisePicker';
 import { equipmentLabel, exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { ExerciseMenu, repsText } from '../components/ExerciseMenu';
+import { VariantSheet } from '../components/VariantSheet';
 import { ExThumb } from '../components/ExThumb';
 import { MuscleMap } from '../components/MuscleMap';
 import { EffortExplainer, EffortSheet, RepsSheet, WeightSheet } from '../components/SetInputs';
@@ -83,7 +84,7 @@ export function SessionPage() {
     badged.current = new Set(now);
   }, [progress]);
 
-  const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | null>(null);
+  const [menu, setMenu] = useState<'item' | 'session' | 'finish' | 'info' | 'editEx' | 'details' | 'variant' | null>(null);
   const [menuSub, setMenuSub] = useState<'reps' | undefined>(); // ⋯ sheet opened straight on the reps target
   const [picking, setPicking] = useState<null | 'add' | 'replace'>(null);
   // summary sheet: 'finish' right after finishing (Done goes Home), 'view' for a past session (Done just closes)
@@ -198,6 +199,7 @@ export function SessionPage() {
           onEditEx={() => setMenu('editEx')}
           onAdd={() => { setMenu(null); setPicking('add'); }}
           onReplace={replaceCurrent}
+          onVariant={() => setMenu('variant')}
           onRemove={async () => {
             const mine = sets.filter((x) => x.itemKey === current.key);
             const doneN = mine.filter((x) => x.doneAt).length;
@@ -209,6 +211,8 @@ export function SessionPage() {
           }} />
       )}
 
+      <VariantSheet open={menu === 'variant'} exercise={ex} confirm="Swap" title="Variant" onClose={() => setMenu(null)}
+        onPick={async (e) => { if (current && e.id !== current.exerciseId) await run(itemsReplace, { ...t, itemKey: current.key, exerciseId: e.id }); }} />
       <Sheet open={menu === 'info'} onClose={() => setMenu(null)} title={ex && exerciseLabel(ex)}>
         {ex && <ExerciseInfo ex={ex} />}
       </Sheet>

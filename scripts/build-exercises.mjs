@@ -3,6 +3,7 @@
 // Usage (from the app folder): node scripts/build-exercises.mjs <path-to-exercises.json>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { ADD, DROP, EQUIPMENT, KEEP, MUSCLES, REQUIRED } from './exercise-curation.mjs';
+import { FAMILIES, familyFor, groupKey, storedVariant, variantKey, variantMuscles } from '../src/lib/variants.ts';
 
 const src = process.argv[2];
 if (!src) throw new Error('pass the path to free-exercise-db dist/exercises.json');
@@ -32,13 +33,22 @@ for (const e of pool) if (!KEEP[e.id] && !dropped.has(e.id)) errors.push(`unrevi
 
 const build = (id, s, name, o = {}) => {
   const equipment = o.equipment ?? s.equipment ?? 'other';
+  // variant groups (src/lib/variants.ts): a base by its name, a seeded variant by its overrides
+  const family = o.family ?? familyFor(name, equipment);
+  const group = family && FAMILIES[family]?.groups[equipment];
+  if (o.family && !group) errors.push(`${id}: family ${o.family} has no ${equipment} group`);
+  let variant;
+  try { variant = group ? storedVariant(group, o.variant) : undefined; } catch (err) { errors.push(`${id}: ${err.message}`); }
+  // MUSCLES corrections by name, then the variant's measured emphasis (variantMuscles); secondary never repeats a primary
+  const m = variantMuscles(family, equipment, variant, { muscles: MUSCLES[name]?.muscles ?? s.primaryMuscles, secondary: MUSCLES[name]?.secondary ?? s.secondaryMuscles });
   return {
     id, name,
     mechanic: o.mechanic ?? (s.mechanic === 'isolation' ? 'isolation' : 'compound'),
     equipment,
-    // MUSCLES corrections by name; secondary never repeats a primary
-    muscles: MUSCLES[name]?.muscles ?? s.primaryMuscles,
-    secondary: [...new Set(MUSCLES[name]?.secondary ?? s.secondaryMuscles)].filter((m) => !(MUSCLES[name]?.muscles ?? s.primaryMuscles).includes(m)),
+    muscles: m.muscles,
+    secondary: [...new Set(m.secondary)].filter((x) => !m.muscles.includes(x)),
+    ...(group ? { family } : {}),
+    ...(variant ? { variant } : {}),
     loadType: o.loadType ?? loadType(name, equipment),
     unilateral: o.unilateral ?? UNILATERAL.test(name),
     images: s.images,
@@ -66,6 +76,16 @@ for (const e of out) {
   if (seen.has(key)) errors.push(`duplicate (name, equipment): ${e.name} / ${e.equipment} — ${seen.get(key)} and ${e.id}`);
   seen.set(key, e.id);
 }
+// each variant group: exactly one base, no two records for the same variant
+const groups = new Map();
+for (const e of out) if (e.family) groups.set(groupKey(e), [...(groups.get(groupKey(e)) ?? []), e]);
+for (const [k, list] of groups) {
+  const g = FAMILIES[list[0].family].groups[list[0].equipment];
+  if (list.filter((e) => !e.variant).length !== 1) errors.push(`variant group ${k}: needs exactly one base, has ${list.filter((e) => !e.variant).map((e) => e.id).join(', ') || 'none'}`);
+  const keys = new Map();
+  for (const e of list) { const vk = variantKey(g, e.variant); if (keys.has(vk)) errors.push(`variant group ${k}: ${keys.get(vk)} and ${e.id} are the same variant (${vk})`); keys.set(vk, e.id); }
+}
+for (const [slug, f] of Object.entries(FAMILIES)) for (const eq of Object.keys(f.groups)) if (!groups.has(`${slug}|${eq}`)) errors.push(`FAMILIES.${slug}: no ${eq} base exercise named ${f.name}`);
 for (const n of Object.keys(MUSCLES)) if (!out.some((e) => e.name === n)) errors.push(`MUSCLES: no exercise named ${n}`);
 for (const n of REQUIRED) if (!out.some((e) => e.name === n)) errors.push(`required exercise missing: ${n}`);
 // equipment words belong in the equipment field, except where they are part of the movement's own name
@@ -80,5 +100,6 @@ writeFileSync('src/data/exercises.json', JSON.stringify(out));
 console.log(`${pool.length} source → ${out.length} exercises (${out.length - ADD.length} kept, ${ADD.length} added);`,
   out.filter((e) => e.unilateral).length, 'unilateral;',
   Object.entries(out.reduce((a, e) => ((a[e.loadType] = (a[e.loadType] || 0) + 1), a), {})));
+console.log(`${groups.size} variant groups, ${out.filter((e) => e.variant).length} seeded variants`);
 console.log('dropped:', Object.fromEntries(Object.entries(DROP).map(([k, v]) => [k, v.length])), 'total', dropped.size);
 console.log('by equipment:', Object.fromEntries(EQUIPMENT.map((q) => [q, out.filter((e) => e.equipment === q).length])));

@@ -10,6 +10,7 @@ import type { Exercise, LoadType, Session, SetLog } from '../db/types';
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
+import { groupOf, variantLabel } from '../lib/variants';
 import { e1rm, RELIABLE_MAX_RTF } from '../lib/science';
 import {
   bestSet, compareToPrevious, effLoad, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount,
@@ -91,6 +92,25 @@ function heaviest(sets: StatSet[]) {
 }
 const mostReps = (sets: StatSet[]) => Math.max(0, ...sets.filter((s) => s.kind === 'working').map((s) => s.reps));
 
+/** Family roll-up: the entries of several exercises (variants of one lift) merged per session, with PRs and trend
+ *  recomputed against the merged history (so a PR here = best across all of them so far). */
+function mergeEntries(list: ExEntry[], loadType: LoadType): ExEntry[] {
+  const bySession = new Map<string, ExEntry[]>();
+  list.forEach((e) => bySession.set(e.session.id, [...(bySession.get(e.session.id) ?? []), e]));
+  const out: ExEntry[] = [];
+  let prior: StatSet[] = []; let prev: StatSet[] | null = null;
+  for (const es of bySession.values()) {
+    const sets = es.flatMap((e) => e.sets);
+    const cmp = compareToPrevious(sets, prev, loadType);
+    const prs = personalRecords(sets, prior, loadType);
+    out.push({ session: es[0].session, exerciseId: es[0].exerciseId, loadType, sets, raw: es.flatMap((e) => e.raw), working: workingSetCount(sets),
+      volume: volumeKg(sets), best: bestSet(sets), prs, trend: prs.e1rm || prs.weight || prs.reps ? 'up' : cmp.trend });
+    const nw = sets.filter((x) => x.kind !== 'warmup');
+    prior = [...prior, ...nw]; if (nw.length) prev = nw;
+  }
+  return out;
+}
+
 // ---------------- progress.exercise ----------------
 export const progressExercise = defineCommand({ name: 'progress.exercise', kind: 'query',
   description: 'Progress of one exercise over time: one row per finished session (optionally within from/to dates, oldest first) and all-time records. ' +
@@ -98,13 +118,18 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
     `e1rmKg null when it cannot be estimated, e.g. a bodyweight lift with no weigh-in; e1rmReliable false past ${RELIABLE_MAX_RTF} reps to failure; e1rmLowerBound true when no effort was logged (reps alone, so the real e1RM is at least this)), heaviest (heaviest` + ' working set on the logged-load axis: ' +
     'the weight; added weight for bodyweight lifts; least assistance for assisted), mostReps (most reps in one working set), prs (all-time PRs set that session, same rules as sessions.summary), ' +
     'trend up|same|down|new vs the previous session, and the raw sets (each with e1rm: {kg, reliable, lowerBound, repsToFailure} for working sets, null otherwise — the set table score). Loads are kg; totalKg includes bodyweight for bodyweight/assisted lifts. ' +
-    'records (always all-time, ignoring from/to): bestE1rm (reliable estimates preferred), heaviest, bestVolume, mostReps, and repRecords = most reps ever done at each logged load (heaviest loads first). Each record has its date and sessionId.',
-  input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional() }),
-  run: async ({ exerciseId, from, to }) => {
+    'records (always all-time, ignoring from/to): bestE1rm (reliable estimates preferred), heaviest, bestVolume, mostReps, and repRecords = most reps ever done at each logged load (heaviest loads first). Each record has its date and sessionId. ' +
+    'family=true rolls up every grip/width/attachment variant of the same family + equipment: sessions merged, records, PRs and trend computed over all of them together (memberIds lists them; each row has exerciseIds).',
+  input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional(), family: z.boolean().default(false).describe('Combine all variants of this exercise (same family + equipment)') }),
+  run: async ({ exerciseId, from, to, family }) => {
     const { entries, exMap } = await timeline();
     const ex = exMap[exerciseId];
-    const mine = entries.filter((e) => e.exerciseId === exerciseId);
+    const g = groupOf(ex);
+    const memberIds = family && ex && g ? Object.values(exMap).filter((x): x is Exercise => !!x && x.family === ex.family && x.equipment === ex.equipment).map((x) => x.id) : [exerciseId];
+    const ids = new Set(memberIds);
+    const mine = ids.size > 1 ? mergeEntries(entries.filter((e) => ids.has(e.exerciseId)), ex!.loadType) : entries.filter((e) => e.exerciseId === exerciseId);
     const row = (e: ExEntry) => ({
+      exerciseIds: [...new Set(e.raw.map((x) => x.exerciseId))],
       sessionId: e.session.id, name: e.session.name, date: dateKey(e.session.startedAt), startedAt: new Date(e.session.startedAt).toISOString(),
       workingSets: e.working, volumeKg: r1(e.volume), bestSet: bestOut(e.best), heaviest: heaviest(e.sets), mostReps: mostReps(e.sets),
       prs: prsOut(e.prs), prCount: prCount(e.prs), trend: e.trend,
@@ -140,8 +165,9 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
       .map(([, v]) => ({ loadKg: r1(v.loadKg), reps: v.reps, date: v.date, sessionId: v.sessionId }));
 
     return {
-      exercise: ex ? { id: ex.id, name: ex.name, label: exerciseLabel(ex), equipment: ex.equipment, loadType: ex.loadType, muscles: ex.muscles } : { id: exerciseId, name: exerciseId, label: exerciseId, equipment: 'other', loadType: (mine[0]?.loadType ?? 'weighted') as LoadType, muscles: [] },
-      unit: 'kg' as const,
+      exercise: ex ? { id: ex.id, name: ex.name, label: exerciseLabel(ex), equipment: ex.equipment, loadType: ex.loadType, muscles: ex.muscles,
+        family: ex.family ?? null, variant: ex.variant ?? null, variantText: g ? variantLabel(g, ex.variant, ex.family) : '' } : { id: exerciseId, name: exerciseId, label: exerciseId, equipment: 'other', loadType: (mine[0]?.loadType ?? 'weighted') as LoadType, muscles: [] },
+      unit: 'kg' as const, combined: ids.size > 1, memberIds,
       totalSessions: mine.length, firstDate: all[0]?.date ?? null, lastDate: all.at(-1)?.date ?? null,
       sessions: all.filter((r) => (!from || r.date >= from) && (!to || r.date <= to)),
       records: {
@@ -223,7 +249,7 @@ export const progressSessions = defineCommand({ name: 'progress.sessions', kind:
 // ---------------- progress.exercises ----------------
 export const progressExercises = defineCommand({ name: 'progress.exercises', kind: 'query',
   description: 'Exercise library with usage: search by name (same ranking as exercises.search) or list (no query: done exercises first, most recent first, then A–Z). ' +
-    'Each: id, name, equipment, muscles, loadType, custom, sessions (finished sessions it was done in), lastDate (date of the latest one, null if never). onlyDone=true lists only exercises with history.',
+    'Each: id, name, equipment, muscles, loadType, custom, family + variant (grip/width/attachment variants: same family + equipment = one lift; no variant = the base), sessions (finished sessions it was done in), lastDate (date of the latest one, null if never). onlyDone=true lists only exercises with history.',
   input: z.object({ query: z.string().default(''), muscle: z.string().optional(), onlyDone: z.boolean().default(false), limit: z.number().int().min(1).max(1000).default(150) }),
   run: async ({ query, muscle, onlyDone, limit }) => {
     const sessions = await db.sessions.filter((s) => alive(s) && !!s.endedAt).toArray();
@@ -239,5 +265,6 @@ export const progressExercises = defineCommand({ name: 'progress.exercises', kin
     if (query.trim()) pool = searchExercises(pool, query, await exerciseUsage(), limit);
     else pool = pool.sort((a, b) => (use.get(b.id)?.last ?? 0) - (use.get(a.id)?.last ?? 0) || a.name.localeCompare(b.name)).slice(0, limit);
     return pool.map((e) => ({ id: e.id, name: e.name, equipment: e.equipment, muscles: e.muscles, loadType: e.loadType, custom: !!e.custom, images: e.images.slice(0, 1),
+      family: groupOf(e) ? e.family ?? null : null, variant: e.variant ?? null,
       sessions: use.get(e.id)?.n ?? 0, lastDate: use.get(e.id) ? dateKey(use.get(e.id)!.last) : null }));
   } });

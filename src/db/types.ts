@@ -1,5 +1,7 @@
 // Domain types. Every synced record extends Base (client UUID, timestamps, soft delete).
 // Weights are always stored in kg; `inputUnit` remembers what the user typed.
+import type { Variant } from '../lib/variants';
+export type { Variant };
 
 export interface Base {
   id: string;
@@ -29,6 +31,10 @@ export interface Exercise extends Base {
   custom?: boolean;
   /** Preferred step on the weight wheel, kg. */
   stepKg?: number;
+  /** Base movement this belongs to (src/lib/variants.ts → FAMILIES), e.g. 'lat-pulldown'. Family + equipment = a variant group. */
+  family?: string;
+  /** Grip / width / attachment that differ from the group's plain base exercise; absent on the base. Each variant is its own record. */
+  variant?: Variant;
 }
 
 export interface RestSetting {

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ExName, ExerciseThumb } from '../components/ExercisePicker';
 import { exerciseLabel } from '../lib/equipment';
@@ -14,6 +14,8 @@ import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { fromKg, RELIABLE_MAX_RTF, rirToRpe } from '../lib/science';
 import { run } from '../api/registry';
 import { progressExercise, progressSessions, type ExerciseProgress } from '../api/progress';
+import { exercisesFamily } from '../api/gym';
+import { groupOf } from '../lib/variants';
 import { ExerciseInfo } from './Session';
 import { RepeatRows, SaveAsWorkoutSheet, useRepeatWorkout } from '../components/RepeatWorkout';
 
@@ -88,7 +90,18 @@ export function ExerciseHistoryPage() {
   const [info, setInfo] = useState(false);
   const [range, setRange] = useState<Range>('All');
   const from = useMemo(() => (range === 'All' ? undefined : shiftDate(dateKey(), range === '3M' ? -91 : -365)), [range]);
-  const data = useLiveQuery(() => run(progressExercise, { exerciseId: id!, from }), [id, from]);
+  // variants of the same lift: switch between them, or roll them all up into one history
+  const fam = useLiveQuery(async () => (ex && groupOf(ex) ? run(exercisesFamily, { exerciseId: ex.id }) : null), [ex?.id, ex?.family]);
+  const variants = fam && fam.members.length > 1 ? fam.members : null;
+  const [combined, setCombined] = useState(false);
+  const data = useLiveQuery(() => run(progressExercise, { exerciseId: id!, from, family: combined && !!variants }), [id, from, combined, !!variants]);
+  // keep the selected variant chip in view (horizontal scroll of the chip row only, never the page)
+  const chipsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = chipsRef.current; const chip = row?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (row && chip && (chip.offsetLeft < row.scrollLeft || chip.offsetLeft + chip.offsetWidth > row.scrollLeft + row.clientWidth)) row.scrollLeft = chip.offsetLeft - 16;
+  }, [id, combined, !!variants]);
+  const variantName = (exId: string) => { const m = fam?.members.find((x) => x.id === exId); return m ? m.text || 'Standard' : ''; };
 
   if (!data) return null;
   const lt = data.exercise.loadType;
@@ -126,6 +139,15 @@ export function ExerciseHistoryPage() {
         {ex && <button className="icon-btn" aria-label="How to do it" onClick={() => setInfo(true)}><Icon name="info" size={20} /></button>}
       </header>
 
+      {variants && (
+        <div className="chips" role="group" aria-label="Variants" style={{ marginBottom: 12 }} ref={chipsRef}>
+          <button className="chip" aria-pressed={combined} onClick={() => setCombined(true)}><Icon name="layers" size={16} stroke={2.2} />All</button>
+          {variants.map((m) => (
+            <button key={m.id} className="chip" aria-pressed={!combined && m.id === id}
+              onClick={() => { setCombined(false); if (m.id !== id) nav(`/exercise/${m.id}`, { replace: true }); }}>{m.text || 'Standard'}</button>
+          ))}
+        </div>
+      )}
       <div className="row card" style={{ marginBottom: 12 }}>
         <ExerciseThumb ex={ex} size={56} />
         <div className="grow">
@@ -188,6 +210,7 @@ export function ExerciseHistoryPage() {
               {r.prCount > 0 && <span className="badge good num" aria-label={`${plural(r.prCount, 'personal record', 'personal records')}`}><Icon name="flag" size={12} /> PR{r.prCount > 1 ? ` ×${r.prCount}` : ''}</span>}
               {r.bestSet?.e1rmKg && <span className="badge accent num" title="Estimated one-rep max">Est. 1RM {r.bestSet.e1rmLowerBound ? '≥' : r.bestSet.e1rmReliable ? '' : '≈'}{fmtWeight(r.bestSet.e1rmKg, u)}</span>}
             </div>
+            {combined && <div className="faint" style={{ fontSize: '0.8125rem', marginBottom: 2 }}>{r.exerciseIds.map(variantName).filter(Boolean).join(' + ')}</div>}
             <div className="num muted sess-meta">
               {plural(r.workingSets, 'set', 'sets')}{r.volumeKg > 0 ? ` · ${fmtVolume(r.volumeKg, u)}` : ''}{r.bestSet ? ` · best ${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}` : ''}
             </div>

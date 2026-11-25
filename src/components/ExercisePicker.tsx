@@ -2,18 +2,23 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useDeferredValue, useMemo, useState } from 'react';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
-import { exercisesCreate, exercisesDelete, exercisesDuplicate, exercisesUpdate } from '../api/gym';
+import { exercisesCreate, exercisesDelete, exercisesDuplicate, exercisesUpdate, exercisesVariant } from '../api/gym';
 import { confirmDialog, notice } from './Dialog';
 import { exerciseImage } from '../db/seed';
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { titleCase } from '../lib/format';
 import { EQUIPMENT, equipmentLabel, equipmentTag } from '../lib/equipment';
+import { plural } from '../lib/format';
 import { usageBoost } from '../lib/search';
 import { searchExercises } from '../db/exerciseSearch';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
+import { VariantSheet } from './VariantSheet';
+import { composeName, fitVariant, groupKey, groupOf, variantFromQuery, variantKey, type Variant } from '../lib/variants';
 
 
+
+type Row = { ex: Exercise; variants?: number; virtual?: Variant; name?: string };
 
 const MUSCLES = ['chest', 'lats', 'middle back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings', 'glutes', 'calves', 'abdominals', 'forearms', 'traps', 'lower back'];
 
@@ -24,8 +29,9 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
   const [q, setQ] = useState('');
   const dq = useDeferredValue(q);
   const [muscle, setMuscle] = useState<string>();
-  const [sel, setSel] = useState<string[]>([]);
+  const [sel, setSel] = useState<Exercise[]>([]);
   const [creating, setCreating] = useState(false);
+  const [variantFor, setVariantFor] = useState<Exercise>();
 
   // How often each exercise has been done (completed sets per session) — your staples float up.
   const usage = useLiveQuery(async () => {
@@ -39,21 +45,55 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
     return m;
   }, [open]) ?? new Map();
 
-  const list = useMemo(() => {
+  // one row per variant group (family + equipment: the base exercise) without a query; every match with one, plus a
+  // not-yet-created variant when the query names one ("rope pushdown" → Triceps Pushdown · Rope)
+  const list = useMemo((): Row[] => {
     const pool = all.filter((e) => alive(e) && (!muscle || e.muscles.includes(muscle)));
     if (!dq.trim()) {
-      // no query: most-used first, then your custom ones, then A–Z
-      return pool.sort((a, b) => usageBoost(usage.get(b.id)) - usageBoost(usage.get(a.id))
-        || Number(!!b.custom) - Number(!!a.custom) || a.name.localeCompare(b.name)).slice(0, 150);
+      const groups = new Map<string, Exercise[]>();
+      for (const e of pool) groups.set(groupKey(e), [...(groups.get(groupKey(e)) ?? []), e]);
+      const rows = [...groups.values()].map((members) => {
+        const ex = members.find((m) => !m.variant) ?? members[0];
+        const used = members.map((m) => usage.get(m.id)).filter(Boolean) as { n: number; last: number }[];
+        const u = used.length ? { n: used.reduce((a, x) => a + x.n, 0), last: Math.max(...used.map((x) => x.last)) } : undefined;
+        return { ex, u, variants: members.filter((m) => m.variant && usage.has(m.id)).length };
+      });
+      // most-used first, then your custom ones, then A–Z
+      return rows.sort((a, b) => usageBoost(b.u) - usageBoost(a.u) || Number(!!b.ex.custom) - Number(!!a.ex.custom) || a.ex.name.localeCompare(b.ex.name))
+        .slice(0, 150).map(({ ex, variants }) => ({ ex, variants }));
     }
-    return searchExercises(pool, dq, usage);
+    const rows: Row[] = searchExercises(pool, dq, usage).map((ex) => ({ ex }));
+    const want = variantFromQuery(dq);
+    if (!Object.keys(want).length) return rows;
+    // only for the best-matching family (the first base with variants that can take the named grip / width / handle)
+    for (let i = 0; i < rows.length; i++) {
+      const base = rows[i].ex; const g = groupOf(base);
+      if (!g || base.variant) continue;
+      const v = fitVariant(g, want);
+      if (!v) continue;
+      const exists = variantKey(g, v) === variantKey(g, undefined)
+        || all.some((m) => alive(m) && m.family === base.family && m.equipment === base.equipment && variantKey(g, m.variant) === variantKey(g, v));
+      if (!exists) rows.splice(i, 0, { ex: base, virtual: v, name: composeName(base.name, base.family!, g, v) });
+      break;
+    }
+    return rows;
   }, [all, dq, muscle, usage]);
 
   const close = () => { setSel([]); setQ(''); onClose(); };
-  const done = (ids: string[]) => {
-    const picked = ids.map((id) => all.find((e) => e.id === id)).filter(Boolean) as Exercise[];
-    onPick(picked);
-    close();
+  const done = (picked: Exercise[]) => { onPick(picked); close(); };
+  /** single: add it now; multi: toggle it in the selection */
+  const take = (ex: Exercise) => {
+    if (!multi) return done([ex]);
+    setSel((cur) => (cur.some((x) => x.id === ex.id) ? cur.filter((x) => x.id !== ex.id) : [...cur, ex]));
+  };
+  const tap = async (r: Row) => {
+    if (r.virtual) return take(await run(exercisesVariant, { exerciseId: r.ex.id, ...r.virtual }));
+    if (groupOf(r.ex) && !r.ex.variant) {
+      const picked = multi && sel.filter((x) => x.family === r.ex.family && x.equipment === r.ex.equipment);
+      if (picked && picked.length) return setSel((cur) => cur.filter((x) => !picked.includes(x))); // ticked family: untick
+      return setVariantFor(r.ex); // a family: choose grip / width / handle
+    }
+    take(r.ex);
   };
 
   const createRow = (
@@ -80,16 +120,22 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
       </div>
       {!q.trim() && createRow}
       <div>
-        {list.map((e) => {
-          const on = sel.includes(e.id);
+        {list.map((r) => {
+          const e = r.ex;
+          const fam = !!groupOf(e) && !e.variant && !r.virtual;
+          // a family row is ticked when any of its variants is selected
+          const on = !r.virtual && sel.some((x) => (fam ? x.family === e.family && x.equipment === e.equipment : x.id === e.id));
           return (
-            <button key={e.id} className="list-item pressable" style={{ paddingLeft: 4, paddingRight: 4 }}
-              onClick={() => (multi ? setSel(on ? sel.filter((x) => x !== e.id) : [...sel, e.id]) : done([e.id]))}>
+            <button key={r.virtual ? `${e.id}:${r.name}` : e.id} className="list-item pressable" style={{ paddingLeft: 4, paddingRight: 4 }}
+              aria-haspopup={fam ? 'dialog' : undefined} onClick={() => tap(r)}>
               <ExerciseThumb ex={e} />
               <span className="grow">
-                <span className="title" style={{ display: 'block' }}><ExName ex={e} /></span>
-                <span className="sub">{titleCase(e.muscles.join(', '))}{e.secondary?.length ? <span className="faint"> + {titleCase(e.secondary.join(', '))}</span> : null}{e.unilateral ? ' · one side' : ''}{e.custom ? ' · custom' : ''}</span>
+                <span className="title" style={{ display: 'block' }}>{r.virtual ? <>{r.name}{equipmentTag(e) && <span className="eq"> · {equipmentTag(e)}</span>}</> : <ExName ex={e} />}</span>
+                <span className="sub">{r.virtual ? <span className="role-text">New variant</span> : <>{titleCase(e.muscles.join(', '))}{e.secondary?.length ? <span className="faint"> + {titleCase(e.secondary.join(', '))}</span> : null}{e.unilateral ? ' · one side' : ''}{e.custom ? ' · custom' : ''}</>}</span>
               </span>
+              {fam && (r.variants
+                ? <span className="badge num" title={plural(r.variants, 'variant used', 'variants used')}><Icon name="layers" size={12} stroke={2.2} />{r.variants}<span className="sr-only"> {plural(r.variants, 'variant', 'variants')} used</span></span>
+                : <Icon name="layers" size={16} className="faint" aria-label="Has variants" />)}
               {multi && (
                 <span aria-hidden style={{ width: 24, height: 24, borderRadius: 12, display: 'grid', placeItems: 'center', flex: 'none',
                   background: on ? 'var(--role-solid, var(--accent-solid))' : 'transparent', border: on ? 0 : '2px solid var(--line)', color: 'var(--on-role, #fff)' }}>
@@ -103,7 +149,9 @@ export function ExercisePicker({ open, onClose, onPick, multi, title = 'Add exer
         {!!q.trim() && createRow /* real matches first, create at the end */}
       </div>
       <ExerciseEditor open={creating} initialName={q} onClose={() => setCreating(false)}
-        onSaved={(ex) => (multi ? setSel([...sel, ex.id]) : done([ex.id]))} />
+        onSaved={take} />
+      <VariantSheet open={!!variantFor} exercise={variantFor} onClose={() => setVariantFor(undefined)} confirm={multi ? 'Select' : title.startsWith('Replace') ? 'Swap' : 'Add'}
+        onPick={(ex) => { if (multi) setSel((cur) => (cur.some((x) => x.id === ex.id) ? cur : [...cur, ex])); else done([ex]); }} />
     </Sheet>
   );
 }

@@ -2,6 +2,7 @@ import { db } from './db';
 import type { Exercise } from './types';
 import { rank, tokenize } from '../lib/search';
 import { equipmentLabel } from '../lib/equipment';
+import { FAMILIES, groupOf, variantFromQuery, WORDS, type Variant } from '../lib/variants';
 
 /** The standard version of each big lift (by id, so it survives renames), nudged above other variants until your own usage takes over. */
 export const STAPLES = new Set([
@@ -96,10 +97,19 @@ const ALIASES: Record<string, string[]> = {
   "Farmer's Walk": ['farmers carry', 'farmer carry', 'הליכת חקלאי'],
 };
 
+/** Aliases of the exercise's own name plus its family's base name, so "Lat Pulldown · Close Grip" keeps "pulldown", "פולי עליון", … */
+const aliasesOf = (e: Exercise) => {
+  const base = e.family ? FAMILIES[e.family]?.name : undefined;
+  return [...(ALIASES[e.name] ?? []), ...(base && base !== e.name ? ALIASES[base] ?? [] : [])];
+};
+/** A variant's option words ("narrow", "v bar", "supinated"), placed right after the name so "close grip bench" ranks the
+ *  close-grip variant first. Bases get none: a query naming a variant that doesn't exist yet ("wide pulldown") still finds
+ *  the base through the ranker's one-missing-word allowance, and the picker then offers that variant. */
+const variantWords = (e: Exercise) => (e.variant && groupOf(e) ? Object.values(e.variant).flatMap((v) => WORDS[v as string] ?? []) : []);
 const cache = new WeakMap<Exercise, string[]>();
 export const exerciseTokens = (e: Exercise) => {
   let t = cache.get(e);
-  if (!t) { t = tokenize(`${e.name} ${e.equipment} ${equipmentLabel(e.equipment)} ${e.muscles.join(' ')} ${(ALIASES[e.name] ?? []).join(' ')}`); cache.set(e, t); }
+  if (!t) { t = tokenize(`${e.name} ${variantWords(e).join(' ')} ${e.equipment} ${equipmentLabel(e.equipment)} ${e.muscles.join(' ')} ${aliasesOf(e).join(' ')}`); cache.set(e, t); }
   return t;
 };
 
@@ -123,11 +133,18 @@ export function searchExercises(pool: Exercise[], query: string, usage?: Usage, 
   const q = tokenize(query).join(' ');
   const aliasBonus = (e: Exercise) => {
     let b = 0;
-    for (const a of ALIASES[e.name] ?? []) { const t = tokenize(a).join(' '); if (t === q) return -1.5; if (q.length >= 3 && t.startsWith(q) && t[q.length] !== ' ') b = -0.6; } // mid-word only: "press" ≠ "press up"
+    for (const a of aliasesOf(e)) { const t = tokenize(a).join(' '); if (t === q) return -1.5; if (q.length >= 3 && t.startsWith(q) && t[q.length] !== ' ') b = -0.6; } // mid-word only: "press" ≠ "press up"
     return b;
+  };
+  // a variant whose grip / width / handle is exactly what the query names ("rope pushdown") beats its base
+  const want = variantFromQuery(query);
+  const wantKeys = Object.keys(want) as (keyof Variant)[];
+  const variantBonus = (e: Exercise) => {
+    const axes = e.variant ? groupOf(e)?.axes.filter((k) => wantKeys.includes(k)) ?? [] : [];
+    return axes.length && axes.every((k) => e.variant![k] === want[k]) ? -1.5 : 0;
   };
   return rank(pool, query, {
     tokensOf: exerciseTokens, keyOf: (e) => e.id, nameLength: (e) => e.name.length, usage, limit,
-    bias: (e) => (e.custom ? -0.5 : 0) + (STAPLES.has(e.id) ? -1.2 : 0) + (EQUIPMENT_BIAS[e.equipment] ?? 0.08) + aliasBonus(e),
+    bias: (e) => (e.custom ? -0.5 : 0) + (STAPLES.has(e.id) ? -1.2 : 0) + (EQUIPMENT_BIAS[e.equipment] ?? 0.08) + aliasBonus(e) + variantBonus(e),
   });
 }

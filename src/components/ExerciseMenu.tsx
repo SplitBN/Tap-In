@@ -4,6 +4,7 @@
 import { useId, useState } from 'react';
 import type { Exercise, Settings, WorkoutItem } from '../db/types';
 import { exerciseLabel } from '../lib/equipment';
+import { groupOf, variantLabel } from '../lib/variants';
 import { fmtDuration, plural } from '../lib/format';
 import { defaultRestSec } from '../lib/science';
 import { Icon } from './Icon';
@@ -20,11 +21,13 @@ export function repsText(it: Pick<WorkoutItem, 'repsMin' | 'repsMax'>) {
 }
 
 export function ExerciseMenu({ open, onClose, item, ex, settings, nextEx, linked, canLeft, canRight,
-  onChange, onSuperset, onReplace, onRemove, onInfo, onEditEx, onMove, onAdd, initialSub }: {
+  onChange, onSuperset, onReplace, onVariant, onRemove, onInfo, onEditEx, onMove, onAdd, initialSub }: {
   open: boolean; onClose: () => void; item: WorkoutItem; ex?: Exercise; settings: Settings;
   /** the exercise after this one (superset partner), undefined when this is the last */
   nextEx?: Exercise | null; linked: boolean; canLeft: boolean; canRight: boolean;
   onChange: (next: WorkoutItem) => void; onSuperset: () => void; onReplace: () => void; onRemove: () => void;
+  /** grip / width / handle variants of this exercise (shown only when it has some) */
+  onVariant?: () => void;
   onInfo: () => void; onEditEx: () => void; onMove: (d: -1 | 1) => void; onAdd: () => void;
   /** open straight on a sub-sheet (e.g. the reps target from the exercise header) */
   initialSub?: Sub;
@@ -90,6 +93,12 @@ export function ExerciseMenu({ open, onClose, item, ex, settings, nextEx, linked
           </div>
 
           <div className="group">
+            {onVariant && groupOf(ex) && (
+              <button className="am-row pressable" onClick={onVariant} aria-haspopup="dialog">
+                <Icon name="layers" /><span className="grow">Variant</span>
+                <span className="am-val ellipsis" style={{ maxWidth: '45%' }}>{variantLabel(groupOf(ex)!, ex!.variant, ex!.family) || 'Standard'}</span>
+              </button>
+            )}
             <button className="am-row pressable" onClick={onReplace}><Icon name="swap" /><span className="grow">Replace</span></button>
             <button className="am-row pressable danger" onClick={onRemove}><Icon name="trash" /><span className="grow">Remove</span></button>
           </div>

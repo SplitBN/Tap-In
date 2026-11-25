@@ -27,7 +27,7 @@ const TITLES: Record<string, string> = {
   'plans.reorderWorkouts': 'Reorder workouts', 'workouts.create': 'New workout', 'workouts.rename': 'Rename workout', 'workouts.delete': 'Delete workout',
   'items.add': 'Add exercises', 'items.update': 'Edit exercise', 'items.remove': 'Remove exercise', 'items.replace': 'Replace exercise', 'items.reorder': 'Reorder exercises',
   'items.move': 'Move exercise', 'items.toggleSupersetWithNext': 'Superset', 'sessions.start': 'Start workout', 'sessions.finish': 'Finish workout',
-  'sets.log': 'Log set', 'sets.update': 'Edit set', 'sets.delete': 'Delete set', 'exercises.create': 'New exercise', 'maintenance.apply': 'Apply maintenance',
+  'sets.log': 'Log set', 'sets.update': 'Edit set', 'sets.delete': 'Delete set', 'exercises.create': 'New exercise', 'exercises.variant': 'Exercise variant', 'maintenance.apply': 'Apply maintenance',
   'journal.add': 'Add to journal', 'journal.update': 'Edit journal entry', 'journal.end': 'End journal entry', 'journal.delete': 'Delete journal entry',
   'memory.save': 'Save memory', 'memory.delete': 'Delete memory', 'memory.pin': 'Pin memory',
 };
@@ -50,7 +50,7 @@ const REF_MARK = '\u2063';
 const isMarked = (v: unknown): v is string => typeof v === 'string' && v.startsWith(REF_MARK);
 const marked = (fn: (id: string) => Promise<string | undefined>) => async (id: string) => (isMarked(id) ? id.slice(1) : fn(id));
 const NEW_NOUN: Record<string, string> = { 'workouts.create': 'workout', 'workouts.createFromSession': 'workout', 'plans.create': 'plan', 'exercises.create': 'exercise',
-  'exercises.duplicate': 'exercise', 'foods.create': 'food', 'supplements.save': 'supplement', 'stacks.save': 'stack', 'journal.add': 'journal entry', 'sessions.start': 'workout session' };
+  'exercises.duplicate': 'exercise', 'exercises.variant': 'exercise variant', 'foods.create': 'food', 'supplements.save': 'supplement', 'stacks.save': 'stack', 'journal.add': 'journal entry', 'sessions.start': 'workout session' };
 async function refLabel(ref: string, all: RequestAction[], depth = 0): Promise<string> {
   const r = parseRef(ref)!;
   const src = all[r.index];

@@ -3,13 +3,16 @@
 // Naming model: a clean movement name ("Bench Press") + the `equipment` field (barbell, dumbbell, machine,
 // smith machine, cable, …). Grip, stance and attachment go in the user's notes — except variants that are
 // genuinely different lifts (close-grip bench, chin-up vs pull-up, sumo / Romanian deadlift, front squat,
-// incline / decline, …), which keep their own entry. Names keep an equipment word only where it is part of
+// incline / decline, …), which keep their own entry. Grip / width / attachment variants (close-grip bench, reverse-grip
+// pulldown, rope pushdown, …) are Exercise records with `family` + `variant` (src/lib/variants.ts): the base gets its family
+// from its name, a seeded variant names it in its overrides ({ variant }), and the rest are created on demand in the app.
+// Names keep an equipment word only where it is part of
 // the movement's own name (Cable Crossover, Seated Cable Row, Kettlebell Swing, Trap Bar Deadlift).
 //
 // Every source exercise (after the category filter) must be in KEEP or DROP — the build fails otherwise,
 // so a dataset update can't sneak unreviewed entries in. (name, equipment) must be unique.
 //
-// KEEP: source id → new name, or [new name, overrides]. Overrides: equipment, loadType, unilateral, mechanic.
+// KEEP: source id → new name, or [new name, overrides]. Overrides: equipment, loadType, unilateral, mechanic, family, variant.
 // loadType / unilateral default to what the source name implies (see build-exercises.mjs).
 
 const SMITH = { equipment: 'smith machine' };
@@ -31,8 +34,8 @@ export const KEEP = {
   'Decline_Dumbbell_Bench_Press': 'Decline Bench Press',
   'Smith_Machine_Decline_Press': ['Decline Bench Press', SMITH],
   'Leverage_Decline_Chest_Press': 'Decline Chest Press',
-  'Close-Grip_Barbell_Bench_Press': 'Close-Grip Bench Press',
-  'Smith_Machine_Close-Grip_Bench_Press': ['Close-Grip Bench Press', SMITH],
+  'Close-Grip_Barbell_Bench_Press': ['Close-Grip Bench Press', { family: 'bench-press', variant: { width: 'close' } }],
+  'Smith_Machine_Close-Grip_Bench_Press': ['Close-Grip Bench Press', { ...SMITH, family: 'bench-press', variant: { width: 'close' } }],
   'Floor_Press': 'Floor Press',
   'Dumbbell_Floor_Press': 'Floor Press',
   'Dumbbell_Flyes': 'Chest Fly',
@@ -45,18 +48,18 @@ export const KEEP = {
   'Pushups': 'Push-Up',
   'Incline_Push-Up': 'Incline Push-Up',
   'Decline_Push-Up': ['Decline Push-Up', BW],
-  'Push-Ups_-_Close_Triceps_Position': 'Close-Grip Push-Up',
+  'Push-Ups_-_Close_Triceps_Position': ['Close-Grip Push-Up', { family: 'push-up', variant: { width: 'close' } }],
   'Dips_-_Chest_Version': ['Chest Dip', BW],
 
   // ---------- back ----------
   'Pullups': 'Pull-Up',
-  'Chin-Up': 'Chin-Up',
-  'V-Bar_Pullup': 'Neutral-Grip Pull-Up',
+  'Chin-Up': ['Chin-Up', { family: 'pull-up', variant: { grip: 'underhand' } }],
+  'V-Bar_Pullup': ['Neutral-Grip Pull-Up', { family: 'pull-up', variant: { grip: 'neutral' } }],
   'Band_Assisted_Pull-Up': ['Assisted Pull-Up', { equipment: 'bands', loadType: 'assisted' }],
   'Muscle_Up': ['Muscle-Up', BW],
   'Wide-Grip_Lat_Pulldown': 'Lat Pulldown',
-  'V-Bar_Pulldown': 'Close-Grip Lat Pulldown',
-  'Underhand_Cable_Pulldowns': 'Reverse-Grip Lat Pulldown',
+  'V-Bar_Pulldown': ['Close-Grip Lat Pulldown', { family: 'lat-pulldown', variant: { attachment: 'v-handle' } }],
+  'Underhand_Cable_Pulldowns': ['Reverse-Grip Lat Pulldown', { family: 'lat-pulldown', variant: { grip: 'underhand' } }],
   'One_Arm_Lat_Pulldown': 'One-Arm Lat Pulldown',
   'Straight-Arm_Pulldown': 'Straight-Arm Pulldown',
   'Bent_Over_Barbell_Row': 'Bent-Over Row',

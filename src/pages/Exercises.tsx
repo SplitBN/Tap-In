@@ -8,8 +8,20 @@ import { titleCase, plural } from '../lib/format';
 import { keyToDate } from '../lib/nutrition';
 import { run } from '../api/registry';
 import { progressExercises } from '../api/progress';
+import { groupKey, groupOf, variantLabel } from '../lib/variants';
 
 const MUSCLES = ['chest', 'lats', 'middle back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings', 'glutes', 'calves', 'abdominals', 'forearms', 'traps', 'lower back'];
+
+type LibRow = { id: string; name: string; equipment: string; family: string | null; variant: Exercise['variant'] | null; sessions: number; lastDate: string | null; muscles: string[] };
+/** Variants under their family: rows of the same family + equipment gather at the first one's position, base first. */
+function groupRows<T extends LibRow>(list: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const e of list) { const k = groupKey({ id: e.id, family: e.family ?? undefined, equipment: e.equipment }); groups.set(k, [...(groups.get(k) ?? []), e]); }
+  return [...groups.values()].map((g) => [...g].sort((a, b) => Number(!!a.variant) - Number(!!b.variant)));
+}
+const usageText = (e: LibRow) => e.sessions
+  ? `${plural(e.sessions, 'session', 'sessions')} · last ${keyToDate(e.lastDate!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: e.lastDate!.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}`
+  : titleCase(e.muscles.join(', ')) || 'Not done yet';
 
 /** Exercise library: browse or search every exercise and open its progress page, no workout needed. */
 export function ExercisesPage() {
@@ -49,19 +61,31 @@ export function ExercisesPage() {
       </div>
       {list && (list.length ? (
         <div className="list">
-          {list.map((e) => {
-            const ex = e as unknown as Exercise; // name, equipment and images are all ExName / ExerciseThumb read
+          {groupRows(list).map(([head, ...rest]) => {
+            const ex = head as unknown as Exercise; // name, equipment and images are all ExName / ExerciseThumb read
             return (
-              <Link key={e.id} to={`/exercise/${e.id}`} className="list-item pressable">
-                <ExerciseThumb ex={ex} />
-                <span className="grow">
-                  <span className="title" style={{ display: 'block' }}><ExName ex={ex} /></span>
-                  <span className="sub num">
-                    {e.sessions ? `${plural(e.sessions, 'session', 'sessions')} · last ${keyToDate(e.lastDate!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: e.lastDate!.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' })}` : titleCase(e.muscles.join(', ')) || 'Not done yet'}
+              <div key={head.id} role="group" aria-label={rest.length ? `${head.name} and ${plural(rest.length, 'variant', 'variants')}` : undefined}>
+                <Link to={`/exercise/${head.id}`} className="list-item pressable">
+                  <ExerciseThumb ex={ex} />
+                  <span className="grow">
+                    <span className="title" style={{ display: 'block' }}><ExName ex={ex} /></span>
+                    <span className="sub num">{usageText(head)}</span>
                   </span>
-                </span>
-                <Icon name="chevronRight" className="chev" size={18} />
-              </Link>
+                  <Icon name="chevronRight" className="chev" size={18} />
+                </Link>
+                {rest.map((v) => {
+                  const g = groupOf(v as unknown as Exercise);
+                  return (
+                    <Link key={v.id} to={`/exercise/${v.id}`} className="list-item pressable" style={{ minHeight: 48, paddingLeft: 72 }}>
+                      <span className="grow">
+                        <span className="title" style={{ display: 'block', fontSize: '0.9375rem' }}>{(g && variantLabel(g, v.variant ?? undefined, v.family ?? undefined)) || 'Standard'}</span>
+                        <span className="sub num">{usageText(v)}</span>
+                      </span>
+                      <Icon name="chevronRight" className="chev" size={16} />
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </div>

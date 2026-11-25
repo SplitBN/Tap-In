@@ -9,6 +9,7 @@ import { defaultStepKg, e1rm, progressionTarget, RELIABLE_MAX_RTF, rirToRpe, rpe
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
+import { AXES, composeName, FAMILIES, groupOf, normalizeVariant, optionsOf, storedVariant, variantKey, variantLabel, variantMuscles, type Variant } from '../lib/variants';
 import { planStart, planWeek } from '../lib/planWeek';
 import { bestSet, compareToPrevious, e1rmMargin, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount, type BestSet } from '../lib/workoutStats';
 
@@ -32,14 +33,88 @@ const applyPatch = (it: WorkoutItem, p: z.infer<typeof zItemPatch>): WorkoutItem
 // ---------------- exercises ----------------
 export const exercisesSearch = defineCommand({
   name: 'exercises.search', kind: 'query',
-  description: 'Find exercises by name (typo-tolerant, any word order, gym shorthand like "db", "rdl", "ohp"). Returns id, name, muscles, equipment, loadType, unilateral.',
+  description: 'Find exercises by name (typo-tolerant, any word order, gym shorthand like "db", "rdl", "ohp"). Returns id, name, muscles, equipment, loadType, unilateral, ' +
+    'and for grip/width/attachment variants: family (base movement; same family + equipment = variants of one lift, each with its own history), variant (what differs from the base; none = the base) and variantAxes (axes exercises.variant accepts).',
   input: z.object({ query: z.string(), muscle: z.string().optional(), limit: z.number().int().min(1).max(100).default(20) }),
   run: async ({ query, muscle, limit }) => {
     const all = (await db.exercises.toArray()).filter((e) => alive(e) && (!muscle || e.muscles.includes(muscle)));
     return searchExercises(all, query, await exerciseUsage(), limit)
-      .map((e) => ({ id: e.id, name: e.name, muscles: e.muscles, equipment: e.equipment, loadType: e.loadType, unilateral: e.unilateral, mechanic: e.mechanic, custom: !!e.custom }));
+      .map((e) => ({ id: e.id, name: e.name, muscles: e.muscles, equipment: e.equipment, loadType: e.loadType, unilateral: e.unilateral, mechanic: e.mechanic, custom: !!e.custom, ...familyFields(e) }));
   },
 });
+
+/** family / variant / variantAxes for agent-facing exercise rows (absent when the exercise has no variant group). */
+export function familyFields(e: Exercise) {
+  const g = groupOf(e);
+  return g ? { family: e.family, variant: e.variant ?? null, variantAxes: g.axes } : {};
+}
+
+/** Alive exercises of the same variant group (family + equipment) as `e`, base first. */
+export async function groupMembers(e: Exercise) {
+  if (!groupOf(e)) return [e];
+  const list = await db.exercises.filter((x) => alive(x) && x.family === e.family && x.equipment === e.equipment).toArray();
+  return list.sort((a, b) => Number(!!a.variant) - Number(!!b.variant) || a.name.localeCompare(b.name));
+}
+
+const zVariantInput = {
+  width: z.enum(['close', 'medium', 'wide']).optional(),
+  grip: z.enum(['overhand', 'underhand', 'neutral', 'mixed']).optional(),
+  attachment: z.enum(['bar', 'straight-bar', 'ez-bar', 'rope', 'v-handle', 'single-handle']).optional(),
+};
+export const exercisesVariant = defineCommand({
+  name: 'exercises.variant', kind: 'action',
+  description: 'Get or create a grip / width / attachment variant of an exercise (e.g. Lat Pulldown with close neutral grip, Bench Press close grip, Triceps Pushdown with rope). ' +
+    'exerciseId = any exercise of the family (see variantAxes in exercises.search); omitted axes = as on the base exercise. Returns the existing matching exercise or creates it ' +
+    '(own history; same equipment, load type, images as the base; muscles adjusted only where measured). Axes the exercise does not offer are refused. Returns the exercise record plus created (true when new).',
+  input: z.object({ exerciseId: zId, ...zVariantInput }),
+  run: async ({ exerciseId, ...axes }) => {
+    const e = await need(db.exercises.get(exerciseId), 'Exercise');
+    const g = groupOf(e);
+    if (!g) throw new Error(`"${exerciseLabel(e)}" has no grip/width/attachment variants`);
+    const want: Variant = Object.fromEntries(Object.entries(axes).filter(([, v]) => v != null));
+    const key = variantKey(g, want);
+    const members = await groupMembers(e);
+    const hit = members.find((m) => variantKey(g, m.variant) === key);
+    if (hit) return { ...hit, created: false };
+    const base = members.find((m) => !m.variant) ?? e;
+    const variant = storedVariant(g, want);
+    const fam = FAMILIES[e.family!];
+    const m = variantMuscles(e.family, e.equipment, variant, base);
+    const rec = await save('exercises', newRecord({
+      name: composeName(base.variant ? fam.name : base.name, e.family!, g, variant), mechanic: base.mechanic, equipment: base.equipment, loadType: base.loadType,
+      unilateral: base.unilateral, muscles: m.muscles, secondary: m.secondary.filter((x) => !m.muscles.includes(x)), images: [...base.images],
+      instructions: base.instructions && [...base.instructions], stepKg: base.stepKg, custom: true, family: e.family, variant,
+    }) as Exercise);
+    return { ...rec, created: true };
+  },
+});
+
+export const exercisesFamily = defineCommand({
+  name: 'exercises.family', kind: 'query',
+  description: 'The variant group of an exercise (same family + equipment): axes with their options and the default (= the base exercise), and every existing variant with its usage (sessions = finished sessions with done sets, lastDate). family null = no variants.',
+  input: z.object({ exerciseId: zId }),
+  run: async ({ exerciseId }) => {
+    const e = await need(db.exercises.get(exerciseId), 'Exercise');
+    const g = groupOf(e);
+    if (!g) return { family: null, equipment: e.equipment, axes: [], members: [] };
+    const members = await groupMembers(e);
+    const ended = new Map((await db.sessions.filter((x) => alive(x) && !!x.endedAt).toArray()).map((x) => [x.id, x.startedAt]));
+    const ids = new Set(members.map((m) => m.id));
+    const use = new Map<string, { seen: Set<string>; last: number }>();
+    await db.sets.each((x) => {
+      if (!x.doneAt || x.deletedAt || !ids.has(x.exerciseId) || !ended.has(x.sessionId)) return;
+      const u = use.get(x.exerciseId) ?? { seen: new Set<string>(), last: 0 };
+      u.seen.add(x.sessionId); u.last = Math.max(u.last, ended.get(x.sessionId)!); use.set(x.exerciseId, u);
+    });
+    return {
+      family: e.family!, equipment: e.equipment, baseName: FAMILIES[e.family!].name,
+      axes: AXES.filter((a) => g.axes.includes(a)).map((axis) => ({ axis, options: optionsOf(g, axis), default: normalizeVariant(g, undefined)[axis] })),
+      members: members.map((m) => ({ id: m.id, name: m.name, label: exerciseLabel(m), variant: m.variant ?? null, text: variantLabel(g, m.variant, m.family), selection: normalizeVariant(g, m.variant),
+        custom: !!m.custom, sessions: use.get(m.id)?.seen.size ?? 0, lastDate: use.get(m.id) ? dateKey(use.get(m.id)!.last) : null })),
+    };
+  },
+});
+export type ExerciseFamily = Awaited<ReturnType<typeof exercisesFamily.run>>;
 
 export const exercisesCreate = defineCommand({
   name: 'exercises.create', kind: 'action',
