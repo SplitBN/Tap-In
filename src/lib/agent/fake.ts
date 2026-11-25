@@ -167,7 +167,7 @@ function title(body: TurnRequest): string {
 export async function* fakeTurn(body: TurnRequest, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   await sleep(250, signal);
   const provider = body.provider ?? 'chatgpt';
-  const done: TurnEvent = { type: 'done', provider, model: provider === 'chatgpt' ? 'gpt-6.1-sol' : 'z-ai/glm-5.3-flash', effort: body.effort === 'title' ? 'low' : body.effort ?? 'auto' };
+  const done: TurnEvent = { type: 'done', provider, model: provider === 'chatgpt' ? 'gpt-6.1-sol' : 'z-ai/glm-5.3-flash', effort: body.effort === 'title' || body.effort === 'voice' ? 'low' : body.effort ?? 'auto' };
   if (!body.tools.length) { yield { type: 'text', delta: title(body) }; yield done; return; }
   const p = plan(body.messages, body.tools.map((t) => t.name));
   if (p.text) {

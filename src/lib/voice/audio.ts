@@ -1,6 +1,7 @@
 // Web Audio plumbing for calls: one AudioContext (created + resumed inside the Call tap — iOS only unlocks audio in a
 // user gesture), the mic tap (AudioWorklet, ScriptProcessor fallback) and an ordered playback queue.
 import { pcm16ToFloat } from './vad';
+import { timeStretch } from './stretch';
 import type { SpokenAudio } from './api';
 
 /** Call synchronously from the tap handler, before any await. */
@@ -71,6 +72,8 @@ export class Player {
   onSpeaking: (on: boolean) => void = () => {};
   onChunk: (text: string) => void = () => {};
   onError: (e: unknown) => void = () => {};
+  /** called right before each chunk starts playing (latency metrics) */
+  onFirstAudio: (() => void) | null = null;
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
@@ -122,14 +125,24 @@ export class Player {
         try { a = await item.audio; } catch (e) { if (g === this.gen) this.onError(e); continue; }
         if (g !== this.gen) break;
         this.onChunk(item.text);
-        if (a.kind === 'synth') { await this.playSynth(a.text, g); continue; }
+        if (a.kind === 'synth') { this.onFirstAudio?.(); await this.playSynth(a.text, g); continue; }
         let buffer: AudioBuffer;
         try {
           if (a.kind === 'pcm') {
-            const f = pcm16ToFloat(a.data);
+            const f = timeStretch(pcm16ToFloat(a.data), a.rate, a.speed ?? 1);
             buffer = this.ctx.createBuffer(1, Math.max(1, f.length), a.rate);
             buffer.getChannelData(0).set(f);
-          } else buffer = await this.ctx.decodeAudioData(a.data.slice(0));
+          } else {
+            buffer = await this.ctx.decodeAudioData(a.data.slice(0));
+            if (a.speed && Math.abs(a.speed - 1) >= 0.01) {
+              // the model has no speed parameter: faster playback with the pitch kept (first channel; TTS is mono)
+              const f = timeStretch(buffer.getChannelData(0), buffer.sampleRate, a.speed);
+              const sped = this.ctx.createBuffer(1, Math.max(1, f.length), buffer.sampleRate);
+              sped.getChannelData(0).set(f);
+              buffer = sped;
+            }
+          }
+          this.onFirstAudio?.();
         } catch (e) { this.onError(e); continue; }
         if (g !== this.gen) break;
         await this.playBuffer(buffer, g);

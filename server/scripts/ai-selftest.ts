@@ -3,12 +3,12 @@
 import { chatgptProvider, parseResponsesStream, toInput } from '../src/ai/chatgpt';
 import { decrypt, encrypt } from '../src/ai/crypto';
 import { openrouterProvider, parseChatStream, toChat } from '../src/ai/openrouter';
-import { DEFAULT_CONFIG, DEFAULT_GLOBAL, mergeConfig, mergeGlobal, prettyModel, runTurn } from '../src/ai/provider';
+import { DEFAULT_CONFIG, DEFAULT_GLOBAL, mergeConfig, mergeGlobal, prettyModel, resolveEffort, runTurn } from '../src/ai/provider';
 import { ProviderError, type Provider, type TurnEvent } from '../src/ai/types';
 import { ACADEMIC_PREFIX, checkUrl, htmlToText, webAnswerBody } from '../src/ai/web';
 import { HttpError } from '../src/http';
-import { audioExt, handleVoice, pickFormat, speakable, wavSeconds } from '../src/ai/voice';
-import { DEFAULT_VOICE } from '../src/ai/voiceConfig';
+import { audioExt, handleVoice, pickFormat, speakable, speedPlan, wavSeconds } from '../src/ai/voice';
+import { DEFAULT_VOICE, upgradeStoredVoice } from '../src/ai/voiceConfig';
 
 let fails = 0;
 const ok = (cond: unknown, name: string) => { if (!cond) { fails++; console.log('FAIL', name); } else console.log('ok  ', name); };
@@ -106,6 +106,10 @@ ok(old.titleEffort === 'medium' && old.extractEffort === 'medium' && !('helperEf
 const nw = mergeGlobal(DEFAULT_GLOBAL, { helperEffort: 'medium', titleEffort: 'high', extractEffort: 'auto', defaultEffort: 'auto' });
 ok(nw.titleEffort === 'high' && nw.extractEffort === 'auto' && nw.defaultEffort === 'auto', 'new effort fields win over helperEffort');
 ok(mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: null }).openrouterProvider === null && mergeGlobal(DEFAULT_GLOBAL, { openrouterProvider: { order: [] } }).openrouterProvider === null, 'mergeGlobal routing off');
+// voice turns: 'voice' → voiceEffort (default low) for everyone; explicit levels stay admin-only
+ok(DEFAULT_GLOBAL.voiceEffort === 'low' && mergeGlobal(DEFAULT_GLOBAL, { voiceEffort: 'medium' }).voiceEffort === 'medium' && mergeGlobal(DEFAULT_GLOBAL, { voiceEffort: 'max' }).voiceEffort === 'low', 'voiceEffort default + merge');
+ok(resolveEffort('voice', DEFAULT_GLOBAL, false) === 'low' && resolveEffort('title', DEFAULT_GLOBAL, false) === 'low' && resolveEffort('high', DEFAULT_GLOBAL, false) === 'auto'
+  && resolveEffort('high', DEFAULT_GLOBAL, true) === 'high' && resolveEffort(null, DEFAULT_GLOBAL, true) === 'auto', 'resolveEffort: voice/title for all, explicit admin-only');
 ok(prettyModel('gpt-6.1-sol') === 'GPT-6.1 Sol' && prettyModel('z-ai/glm-5.3-flash') === 'GLM 5.3 Flash', 'prettyModel');
 
 // ---- attachments ----
@@ -154,6 +158,20 @@ globalThis.fetch = realFetch;
   const v1 = mergeGlobal(DEFAULT_GLOBAL, { voice: { ttsModel: 'google/gemini-3.8-flash-tts', ttsVoice: 'Kore', sttModel: '', junk: 1 } }).voice;
   ok(v1.ttsModel === 'google/gemini-3.8-flash-tts' && v1.ttsVoice === 'Kore' && v1.sttModel === DEFAULT_VOICE.sttModel && !('junk' in v1), 'mergeVoice');
   ok(mergeGlobal(mergeGlobal(DEFAULT_GLOBAL, { voice: { ttsVoice: 'x' } }), { webModel: 'y' }).voice.ttsVoice === 'x', 'voice survives other global patches');
+  ok(DEFAULT_VOICE.ttsVoice === 'chris' && DEFAULT_VOICE.ttsSpeed === 1.12, 'default voice: male (chris), speed 1.12');
+  ok(mergeGlobal(DEFAULT_GLOBAL, { voice: { ttsSpeed: 5 } }).voice.ttsSpeed === 1.3 && mergeGlobal(DEFAULT_GLOBAL, { voice: { ttsSpeed: 'fast' } }).voice.ttsSpeed === 1.12
+    && mergeGlobal(DEFAULT_GLOBAL, { voice: { ttsSpeed: 1.05 } }).voice.ttsSpeed === 1.05, 'ttsSpeed clamped / validated');
+  const legacy = mergeGlobal(DEFAULT_GLOBAL, upgradeStoredVoice({ voice: { sttModel: 'a/b', ttsModel: 'elevenlabs/eleven-v4-turbo', ttsVoice: 'sarah', ttsStyle: 'Warm, relaxed and conversational, like a friendly coach on a phone call. Natural pace.' } })).voice;
+  ok(legacy.ttsVoice === 'chris' && legacy.sttModel === 'a/b' && legacy.ttsStyle === DEFAULT_VOICE.ttsStyle, 'stored pre-speed row: old default voice/style upgraded, other picks kept');
+  const kept = mergeGlobal(DEFAULT_GLOBAL, upgradeStoredVoice({ voice: { ttsVoice: 'george' } })).voice;
+  const newRow = mergeGlobal(DEFAULT_GLOBAL, upgradeStoredVoice({ voice: { ttsVoice: 'sarah', ttsSpeed: 1 } })).voice;
+  ok(kept.ttsVoice === 'george' && newRow.ttsVoice === 'sarah' && newRow.ttsSpeed === 1, 'an admin pick (or a new row with sarah) stays');
+  const sv = (ttsSpeed: number) => ({ ...DEFAULT_VOICE, ttsSpeed });
+  const noSpeed = { voices: [], formats: ['mp3'], instructions: false, speed: null };
+  const ranged = { voices: [], formats: ['mp3'], instructions: false, speed: { min: 0.7, max: 1.2 } };
+  ok(speedPlan(sv(1.12), noSpeed).native === null && speedPlan(sv(1.12), noSpeed).client === 1.12, 'speedPlan: no speed param → client stretch');
+  ok(speedPlan(sv(1.12), ranged).native === 1.12 && speedPlan(sv(1.12), ranged).client === 1, 'speedPlan: native when the model lists a range');
+  ok(speedPlan(sv(1.3), ranged).native === 1.2 && speedPlan(sv(1.3), ranged).client === 1.08 && speedPlan(sv(1), ranged).native === null && speedPlan(sv(1), noSpeed).client === 1, 'speedPlan: clamp + remainder, 1 = nothing');
   // a 1 s, 16 kHz mono 16-bit WAV
   const wav = (secs: number) => { const n = Math.round(16000 * secs), b = new Uint8Array(44 + n * 2), dv = new DataView(b.buffer);
     const w = (o: number, s: string) => [...s].forEach((ch, i) => (b[o + i] = ch.charCodeAt(0)));
@@ -176,7 +194,8 @@ globalThis.fetch = realFetch;
     calls.push({ url, init });
     if (url.includes('/audio/speech/models/')) return Response.json({ data: { endpoints: [{ output_modalities: [{ type: 'speech', supported_parameters: url.includes('gemini')
       ? { voice: { type: 'enum', values: ['Kore'] }, response_format: { type: 'enum', values: ['pcm'] }, instructions: { type: 'unknown' } }
-      : { voice: { type: 'enum', values: ['sarah'] }, response_format: { type: 'enum', values: ['mp3', 'pcm'] } } }] }] } });
+      : url.includes('eleven-v3') ? { voice: { type: 'enum', values: ['chris'] }, response_format: { type: 'enum', values: ['mp3', 'pcm'] }, speed: { type: 'range', min: 0.7, max: 1.2 } }
+      : { voice: { type: 'enum', values: ['chris', 'sarah'] }, response_format: { type: 'enum', values: ['mp3', 'pcm'] } } }] }] } });
     if (url.endsWith('/audio/transcriptions')) return Response.json({ text: ' log two eggs ', usage: { seconds: 1 } });
     if (url.endsWith('/audio/speech')) return new Response(stream('ID3fakeaudio'), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
     return new Response('{}', { status: 404 });
@@ -204,8 +223,13 @@ globalThis.fetch = realFetch;
   const spCall = calls.find((c) => c.url.endsWith('/audio/speech'))!;
   const spBody = JSON.parse(String(spCall.init!.body));
   ok(sp.status === 200 && sp.headers.get('Content-Type') === 'audio/mpeg' && (await sp.text()) === 'ID3fakeaudio', 'speak streams audio back (mp3)');
-  ok(spBody.model === DEFAULT_VOICE.ttsModel && spBody.voice === 'sarah' && spBody.input === 'Logged two eggs.' && spBody.response_format === 'mp3' && !('instructions' in spBody) && !('provider' in spBody),
-    'speak body: model/voice/clean input/mp3, no routing, no instructions for eleven');
+  ok(spBody.model === DEFAULT_VOICE.ttsModel && spBody.voice === 'chris' && spBody.input === 'Logged two eggs.' && spBody.response_format === 'mp3' && !('instructions' in spBody) && !('provider' in spBody) && !('speed' in spBody),
+    'speak body: model/voice/clean input/mp3, no routing, no instructions or speed for eleven v4');
+  ok(sp.headers.get('X-Tapin-Speed') === '1.12', 'speak v4: client stretch factor in X-Tapin-Speed');
+  calls.length = 0;
+  const v3 = await call('/ai/voice/speak', { method: 'POST', body: JSON.stringify({ text: 'Hi.' }) }, vEnv(true, { ttsModel: 'elevenlabs/eleven-v3', ttsVoice: 'chris', ttsSpeed: 1.12 })) as Response;
+  const v3Body = JSON.parse(String(calls.find((c) => c.url.endsWith('/audio/speech'))!.init!.body));
+  ok(v3Body.speed === 1.12 && v3.headers.get('X-Tapin-Speed') === null, 'speak v3: native speed, no client stretch');
   calls.length = 0;
   const gsp = await call('/ai/voice/speak', { method: 'POST', body: JSON.stringify({ text: 'Hi there.' }) }, vEnv(true, { ttsModel: 'google/gemini-3.8-flash-tts', ttsVoice: 'Kore' })) as Response;
   const gBody = JSON.parse(String(calls.find((c) => c.url.endsWith('/audio/speech'))!.init!.body));

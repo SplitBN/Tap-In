@@ -103,7 +103,8 @@ function CallScreen({ call, onClose }: { call: VoiceCall; onClose: () => void })
         <div className="vc-status" aria-live="polite">
           <span className="vc-state">{!snap.micOk && snap.state === 'listening' ? 'Type to talk' : STATUS[snap.state]}</span>
           {snap.state === 'speaking' && snap.agent ? <span className="vc-caption" dir="auto">{snap.agent}</span>
-            : snap.you && (snap.state === 'thinking' || snap.state === 'transcribing') ? <span className="vc-caption you" dir="auto">“{snap.you}”</span> : null}
+            : snap.you && (snap.state === 'thinking' || snap.state === 'transcribing' || snap.state === 'hearing') ? <span className="vc-caption you" dir="auto">“{snap.you}”</span> : null}
+          {snap.debug && <span className="vc-debug faint t-13">{snap.debug}</span>}
         </div>
       </div>
 

@@ -494,3 +494,50 @@ field). Defaults: `openai/gpt-transcribe`, `elevenlabs/eleven-v4-turbo`, voice `
   databases: `scripts/check-food-search.mjs` (`npm run check:search`, also part of `npm run build`).
 - **Fake provider**: "make a workout" → one request (`workouts.create` + `items.add` with `workoutId: "$0.id"` and
   per-exercise targets); "make a broken workout" → same with a bogus exercise id (fails at step 2, the workout shell stays).
+
+# Voice latency + keyboard first-open (2026-11-25) — override earlier sections where they differ
+
+**Effort for call turns.** `/ai/turn` accepts `effort: 'voice'` from anyone (like `'title'`); the server maps it to
+`AIGlobal.voiceEffort` (new, default `'low'`, admin row "Voice calls"). The client sends it for every turn of a chat
+while a call is live (`setVoiceTurns(chatId, on)` in `loop.ts`; not keyed on `Chat.voice`, which stays true after the
+call). Pure resolver `resolveEffort()` in `provider.ts`. **Deploy the Worker before the client**: an older Worker
+rejects the unknown effort and every call turn would fail.
+
+**Voice config.** `VoiceConfig.ttsSpeed` (0.7–1.3, default 1.12). Default voice `chris` (ElevenLabs premade, male).
+`GET /ai/voice/voices` also returns `speed: {min,max} | null` (from the speech catalog). `/ai/voice/speak` sends `speed`
+only when the model lists a range (clamped); otherwise (eleven-v4 / v4-turbo: no speed control) it answers with
+`X-Tapin-Speed: <factor>` (exposed via CORS) and the client time-stretches the decoded audio with pitch kept
+(`src/lib/voice/stretch.ts`, WSOLA). A stored `ai_global` row without `ttsSpeed` (saved before this change) has the old
+default voice `sarah` / old style dropped on load (`upgradeStoredVoice`) so the new defaults apply.
+
+**Transcribe while talking.** OpenRouter's `/audio/transcriptions` takes whole files only (no streaming input; the
+Nemotron "streaming" ASR is request/response there and slower: p50 1.24 s vs gpt-transcribe 0.70 s). So the VAD cuts
+the utterance at pauses and each piece is transcribed in the background:
+- VAD events `start → (segment | retract)* → end | drop`. A **segment** is cut at 260 ms of silence (once per pause,
+  ≥ 250 ms voiced); one shorter than 1.2 s is **provisional**: if speech resumes it is retracted (request aborted) and
+  its audio joins the next segment. End of utterance at **500 ms** silence (was 700). `end.tail` = audio after the last
+  cut; it is transcribed only if it has ≥ 120 ms of voice (normally the last segment already covers everything, so
+  nothing is left to send at the end). Segments + tail = the utterance exactly (no audio is sent twice except a
+  retracted provisional fragment), so STT cost is ~unchanged.
+- Captions fill in live from finished segments. On a failed segment the whole utterance is re-sent once.
+- **End guard:** if the joined transcript doesn't end with sentence punctuation, the controller waits until 1.1 s of
+  silence before sending; speech in that window is merged into the same message (also when the user starts again
+  while the previous part is still being transcribed).
+- **No speculative LLM start**: `sendMessage` persists the user message and the loop executes tools (auto-permitted
+  writes included) as soon as the model asks; a discarded speculative turn could not be made side-effect free without a
+  second, non-persisting loop. Segmented STT already removes most of the post-speech wait.
+
+**Speaking sooner.** The first chunk of a reply goes to TTS at the first sentence end **or a clause break (comma /
+dash) after ≥ 6 words**; later chunks unchanged (sentence ends, ≥ 40 chars), each requested as soon as its text is
+complete. The first chunk is **hedged**: a second identical `/speak` goes out if the first hasn't answered after
+1.4 s, first to finish wins (TTS p90 ≈ 2.9 s vs p50 0.9 s). Byte-streamed playback is not used: mp3 via MSE isn't
+reliable on iOS and the ElevenLabs PCM sample rate behind OpenRouter isn't documented. The call note asks for the
+answer first, no preamble. `VoiceCall.timings` / console `[voice] ms after speech end` log stt / send / firstText /
+firstAudio per exchange.
+
+**Keyboard (first open).** `lib/viewport.ts` re-measures every frame after focusin / vv resize / vv scroll until the
+visual viewport has been unchanged for 300 ms (min 450 ms, max 2.5 s; was a fixed 900 ms), then one final pass; a 250 ms
+poll while the keyboard is open (or a chat input is focused) catches changes that fire no event (iOS: the late
+QuickType bar on the first show); a chat-input focusin pins the document at once (`kb-pin`) so the first keyboard is
+measured against the pinned layout; `navigator.virtualKeyboard` `geometrychange` is also listened to where it exists.
+`/vvdebug` shows a timestamped trace (event, vv h/top, kb, P = pinned, g = composer gap).

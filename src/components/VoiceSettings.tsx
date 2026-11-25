@@ -6,11 +6,12 @@ import type { AIGlobal, VoiceConfig } from '../lib/agent/types';
 import { voiceModels, voiceVoices } from '../lib/voice/api';
 
 type M = { id: string; name: string };
+const SPEEDS = [0.9, 1, 1.05, 1.1, 1.12, 1.15, 1.2, 1.25];
 
 export function VoiceAdminRows({ g, save }: { g: AIGlobal; save: (patch: Partial<AIGlobal>) => void | Promise<void> }) {
   const v: VoiceConfig = { ...DEFAULT_GLOBAL.voice!, ...g.voice };
   const [lists, setLists] = useState<{ stt: M[]; tts: M[] }>({ stt: [], tts: [] });
-  const [info, setInfo] = useState<{ voices: string[]; instructions: boolean } | null>(null);
+  const [info, setInfo] = useState<{ voices: string[]; instructions: boolean; speed?: { min: number; max: number } | null } | null>(null);
   const [style, setStyle] = useState(v.ttsStyle);
   useEffect(() => { voiceModels().then(setLists).catch(() => {}); }, []);
   useEffect(() => { let on = true; setInfo(null); voiceVoices(v.ttsModel).then((r) => on && setInfo(r)).catch(() => {}); return () => { on = false; }; }, [v.ttsModel]);
@@ -25,6 +26,8 @@ export function VoiceAdminRows({ g, save }: { g: AIGlobal; save: (patch: Partial
       <Pick label="Voice: listening" sub="Speech to text" list={lists.stt} value={v.sttModel} onChange={(sttModel) => set({ sttModel })} />
       <Pick label="Voice: speaking" sub="Text to speech" list={lists.tts} value={v.ttsModel} onChange={pickModel} />
       <Pick label="Voice" list={(info?.voices ?? []).map((id) => ({ id, name: id }))} value={v.ttsVoice} onChange={(ttsVoice) => set({ ttsVoice })} />
+      <Pick label="Speaking speed" sub={info && !info.speed ? 'Sped up on the phone (this model has no speed setting)' : undefined}
+        list={SPEEDS.map((n) => ({ id: String(n), name: `${n.toFixed(2).replace(/0$/, '')}×` }))} value={String(v.ttsSpeed ?? 1)} onChange={(s) => set({ ttsSpeed: Number(s) })} />
       {info?.instructions && (
         <div className="list-item" style={{ flexWrap: 'wrap' }}>
           <span className="grow title">Speaking style</span>

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-no-direct-writes.mjs && node --disable-warning=ExperimentalWarning scripts/check-food-search.mjs && tsc -b && vite build",
+    "build": "node scripts/check-no-direct-writes.mjs && node --disable-warning=ExperimentalWarning scripts/check-food-search.mjs && node --disable-warning=ExperimentalWarning scripts/check-voice.mjs && tsc -b && vite build",
     "check:search": "node --disable-warning=ExperimentalWarning scripts/check-food-search.mjs",
+    "check:voice": "node --disable-warning=ExperimentalWarning scripts/check-voice.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

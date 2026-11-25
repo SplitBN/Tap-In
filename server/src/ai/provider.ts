@@ -4,7 +4,7 @@ import type { Env } from '../index';
 import { chatgptProvider } from './chatgpt';
 import { decrypt } from './crypto';
 import { openrouterProvider } from './openrouter';
-import { DEFAULT_VOICE, mergeVoice } from './voiceConfig';
+import { DEFAULT_VOICE, mergeVoice, upgradeStoredVoice } from './voiceConfig';
 import { EFFORTS, ProviderError, type AIConfig, type AIGlobal, type Effort, type Provider, type ProviderId, type TurnEvent, type TurnRequest } from './types';
 
 export const DEFAULT_CONFIG: AIConfig = { primary: 'chatgpt', fallback: 'openrouter' };
@@ -16,6 +16,7 @@ export const DEFAULT_GLOBAL: AIGlobal = {
   defaultEffort: 'auto',
   titleEffort: 'low',
   extractEffort: 'auto',
+  voiceEffort: 'low',
   webModel: 'perplexity/sonar',
   voice: DEFAULT_VOICE,
 };
@@ -23,6 +24,16 @@ export const DEFAULT_GLOBAL: AIGlobal = {
 export const PROVIDERS: ProviderId[] = ['chatgpt', 'openrouter'];
 const modelId = (v: unknown) => typeof v === 'string' && v.trim() && v.length <= 200 ? v.trim() : undefined;
 export const isEffort = (v: unknown): v is Effort => EFFORTS.includes(v as Effort);
+
+/** Effort for one /ai/turn. Effort is admin-only, but the client may name a purpose: 'title' → titleEffort,
+ *  'voice' (a turn during a voice call: latency matters most) → voiceEffort. An explicit level counts only for admins
+ *  (testing); everything else gets defaultEffort. */
+export function resolveEffort(asked: Effort | 'title' | 'voice' | null, g: AIGlobal, admin: boolean): Effort {
+  if (asked === 'title') return g.titleEffort;
+  if (asked === 'voice') return g.voiceEffort;
+  if (asked && admin) return asked;
+  return g.defaultEffort;
+}
 
 /** Merge a (partial, untrusted) per-user config over a base; unknown/invalid fields (incl. old `models`) are ignored. */
 export function mergeConfig(base: AIConfig, p: any): AIConfig {
@@ -49,6 +60,7 @@ export function mergeGlobal(base: AIGlobal, p: any): AIGlobal {
   if (isEffort(p.defaultEffort)) g.defaultEffort = p.defaultEffort;
   if (isEffort(p.titleEffort)) g.titleEffort = p.titleEffort;
   if (isEffort(p.extractEffort)) g.extractEffort = p.extractEffort;
+  if (isEffort(p.voiceEffort)) g.voiceEffort = p.voiceEffort;
   g.webModel = modelId(p.webModel) ?? g.webModel;
   g.voice = mergeVoice(g.voice, p.voice);
   return g;
@@ -79,7 +91,7 @@ export async function loadState(env: Env, userId: string): Promise<AiState> {
   if (row?.openrouter_key) { try { orKey = await decrypt(env.AI_ENC_KEY, row.openrouter_key); } catch { orKey = null; } }
   return {
     config: mergeConfig(DEFAULT_CONFIG, parse(row?.config)),
-    global: mergeGlobal(DEFAULT_GLOBAL, parse((glob.results[0] as { config: string } | undefined)?.config)),
+    global: mergeGlobal(DEFAULT_GLOBAL, upgradeStoredVoice(parse((glob.results[0] as { config: string } | undefined)?.config))),
     orKey,
     chatgpt: { connected: !!g?.connected_at, email: g?.connected_at ? g.email ?? undefined : undefined },
   };

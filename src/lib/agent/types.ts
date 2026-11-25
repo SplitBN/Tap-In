@@ -23,12 +23,14 @@ export type AIGlobal = {
   defaultEffort: Effort; // 'auto' = no reasoning parameter (provider default)
   titleEffort: Effort;
   extractEffort: Effort;
+  /** turns during a voice call (/ai/turn effort:'voice'); optional: an older Worker does not send it */
+  voiceEffort?: Effort;
   webModel: string;
   /** voice calls (contract v4); optional: an older Worker does not send it */
   voice?: VoiceConfig;
 };
 /** Admin-only voice-call models: OpenRouter STT + TTS model ids, the TTS voice and its delivery style. */
-export type VoiceConfig = { sttModel: string; ttsModel: string; ttsVoice: string; ttsStyle: string };
+export type VoiceConfig = { sttModel: string; ttsModel: string; ttsVoice: string; ttsStyle: string; /** 0.7–1.3 (native `speed` or client time-stretch) */ ttsSpeed?: number };
 export type AIProviderInfo = { id: ProviderId; connected: boolean; model: string; label: string; video: boolean; files: boolean };
 export type AIStatus = {
   isAdmin: boolean;
@@ -46,7 +48,7 @@ export type TurnEvent =
   | { type: 'done'; provider: string; model: string; effort?: Effort; opaque?: unknown; usage?: { input: number; output: number } }
   | { type: 'error'; code: 'no_provider' | 'auth' | 'limit' | 'provider' | 'bad_request' | 'network'; message: string };
 
-export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; /** only 'title' from the client (server maps it to titleEffort) */ effort?: Effort | 'title'; provider?: ProviderId };
+export type TurnRequest = { instructions: string; messages: AIMessage[]; tools: AITool[]; /** only 'title' / 'voice' from the client (server maps them to titleEffort / voiceEffort) */ effort?: Effort | 'title' | 'voice'; provider?: ProviderId };
 
 export type RequestAction = {
   name: string;

@@ -1,25 +1,42 @@
 // A voice call = a normal chat driven by voice (contract v4). Mic → VAD → /ai/voice/transcribe → sendMessage (the
 // usual agent loop) → the streamed reply is cut into sentences → /ai/voice/speak per chunk → ordered playback.
+// Latency (2026-11-25): the utterance is transcribed in segments while the user talks (cut at pauses, see Vad), so at
+// the end only a short tail (usually nothing) is left; the first reply chunk goes to TTS at the first clause and is
+// hedged; call turns run at the admin's voiceEffort (low).
 // The transcript stays readable afterwards because it *is* the chat. Nothing here touches the loop's internals:
 // this controller subscribes to the loop's live text (subscribeLive) and cuts it into sentences as it streams.
-import { getLive, isRunning, sendMessage, stop as stopLoop, subscribeLive } from '../agent/loop';
+import { getLive, isRunning, sendMessage, setVoiceTurns, stop as stopLoop, subscribeLive } from '../agent/loop';
 import { setChatFields } from '../agent/chats';
 import type { AIPart } from '../agent/types';
-import { speak, transcribe } from './api';
+import { speak, speakFast, transcribe } from './api';
 import { openMic, Player, type Mic } from './audio';
-import { encodeWav, resample, speakableText, takeChunks, Vad } from './vad';
+import { encodeWav, resample, speakableText, takeChunks, Vad, type VadEvent } from './vad';
 
 /** Rides on every user message of a call as a hidden context part (constant text: cache-friendly, not in the
  *  byte-stable instructions). isContextPart() hides it in the chat and keeps it out of titles. */
 export const VOICE_NOTE = '<context>voice call: the user is talking to you and hears your reply read aloud. Answer in short, natural spoken sentences '
   + '(usually one to three), like a person on the phone. No markdown, lists, tables, emoji, URLs or ids, and never read out JSON or long number lists. '
+  + 'Lead with the answer itself in the first few words; skip preambles like “Sure” or “Great question”. '
   + 'Cards (food logs, requests, questions, charts) still appear on the user’s screen during the call: when you create one, say so in a few words, '
   + 'e.g. “I’ve put it on screen, tap Log to save it.” Their words come from speech recognition and may have mistakes; if something sounds off, ask.</context>';
 
 export type CallState = 'starting' | 'listening' | 'hearing' | 'transcribing' | 'thinking' | 'speaking' | 'muted' | 'ended';
-export type CallSnapshot = { state: CallState; you: string; agent: string; error: string; micOk: boolean; photos: number; frames: number };
+/** debug: last exchange's latency line (only with localStorage 'tapin:voicedebug' = '1') */
+export type CallSnapshot = { state: CallState; you: string; agent: string; error: string; micOk: boolean; photos: number; frames: number; debug?: string };
 
 const MAX_FRAMES_PER_UTTERANCE = 3;
+/** Utterance end: the VAD ends at 500 ms of silence. If the transcript then doesn't end like a sentence, wait until
+ *  HOLD_MS of silence before answering (and merge if the user goes on): people pause mid-sentence. Heuristic: the
+ *  STT sometimes puts a period after a fragment, and then we answer at 500 ms as before. */
+const HOLD_MS = 1100;
+const SENTENCE_END = /[.!?…。？！؟]["'”’)\]]*\s*$/;
+/** first reply chunk: a second TTS request if the first hasn't answered by then */
+const HEDGE_MS = 1800; // above the measured p75 (1.6 s): ~1 in 5 first chunks gets a duplicate request
+
+/** One utterance being transcribed in segments (index order). */
+type Utt = { id: number; segs: Map<number, { ctl: AbortController; text: Promise<string> }>; done: Map<number, string> };
+/** Latency marks of one exchange, ms from the end of the user's voice. */
+export type VoiceTimings = { stt?: number; send?: number; firstText?: number; firstAudio?: number; segments: number; tailSent: boolean; ttsHead?: number; ttsBody?: number };
 const MAX_FRAMES_PER_CALL = 24;
 const FRAME_EVERY_MS = 2000;
 
@@ -49,6 +66,18 @@ export class VoiceCall {
   /** set by the call screen while the camera is on; returns a ≤768 px JPEG part or null */
   frameSource: (() => AIPart | null) | null = null;
   live = false;
+  // utterance in progress (segments in flight), text held for a possible continuation
+  private utt: Utt | null = null;
+  private uttSeq = 0;
+  private carry = '';
+  /** utterance endings finish in order: a later part waits until the earlier part's text is in `carry` */
+  private finalizing: Promise<void> = Promise.resolve();
+  private holdTimer = 0;
+  // metrics
+  private t0 = 0;
+  private marks: VoiceTimings = { segments: 0, tailSent: false };
+  /** latency marks of the last exchanges (window.tapinVoice.call.timings) */
+  timings: VoiceTimings[] = [];
 
   constructor(chatId: string, ctx: AudioContext) {
     this.chatId = chatId;
@@ -58,6 +87,20 @@ export class VoiceCall {
     this.player.onSpeaking = (on) => { this.vad.bargeIn = on; if (on) this.set({ state: 'speaking' }); else if (!this.ended) this.settle(); };
     this.player.onChunk = (text) => this.set({ agent: text });
     this.player.onError = (e) => this.set({ error: `Couldn’t play the voice: ${(e as Error).message ?? 'error'}` });
+    this.player.onFirstAudio = () => this.mark('firstAudio');
+  }
+
+  private mark(k: 'stt' | 'send' | 'firstText' | 'firstAudio') {
+    if (!this.t0 || this.marks[k] !== undefined) return;
+    this.marks[k] = Math.round(performance.now() - this.t0);
+    if (k === 'firstAudio') {
+      this.timings = [...this.timings.slice(-19), { ...this.marks }];
+      console.info('[voice] ms after speech end', this.marks);
+      let dbg = false;
+      try { dbg = localStorage.getItem('tapin:voicedebug') === '1'; } catch { /* ignore */ }
+      const m = this.marks;
+      if (dbg) this.set({ debug: `stt ${m.stt ?? '–'} · send ${m.send ?? '–'} · 1st text ${m.firstText ?? '–'} · 1st audio ${m.firstAudio} ms · seg ${m.segments}${m.tailSent ? '+tail' : ''}${m.ttsHead !== undefined ? ` · tts ${m.ttsHead}/${m.ttsBody}` : ''}` });
+    }
   }
 
   // ---- store-ish API for React (useSyncExternalStore) ----
@@ -79,6 +122,7 @@ export class VoiceCall {
     if (this.started) return;
     this.started = true;
     void setChatFields(this.chatId, { voice: true });
+    setVoiceTurns(this.chatId, true);
     // every live delta, synchronously (a React effect would see only the batched last value and miss whole replies)
     let prev = getLive(this.chatId);
     this.unsubLive = subscribeLive(() => { const l = getLive(this.chatId); if (l.text !== prev.text || l.running !== prev.running) { prev = l; this.feedLive(l.text, l.running); } });
@@ -100,6 +144,8 @@ export class VoiceCall {
   end() {
     if (this.ended) return;
     this.ended = true;
+    setVoiceTurns(this.chatId, false);
+    this.dropUtterance();
     this.abort.abort();
     this.unsubLive?.(); this.unsubLive = null;
     this.player.stop();
@@ -116,6 +162,7 @@ export class VoiceCall {
     this.muted = m;
     if (this.mic) this.mic.track.enabled = !m;
     this.vad.reset();
+    this.dropUtterance();
     this.player.duck(false);
     this.settle();
   }
@@ -151,6 +198,7 @@ export class VoiceCall {
       if (!this.player.busy) this.settle();
     }
     if (running && !this.wasRunning) this.firstChunk = true;
+    if (text) this.mark('firstText');
     this.wasRunning = running;
   }
 
@@ -158,8 +206,12 @@ export class VoiceCall {
     for (const c of chunks) {
       const t = speakableText(c);
       if (!t) continue;
+      // the first chunk of a reply is what the user waits on: hedge it against a slow TTS request
+      const first = this.firstChunk;
       this.firstChunk = false;
-      this.player.enqueue(t, speak(t, this.abort.signal));
+      const audio = first ? speakFast(t, this.abort.signal, HEDGE_MS) : speak(t, this.abort.signal);
+      if (first) audio.then((a) => { if (a.ms && this.marks.ttsHead === undefined) { this.marks.ttsHead = a.ms.head; this.marks.ttsBody = a.ms.body; } }, () => {});
+      this.player.enqueue(t, audio);
     }
   }
 
@@ -169,14 +221,30 @@ export class VoiceCall {
     for (const ev of this.vad.push(s)) {
       if (ev.type === 'start') {
         this.player.duck(true); // a cough must not kill the reply: only a real utterance (sendUtterance) stops it
-        this.uttFrames = [];
-        this.grabFrame();
+        if (this.holdTimer) {
+          // the user went on after a pause that looked like the end: keep what was said, merge it with this part
+          clearTimeout(this.holdTimer); this.holdTimer = 0;
+        } else if (!this.carry) {
+          this.uttFrames = [];
+          this.grabFrame();
+        }
+        this.utt = { id: ++this.uttSeq, segs: new Map(), done: new Map() };
         if (this.live) { clearInterval(this.frameTimer); this.frameTimer = window.setInterval(() => this.grabFrame(), FRAME_EVERY_MS); }
-        this.set({ state: 'hearing' });
+        this.set({ state: 'hearing', you: this.carry ? this.carry + '…' : '' }); // live caption fills in as segments come back
+      } else if (ev.type === 'segment') {
+        this.transcribeSegment(ev.index, ev.samples);
+      } else if (ev.type === 'retract') {
+        this.utt?.segs.get(ev.index)?.ctl.abort();
+        this.utt?.segs.delete(ev.index); this.utt?.done.delete(ev.index);
       } else {
         clearInterval(this.frameTimer);
-        if (ev.type === 'drop') { this.uttFrames = []; this.player.duck(false); this.settle(); continue; }
-        void this.handleUtterance(ev.samples);
+        if (ev.type === 'drop') {
+          if (this.utt) for (const x of this.utt.segs.values()) x.ctl.abort();
+          this.utt = null;
+          if (this.carry) { const t = this.carry; this.carry = ''; void this.sendUtterance(t); continue; } // a cough after a held sentence
+          this.uttFrames = []; this.player.duck(false); this.settle(); continue;
+        }
+        void this.handleUtterance(ev);
       }
     }
   }
@@ -188,21 +256,91 @@ export class VoiceCall {
     if (this.callFrames >= MAX_FRAMES_PER_CALL) { this.live = false; this.set({ error: 'Live camera paused: frame limit for this call reached. Use the shutter for more.' }); }
   }
 
-  private async handleUtterance(samples: Float32Array) {
-    this.set({ state: 'transcribing' });
+  /** Send one segment for transcription now (in the background); captions update as segments come back. */
+  private transcribeSegment(index: number, samples: Float32Array) {
+    const utt = this.utt;
+    if (!utt) return;
+    const ctl = new AbortController();
+    this.abort.signal.addEventListener('abort', () => ctl.abort());
     const wav = encodeWav(resample(samples, this.ctx.sampleRate, 16000), 16000);
-    let text = '';
-    try { text = await transcribe(new Blob([wav as BlobPart], { type: 'audio/wav' }), this.abort.signal); }
-    catch (e) {
-      if (this.ended) return;
-      this.set({ error: (e as Error).message || 'Couldn’t hear that. Try again.' });
-      this.uttFrames = [];
-      this.player.duck(false);
-      return this.settle();
+    const text = transcribe(new Blob([wav as BlobPart], { type: 'audio/wav' }), ctl.signal, { utt: utt.id, index });
+    text.catch(() => {}); // awaited (and handled) at the end of the utterance
+    utt.segs.set(index, { ctl, text });
+    void text.then((t) => {
+      if (this.utt !== utt || utt.segs.get(index)?.text !== text) return;
+      utt.done.set(index, t);
+      const partial = this.joinDone(utt);
+      if (partial && this.snap.state === 'hearing') this.set({ you: [this.carry, partial].filter(Boolean).join(' ') + '…' });
+    }, () => {});
+  }
+  /** The text of the leading run of finished segments. */
+  private joinDone(utt: Utt) {
+    const out: string[] = [];
+    for (let i = 0; utt.done.has(i); i++) out.push(utt.done.get(i)!);
+    return out.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  private dropGen = 0; // bumped when an utterance is thrown away (mute / end): its late transcripts are ignored
+  private dropUtterance() {
+    this.dropGen++;
+    if (this.utt) for (const x of this.utt.segs.values()) x.ctl.abort();
+    this.utt = null;
+    clearTimeout(this.holdTimer); this.holdTimer = 0;
+    this.carry = '';
+  }
+
+  private async handleUtterance(ev: Extract<VadEvent, { type: 'end' }>) {
+    const prev = this.finalizing;
+    let release = () => {};
+    this.finalizing = new Promise<void>((r) => { release = r; });
+    try { await this.finishUtterance(ev, prev); } finally { release(); }
+  }
+
+  private async finishUtterance(ev: Extract<VadEvent, { type: 'end' }>, prev: Promise<void>) {
+    const utt = this.utt ?? { id: ++this.uttSeq, segs: new Map(), done: new Map() };
+    this.utt = utt;
+    const gen = this.dropGen;
+    this.t0 = performance.now() - this.vad.endSilenceMs; // when the voice stopped
+    this.marks = { segments: utt.segs.size, tailSent: false };
+    this.set({ state: 'transcribing' });
+    // only the tail after the last segment is left, usually just the end-of-speech silence: then nothing is sent
+    if (ev.tailVoicedMs >= 120 || utt.segs.size === 0) {
+      this.marks.tailSent = true; this.marks.segments++;
+      this.transcribeSegment(ev.index, utt.segs.size === 0 ? ev.samples : ev.tail);
     }
-    if (this.ended) return;
-    if (!text || /^[\s.,!?…-]*$/.test(text)) { this.uttFrames = []; this.player.duck(false); return this.settle(); }
-    await this.sendUtterance(text);
+    let text = '';
+    try {
+      const parts: string[] = [];
+      for (const i of [...utt.segs.keys()].sort((x, y) => x - y)) parts.push(await utt.segs.get(i)!.text);
+      text = parts.join(' ').replace(/\s+/g, ' ').trim();
+    } catch (e) {
+      if (this.ended || gen !== this.dropGen || (e as Error).name === 'AbortError') return;
+      // a segment failed: one more try with the whole utterance in one piece
+      try { text = await transcribe(new Blob([encodeWav(resample(ev.samples, this.ctx.sampleRate, 16000), 16000) as BlobPart], { type: 'audio/wav' }), this.abort.signal); }
+      catch (e2) {
+        if (this.ended || gen !== this.dropGen) return;
+        this.set({ error: (e2 as Error).message || 'Couldn’t hear that. Try again.' });
+        this.utt = null; this.carry = ''; this.uttFrames = [];
+        this.player.duck(false);
+        return this.settle();
+      }
+    }
+    await prev; // an earlier part still being transcribed lands in `carry` first
+    if (this.ended || gen !== this.dropGen) return; // muted / ended meanwhile
+    if (this.utt !== utt) { this.carry = [this.carry, text].filter(Boolean).join(' '); return; } // talking again: merge into the next part
+    this.utt = null;
+    this.mark('stt');
+    const full = [this.carry, text].filter((t) => t && !/^[\s.,!?…-]*$/.test(t)).join(' ').trim();
+    if (!full) { this.carry = ''; this.uttFrames = []; this.player.duck(false); return this.settle(); }
+    // doesn't sound finished: give the user up to HOLD_MS of silence to go on (a new start merges, see onSamples)
+    const silent = performance.now() - this.t0;
+    if (!SENTENCE_END.test(full) && silent < HOLD_MS) {
+      this.carry = full;
+      this.set({ you: full + '…' });
+      this.holdTimer = window.setTimeout(() => { this.holdTimer = 0; const t = this.carry; this.carry = ''; if (t && !this.vad.isSpeaking) void this.sendUtterance(t); else this.carry = t; }, HOLD_MS - silent);
+      return;
+    }
+    this.carry = '';
+    await this.sendUtterance(full);
   }
 
   private async sendUtterance(text: string) {
@@ -213,6 +351,7 @@ export class VoiceCall {
     if (this.uttFrames.length) parts.splice(1 + this.photos.length, 0, { type: 'text', text: `<context>${this.uttFrames.length} live camera frame${this.uttFrames.length > 1 ? 's' : ''} taken while the user spoke</context>` });
     this.photos = []; this.uttFrames = [];
     this.set({ you: text, agent: '', error: '', photos: 0, state: 'thinking' });
+    this.mark('send');
     this.firstChunk = true; this.lastText = ''; this.taken = 0;
     this.sending = true;
     void sendMessage(this.chatId, parts).finally(() => { this.sending = false; if (!this.ended && !this.player.busy) this.settle(); });

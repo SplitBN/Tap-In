@@ -25,6 +25,7 @@ export type AIGlobal = {
   defaultEffort: Effort; // chat turns
   titleEffort: Effort; // chat title call (/ai/turn effort:'title')
   extractEffort: Effort; // web/read extract
+  voiceEffort: Effort; // turns during a voice call (/ai/turn effort:'voice'), default 'low'
   webModel: string;
   voice: VoiceConfig; // voice calls: STT / TTS models + voice (voiceConfig.ts)
 };

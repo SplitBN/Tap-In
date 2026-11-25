@@ -58,7 +58,11 @@ function unpan() {
   if (document.body.scrollTop) document.body.scrollTop = 0;
 }
 
-function keyboard() {
+/** Pin-zone focus seen, keyboard not measured yet: hold the document pinned meanwhile, so the first keyboard show is
+ *  measured (and panned by iOS) against the same pinned layout as every later one. */
+let prePinUntil = 0;
+
+function keyboard(reason = '') {
   const frameH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || window.innerHeight;
   const root = document.documentElement;
   let vv = vvNow();
@@ -67,7 +71,8 @@ function keyboard() {
   // reveal the input and again when a scroller overscrolls at its top (scroll chaining); reading offsetTop while that
   // pan comes and goes made the composer drop under the keyboard and "teleport" back. Pinned, offsetTop stays ~0 and
   // the chat is simply the top vv.height px of the screen.
-  const pin = kb > 0 && inPinZone();
+  const zone = inPinZone();
+  const pin = zone && (kb > 0 || performance.now() < prePinUntil);
   if (pin) { unpan(); vv = vvNow(); kb = keyboardInset(vv, frameH, window.innerHeight); }
   root.style.setProperty('--kb', `${kb}px`);
   // While the keyboard is open, screens with a bottom input pin themselves to the visible rectangle iOS reports
@@ -78,13 +83,15 @@ function keyboard() {
   root.style.setProperty('--vv-h', `${Math.round(vv?.height ?? window.innerHeight)}px`);
   root.style.setProperty('--kb-top', `${top}px`);
   root.classList.toggle('kb-open', kb > 0);
-  root.classList.toggle('kb-pin', pin && kb > 0);
-  debugReadout(kb, frameH);
+  root.classList.toggle('kb-pin', pin);
+  debugReadout(kb, frameH, reason);
 }
 
 /** localStorage 'tapin:vvdebug' = '1' shows the viewport numbers in a corner (for diagnosing iOS keyboard layout).
  *  gap = visible bottom − composer bottom: ≥ 0 means the composer is fully above the keyboard. */
-function debugReadout(kb: number, frameH: number) {
+const trace: string[] = [];
+let traceT0 = 0;
+function debugReadout(kb: number, frameH: number, reason: string) {
   let on = false;
   try { on = localStorage.getItem('tapin:vvdebug') === '1'; } catch { /* ignore */ }
   let el = document.getElementById('vv-debug');
@@ -98,11 +105,18 @@ function debugReadout(kb: number, frameH: number) {
   const comp = document.querySelector('.chat-screen .composer-wrap, .quick-chat .composer-wrap')?.getBoundingClientRect();
   const visBottom = (vv?.offsetTop ?? 0) + (vv?.height ?? window.innerHeight);
   const pin = document.documentElement.classList.contains('kb-pin');
+  // timestamped trace of what changed (first vs later keyboard opens differ on iOS: compare the two on the device)
+  const gap = comp ? Math.round(visBottom - comp.bottom) : NaN;
+  const line = `${reason || '·'} h${Math.round(vv?.height ?? 0)} t${Math.round(vv?.offsetTop ?? 0)} kb${kb}${pin ? 'P' : ''} g${gap}`;
+  if (reason === 'focusin' || !traceT0) traceT0 = performance.now();
+  const stamped = `${Math.round(performance.now() - traceT0)}ms ${line}`;
+  if (trace[trace.length - 1]?.replace(/^\d+ms /, '') !== line) { trace.push(stamped); if (trace.length > 8) trace.shift(); }
   el.textContent = [
     `inner ${window.innerHeight} frame ${frameH} screen ${screen.height}`,
     `vv h ${Math.round(vv?.height ?? 0)} top ${Math.round(vv?.offsetTop ?? 0)} kb ${kb}${pin ? ' pin' : ''}`,
     `scrollY ${Math.round(window.scrollY)} doc ${document.documentElement.clientHeight}`,
-    ...(comp ? [`composer ${Math.round(comp.bottom)} gap ${Math.round(visBottom - comp.bottom)}`] : []),
+    ...(comp ? [`composer ${Math.round(comp.bottom)} gap ${gap}`] : []),
+    ...trace,
   ].join('\n');
 }
 
@@ -132,25 +146,58 @@ export function installViewportFix() {
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', () => setTimeout(apply, 300));
   // iOS fires the first visualViewport resize while the keyboard is still sliding in (height not final) and may not
-  // fire again until the user scrolls — the composer stayed half under the keyboard until then. So after any
-  // viewport/focus change, keep re-measuring every frame for ~900 ms until the keyboard has settled.
-  let until = 0, raf = 0;
-  const settle = () => {
-    until = performance.now() + 900;
+  // fire again. The FIRST show of the keyboard in a session is the slow one: the keyboard process loads, the
+  // QuickType/predictive bar arrives late and shrinks the viewport again (often with no event), and the main thread
+  // can stall long enough that a fixed "measure for 900 ms" window ran out before the final height existed — so the
+  // composer sat under the keyboard only the first time. Now: after any viewport/focus change, re-measure every frame
+  // until the visual viewport has been unchanged for STABLE_MS (at least MIN_MS, at most MAX_MS), then one more pass
+  // (after the pin has re-laid-out the page); and while the keyboard is open a slow poll catches late changes that
+  // fire no event at all.
+  const STABLE_MS = 300, MIN_MS = 450, MAX_MS = 2500;
+  // next frame, or 50 ms when frames are paused (hidden/background page: rAF never fires, the loop must still end)
+  const nextFrame = (f: () => void) => { let done = false; const go = () => { if (!done) { done = true; f(); } }; requestAnimationFrame(go); window.setTimeout(go, 50); return 1; };
+  let raf = 0, started = 0, stableSince = 0, lastSig = '', why = '';
+  const sig = () => { const v = vvNow(); return `${Math.round(v?.height ?? 0)}:${Math.round(v?.offsetTop ?? 0)}:${window.innerHeight}`; };
+  const settle = (reason: string) => {
+    why = reason;
+    started = performance.now(); stableSince = started; lastSig = sig();
+    keyboard(reason);
     if (raf) return;
-    const tick = () => { keyboard(); raf = performance.now() < until ? requestAnimationFrame(tick) : 0; };
-    raf = requestAnimationFrame(tick);
+    const tick = () => {
+      const now = performance.now(), s = sig();
+      if (s !== lastSig) { lastSig = s; stableSince = now; }
+      keyboard(why); why = '';
+      const done = now - started >= MAX_MS || (now - started >= MIN_MS && now - stableSince >= STABLE_MS);
+      if (done) { raf = 0; nextFrame(() => keyboard('final')); return; }
+      raf = nextFrame(tick);
+    };
+    raf = nextFrame(tick);
   };
-  window.visualViewport?.addEventListener('resize', () => { apply(); settle(); });
-  window.visualViewport?.addEventListener('scroll', settle);
-  document.addEventListener('focusin', settle);
+  // slow poll while the keyboard is open (or a pin-zone focus is pending): cheap, and catches silent viewport changes
+  window.setInterval(() => {
+    const root = document.documentElement;
+    if (raf || !(root.classList.contains('kb-open') || root.classList.contains('kb-pin') || inPinZone())) return;
+    if (sig() !== lastSig) settle('poll');
+    // pre-pin ran out and no keyboard came (hardware keyboard, focus without keyboard): unpin
+    else if (root.classList.contains('kb-pin') && !root.classList.contains('kb-open') && performance.now() > prePinUntil) keyboard('expire');
+  }, 250);
+  window.visualViewport?.addEventListener('resize', () => { apply(); settle('vv-resize'); });
+  window.visualViewport?.addEventListener('scroll', () => settle('vv-scroll'));
+  // Chromium's VirtualKeyboard API (not in iOS Safari as of iOS 26; harmless where missing)
+  (navigator as unknown as { virtualKeyboard?: EventTarget }).virtualKeyboard?.addEventListener?.('geometrychange', () => settle('vk-geometry'));
+  document.addEventListener('focusin', () => {
+    // pin before the keyboard arrives, so its first appearance is measured against the pinned layout
+    if (inPinZone()) prePinUntil = performance.now() + MAX_MS;
+    settle('focusin');
+  });
   document.addEventListener('focusout', () => {
+    prePinUntil = 0;
     // leaving a pinned composer: iOS (26) can leave the page panned after the keyboard closes; put it back
     if (document.documentElement.classList.contains('kb-pin')) window.setTimeout(unpan, 60);
-    settle();
+    settle('focusout');
   });
   // pinned chat keyboard: any document scroll is iOS panning it; undo at once (keyboard() re-measures in the settle loop)
-  window.addEventListener('scroll', () => { if (document.documentElement.classList.contains('kb-pin')) { unpan(); settle(); } }, { passive: true });
+  window.addEventListener('scroll', () => { if (document.documentElement.classList.contains('kb-pin')) { unpan(); settle('scroll'); } }, { passive: true });
   installTouchGuard();
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && apply());
 }

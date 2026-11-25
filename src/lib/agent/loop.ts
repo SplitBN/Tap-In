@@ -25,6 +25,11 @@ export const isRunning = (id: string) => !!live.get(id)?.running;
 export const getLive = (id: string): Live => live.get(id) ?? IDLE;
 export const subscribeLive = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
+// ---- chats in a live voice call: their turns ask for effort 'voice' (server → voiceEffort, low by default) ----
+// Keyed on the live call, not Chat.voice (that one stays true after the call, when the chat is typed again).
+const voiceTurns = new Set<string>();
+export function setVoiceTurns(chatId: string, on: boolean) { if (on) voiceTurns.add(chatId); else voiceTurns.delete(chatId); }
+
 // ---- status (cached for a minute): providers, global defaults, web ----
 let statusCache: { at: number; status: AIStatus | null } | null = null;
 export async function cachedStatus(): Promise<AIStatus | null> {
@@ -191,7 +196,7 @@ export async function runLoop(chatId: string) {
       const instructions = await buildInstructions();
       let text = '', opaque: unknown, error: string | null = null, ran: Chat['ran'];
       const calls: AIToolCall[] = [];
-      for await (const ev of turn({ instructions, messages: c.messages, tools, ...(c.provider ? { provider: c.provider } : {}) }, ac.signal)) {
+      for await (const ev of turn({ instructions, messages: c.messages, tools, ...(voiceTurns.has(chatId) ? { effort: 'voice' as const } : {}), ...(c.provider ? { provider: c.provider } : {}) }, ac.signal)) {
         if (ev.type === 'text') { text += ev.delta; setLive(chatId, { text }); }
         else if (ev.type === 'tool_call') calls.push(ev.call);
         else if (ev.type === 'done') { opaque = ev.opaque; ran = { provider: ev.provider, model: ev.model, ...(ev.effort ? { effort: ev.effort } : {}) }; }

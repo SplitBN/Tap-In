@@ -4,7 +4,8 @@
 //   POST /ai/voice/speak        { text } (≤ 1000 chars) → audio bytes streamed straight through from OpenRouter
 //                               /audio/speech. Content-Type: audio/mpeg, or audio/pcm;rate=24000 (16-bit LE mono)
 //   GET  /ai/voice/models       → { stt: {id,name}[], tts: {id,name}[] } (admin pickers; public catalog)
-//   GET  /ai/voice/voices?model → { voices: string[], formats: string[], instructions: boolean }
+//   GET  /ai/voice/voices?model → { voices: string[], formats: string[], instructions: boolean, speed: {min,max}|null }
+// /speak adds X-Tapin-Speed: <factor> when the configured speed isn't reached natively: the client time-stretches.
 // All use the user's own OpenRouter key (409 { code:'no_key' } without one). The chat routing (`openrouterProvider`,
 // e.g. river) is never sent: it names chat providers, not speech ones.
 import type { Env } from '../index';
@@ -12,7 +13,7 @@ import { HttpError, json } from '../http';
 import { OPENROUTER, OR_HEADERS } from './openrouter';
 import { loadState } from './provider';
 import { ProviderError, statusError } from './types';
-import type { VoiceConfig } from './voiceConfig';
+import { clampSpeed, type VoiceConfig } from './voiceConfig';
 
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 export const MAX_AUDIO_SECONDS = 125; // 2 min + a little slack for the end-of-speech silence
@@ -50,7 +51,8 @@ export function transcribeForm(model: string, audio: Uint8Array, ext: string): F
   return f;
 }
 
-export type SpeechInfo = { voices: string[]; formats: string[]; instructions: boolean };
+/** speed: the model's `speed` range when its catalog lists one (null = no speed control). */
+export type SpeechInfo = { voices: string[]; formats: string[]; instructions: boolean; speed?: { min: number; max: number } | null };
 const infoCache = new Map<string, { at: number; info: SpeechInfo | null }>();
 /** What a TTS model takes (public catalog, cached 1 h). null = unknown (catalog unreachable / model not listed). */
 export async function speechInfo(model: string, fetcher: typeof fetch = fetch): Promise<SpeechInfo | null> {
@@ -63,14 +65,16 @@ export async function speechInfo(model: string, fetcher: typeof fetch = fetch): 
       const j = await res.json() as any;
       const d = j?.data ?? j;
       const voices = new Set<string>(), formats = new Set<string>();
-      let instructions = false;
+      let instructions = false, speed: SpeechInfo['speed'] = null;
       for (const e of d?.endpoints ?? []) for (const o of e?.output_modalities ?? []) {
         const sp = o?.supported_parameters ?? {};
         for (const v of sp.voice?.values ?? []) voices.add(String(v));
         for (const v of sp.response_format?.values ?? []) formats.add(String(v));
         if (sp.instructions) instructions = true;
+        const r = sp.speed;
+        if (r && Number.isFinite(r.min) && Number.isFinite(r.max)) speed = speed ? { min: Math.max(speed.min, r.min), max: Math.min(speed.max, r.max) } : { min: r.min, max: r.max };
       }
-      info = { voices: [...voices], formats: [...formats], instructions };
+      info = { voices: [...voices], formats: [...formats], instructions, speed };
     }
   } catch { /* unknown */ }
   infoCache.set(model, { at: Date.now(), info });
@@ -83,9 +87,23 @@ export function pickFormat(model: string, info: SpeechInfo | null): 'mp3' | 'pcm
   return /^google\/gemini/.test(model) ? 'pcm' : 'mp3';
 }
 
+/** How the configured speed is reached: `native` = sent as the model's `speed` (only when its catalog lists a range,
+ *  clamped to it; other models may 400 on it), `client` = what the app still has to time-stretch (pitch kept). */
+export function speedPlan(v: VoiceConfig, info: SpeechInfo | null): { native: number | null; client: number } {
+  const want = clampSpeed(v.ttsSpeed ?? 1);
+  if (Math.abs(want - 1) < 0.005) return { native: null, client: 1 };
+  if (info?.speed && info.speed.max > info.speed.min) {
+    const native = Math.round(Math.min(info.speed.max, Math.max(info.speed.min, want)) * 100) / 100;
+    return { native, client: Math.round((want / native) * 100) / 100 };
+  }
+  return { native: null, client: want };
+}
+
 export function speechBody(v: VoiceConfig, text: string, info: SpeechInfo | null): Record<string, unknown> {
   const body: Record<string, unknown> = { model: v.ttsModel, input: text, voice: v.ttsVoice, response_format: pickFormat(v.ttsModel, info) };
   if (v.ttsStyle && info?.instructions) body.instructions = v.ttsStyle;
+  const { native } = speedPlan(v, info);
+  if (native !== null && native !== 1) body.speed = native;
   return body;
 }
 
@@ -124,7 +142,7 @@ export async function handleVoice(req: Request, env: Env, userId: string, p: str
     const model = url.searchParams.get('model') ?? '';
     if (!model || model.length > 200) throw new HttpError(400, 'model is required');
     const info = await speechInfo(model);
-    return json(info ?? { voices: [], formats: [], instructions: false });
+    return json(info ?? { voices: [], formats: [], instructions: false, speed: null });
   }
 
   if (req.method === 'POST' && p === '/ai/voice/transcribe') {
@@ -167,7 +185,8 @@ export async function handleVoice(req: Request, env: Env, userId: string, p: str
     if (!res.ok || !res.body) throw providerHttp(res.ok ? new ProviderError('provider', 'OpenRouter sent no audio', true) : await upstreamError(res));
     // streamed straight through: the client can start decoding as soon as the request finishes, the Worker holds nothing
     const type = body.response_format === 'pcm' ? `audio/pcm;rate=${PCM_RATE}` : 'audio/mpeg';
-    return new Response(res.body, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
+    const { client } = speedPlan(s.global.voice, info);
+    return new Response(res.body, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store', ...(client !== 1 ? { 'X-Tapin-Speed': String(client) } : {}) } });
   }
 
   throw new HttpError(404, 'Not found');

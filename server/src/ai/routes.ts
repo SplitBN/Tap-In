@@ -5,7 +5,7 @@ import { authorizeUrl, exchangeCode, jwtClaims, pkceChallenge, randomToken, SIWC
 import { encrypt } from './crypto';
 import { resolveChatgptModel } from './chatgpt';
 import { listOpenRouterModels, validateKey } from './openrouter';
-import { completeText, isAdmin, isEffort, loadState, mergeConfig, mergeGlobal, PROVIDERS, prettyModel, providerChain, runTurn, saveConfig, saveGlobal, type AiState } from './provider';
+import { completeText, isAdmin, isEffort, loadState, resolveEffort, mergeConfig, mergeGlobal, PROVIDERS, prettyModel, providerChain, runTurn, saveConfig, saveGlobal, type AiState } from './provider';
 import { ProviderError, type AIMessage, type AITool, type Effort, type ProviderId, type TurnEvent, type TurnRequest } from './types';
 import { EXTRACT_INSTRUCTIONS, extractPrompt, WebError, webAnswer, webRead } from './web';
 import { handleVoice } from './voice';
@@ -188,7 +188,7 @@ function parsePasted(s: unknown): URLSearchParams | null {
 }
 
 // ---------------- /ai/turn ----------------
-type TurnBody = Omit<TurnRequest, 'effort'> & { effort: Effort | 'title' | null; provider: ProviderId | null };
+type TurnBody = Omit<TurnRequest, 'effort'> & { effort: Effort | 'title' | 'voice' | null; provider: ProviderId | null };
 const TIER_EFFORT: Record<string, Effort> = { cheap: 'low', smart: 'high' }; // v1 alias
 
 function validPart(c: any) {
@@ -203,7 +203,7 @@ function validPart(c: any) {
 function validTurn(b: any): TurnBody | null {
   if (!b || typeof b !== 'object') return null;
   const effort = b.effort != null ? b.effort : b.tier != null ? TIER_EFFORT[b.tier] : null;
-  if (effort !== null && effort !== 'title' && !isEffort(effort)) return null;
+  if (effort !== null && effort !== 'title' && effort !== 'voice' && !isEffort(effort)) return null;
   if (b.provider != null && !PROVIDERS.includes(b.provider)) return null;
   if (typeof (b.instructions ?? '') !== 'string' || !Array.isArray(b.messages) || !b.messages.length || !Array.isArray(b.tools ?? [])) return null;
   for (const m of b.messages as AIMessage[]) {
@@ -237,8 +237,8 @@ async function turn(req: Request, env: Env, ctx: ExecutionContext, userId: strin
       const s = await loadState(env, userId);
       const chain = providerChain(env, userId, s, parsed.provider); // the chat's pick first, then the user's fallback
       const { provider: _p, ...rest } = parsed;
-      // effort is admin-only: 'title' → titleEffort; an explicit level counts only for admins (testing); else defaultEffort
-      const effort = parsed.effort === 'title' ? s.global.titleEffort : parsed.effort && isAdmin(env, userId) ? parsed.effort : s.global.defaultEffort;
+      // effort is admin-only: 'title' / 'voice' → titleEffort / voiceEffort; an explicit level only for admins; else defaultEffort
+      const effort = resolveEffort(parsed.effort, s.global, isAdmin(env, userId));
       for await (const ev of runTurn(chain, { ...rest, effort }, abort.signal)) {
         if (abort.signal.aborted) break; // client went away
         await send(ev);

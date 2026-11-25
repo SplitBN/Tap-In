@@ -180,6 +180,7 @@ function AdminSection({ st, onSaved }: { st: AIStatus; onSaved: (g: AIGlobal) =>
         <EffortRow label="Thinking" sub="Every chat. Auto = the model decides" value={g.defaultEffort} onChange={(v) => save({ defaultEffort: v })} />
         <EffortRow label="Chat titles" value={g.titleEffort} onChange={(v) => save({ titleEffort: v })} />
         <EffortRow label="Page extracts" sub="Web pages read with a question" value={g.extractEffort} onChange={(v) => save({ extractEffort: v })} />
+        <EffortRow label="Voice calls" sub="Replies during a call. Low answers fastest" value={g.voiceEffort ?? 'low'} onChange={(v) => save({ voiceEffort: v })} />
         <ModelRow label="Web search model" models={models.openrouter ?? []} value={g.webModel} onChange={(v) => v && save({ webModel: v })} />
         <VoiceAdminRows g={g} save={save} />
       </div>

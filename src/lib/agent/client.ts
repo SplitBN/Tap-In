@@ -32,8 +32,8 @@ const post = <T>(path: string, body: unknown = {}) => req<T>(path, { method: 'PO
 
 export const DEFAULT_GLOBAL: AIGlobal = {
   models: { chatgpt: 'gpt-6.1-sol', openrouter: 'z-ai/glm-5.3-flash' }, openrouterProvider: { order: ['river'], allow_fallbacks: true },
-  defaultEffort: 'auto', titleEffort: 'low', extractEffort: 'auto', webModel: 'perplexity/sonar',
-  voice: { sttModel: 'openai/gpt-transcribe', ttsModel: 'elevenlabs/eleven-v4-turbo', ttsVoice: 'sarah', ttsStyle: 'Warm, relaxed and conversational, like a friendly coach on a phone call. Natural pace.' },
+  defaultEffort: 'auto', titleEffort: 'low', extractEffort: 'auto', voiceEffort: 'low', webModel: 'perplexity/sonar',
+  voice: { sttModel: 'openai/gpt-transcribe', ttsModel: 'elevenlabs/eleven-v4-turbo', ttsVoice: 'chris', ttsStyle: 'Warm, upbeat and conversational, like a friendly coach on a phone call. A brisk, natural pace.', ttsSpeed: 1.12 },
 };
 /** One place that turns whatever /ai/status returns (v2, or a lagging v1 Worker) into the v2 shape. */
 export function normalizeStatus(raw: Partial<AIStatus> & { config?: Partial<AIConfig> }): AIStatus {

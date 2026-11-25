@@ -7,13 +7,29 @@ export type VadOptions = {
   rate: number;
   /** silence that ends an utterance */
   endSilenceMs?: number;
+  /** silence that cuts a segment for early transcription (the utterance goes on) */
+  pauseMs?: number;
+  /** a segment with less voiced audio than this is provisional: if speech resumes it is retracted and merged into the
+   *  next one (short fragments transcribe badly and can fool Hebrew/English auto-detection) */
+  minSegVoicedMs?: number;
   /** audio kept from before the detected start, so the first syllable isn't clipped */
   preRollMs?: number;
   maxMs?: number;
   /** utterances with less voiced audio than this are dropped (coughs, clicks) */
   minVoicedMs?: number;
 };
-export type VadEvent = { type: 'start' } | { type: 'end'; samples: Float32Array; voicedMs: number } | { type: 'drop' };
+/**
+ * start → (segment | retract)* → end | drop.
+ * - segment: audio since the previous cut, emitted at a pause so it can be transcribed while the user goes on.
+ *   `index` counts from 0 per utterance; a retracted index is reused by the next segment.
+ * - end: `samples` = the whole utterance; `tail` = audio after the last segment (often just silence: `tailVoicedMs` ~0).
+ */
+export type VadEvent =
+  | { type: 'start' }
+  | { type: 'segment'; index: number; samples: Float32Array; provisional: boolean }
+  | { type: 'retract'; index: number }
+  | { type: 'end'; samples: Float32Array; voicedMs: number; tail: Float32Array; tailVoicedMs: number; index: number }
+  | { type: 'drop' };
 
 export class Vad {
   readonly rate: number;
@@ -28,6 +44,11 @@ export class Vad {
   private pre: Float32Array[] = [];
   private rec: Float32Array[] = [];
   private recLen = 0;
+  // segments: rec[segFrom..] is the open segment; cut = a segment was emitted in the current pause
+  private segFrom = 0;
+  private segVoiced = 0;
+  private segIndex = 0;
+  private cut: { from: number; voiced: number; provisional: boolean } | null = null;
   private o: Required<VadOptions>;
   /** true while the agent is speaking: higher threshold + longer run to start */
   bargeIn = false;
@@ -35,28 +56,32 @@ export class Vad {
   level = 0;
 
   constructor(opts: VadOptions) {
-    this.o = { endSilenceMs: 700, preRollMs: 300, maxMs: 120_000, minVoicedMs: 300, ...opts };
+    this.o = { endSilenceMs: 500, pauseMs: 260, minSegVoicedMs: 1000, preRollMs: 300, maxMs: 120_000, minVoicedMs: 300, ...opts };
     this.rate = opts.rate;
     this.frameLen = Math.max(64, Math.round(opts.rate * 0.02));
     this.frame = new Float32Array(this.frameLen);
   }
   get isSpeaking() { return this.speaking; }
+  get endSilenceMs() { return this.o.endSilenceMs; }
   private get frameMs() { return (this.frameLen / this.rate) * 1000; }
   threshold() { return this.bargeIn ? Math.max(0.035, this.noise * 5) : Math.max(0.012, this.noise * 3); }
 
   /** Forget the current utterance (mute, barge-in handled elsewhere). */
-  reset() { this.speaking = false; this.above = this.below = this.voiced = 0; this.rec = []; this.recLen = 0; }
+  reset() {
+    this.speaking = false; this.above = this.below = this.voiced = 0; this.rec = []; this.recLen = 0;
+    this.segFrom = 0; this.segVoiced = 0; this.segIndex = 0; this.cut = null;
+  }
 
   push(samples: Float32Array): VadEvent[] {
     const out: VadEvent[] = [];
     for (let i = 0; i < samples.length; i++) {
       this.frame[this.fi++] = samples[i];
-      if (this.fi === this.frameLen) { this.fi = 0; const e = this.onFrame(this.frame.slice()); if (e) out.push(e); }
+      if (this.fi === this.frameLen) { this.fi = 0; this.onFrame(this.frame.slice(), out); }
     }
     return out;
   }
 
-  private onFrame(f: Float32Array): VadEvent | null {
+  private onFrame(f: Float32Array, out: VadEvent[]) {
     let sum = 0;
     for (let i = 0; i < f.length; i++) sum += f[i] * f[i];
     const rms = Math.sqrt(sum / f.length);
@@ -75,24 +100,44 @@ export class Vad {
         this.speaking = true; this.below = 0; this.voiced = this.above;
         this.rec = [...this.pre]; this.recLen = this.rec.reduce((n, x) => n + x.length, 0);
         this.pre = [];
-        return { type: 'start' };
+        this.segFrom = 0; this.segVoiced = this.voiced; this.segIndex = 0; this.cut = null;
+        out.push({ type: 'start' });
       }
-      return null;
+      return;
     }
     this.rec.push(f); this.recLen += f.length;
-    if (rms > thr * 0.7) { this.voiced++; this.below = 0; } else this.below++;
+    if (rms > thr * 0.7) {
+      this.voiced++; this.below = 0;
+      if (this.cut) {
+        // speech resumed after a cut: a long segment stays; a short (provisional) one is taken back and its audio
+        // joins the next segment
+        if (this.cut.provisional) { this.segIndex--; out.push({ type: 'retract', index: this.segIndex }); this.segFrom = this.cut.from; this.segVoiced = this.cut.voiced; }
+        this.cut = null;
+      }
+      this.segVoiced++;
+    } else this.below++;
     const silentMs = this.below * this.frameMs;
+    // pause: cut what we have so far for early transcription (once per pause, only if it holds real speech)
+    if (!this.cut && silentMs >= this.o.pauseMs && this.segVoiced * this.frameMs >= 250 && silentMs < this.o.endSilenceMs) {
+      const provisional = this.segVoiced * this.frameMs < this.o.minSegVoicedMs;
+      out.push({ type: 'segment', index: this.segIndex, samples: concat(this.rec.slice(this.segFrom), -1), provisional });
+      this.cut = { from: this.segFrom, voiced: this.segVoiced, provisional };
+      this.segIndex++; this.segFrom = this.rec.length; this.segVoiced = 0;
+    }
     if (silentMs >= this.o.endSilenceMs || (this.recLen / this.rate) * 1000 >= this.o.maxMs) {
       const voicedMs = this.voiced * this.frameMs;
       const all = concat(this.rec, this.recLen);
+      const tail = concat(this.rec.slice(this.segFrom), -1);
+      const tailVoicedMs = this.segVoiced * this.frameMs;
+      const index = this.segIndex;
       this.reset();
-      return voicedMs < this.o.minVoicedMs ? { type: 'drop' } : { type: 'end', samples: all, voicedMs };
+      out.push(voicedMs < this.o.minVoicedMs ? { type: 'drop' } : { type: 'end', samples: all, voicedMs, tail, tailVoicedMs, index });
     }
-    return null;
   }
 }
 
 function concat(parts: Float32Array[], n: number) {
+  if (n < 0) n = parts.reduce((k, x) => k + x.length, 0);
   const out = new Float32Array(n);
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
@@ -136,6 +181,7 @@ export function pcm16ToFloat(buf: ArrayBuffer): Float32Array {
 
 // ---- sentence chunking for streamed text → TTS ----
 const BOUNDARY = /[.!?…;:]+["'”’)\]]*(?=\s)|\n+/g;
+const CLAUSE = /(?:[,،]|\s[—–-])(?=\s)/g;
 
 /** Strip what must never be read aloud. Returns '' when nothing speakable is left. */
 export function speakableText(s: string) {
@@ -146,7 +192,8 @@ export function speakableText(s: string) {
 
 /**
  * Split newly streamed text into chunks to synthesize. `from` = how much of `text` was already taken.
- * Returns the chunks and the new offset. The first chunk goes out at the first sentence end (low latency); later
+ * Returns the chunks and the new offset. The first chunk goes out at the first sentence end, or at a clause break
+ * (comma / dash) once it has ≥ 6 words (low latency); later
  * short sentences are merged so we don't pay a TTS round trip per "Sure." A run with no boundary is cut at a comma or
  * space once it passes `maxLen`. `final` = the stream ended: everything left is one more chunk.
  */
@@ -160,6 +207,14 @@ export function takeChunks(text: string, from: number, final: boolean, first: bo
     while ((m = BOUNDARY.exec(rest))) {
       const end = m.index + m[0].length;
       if (rest.slice(0, end).trim().length >= (isFirst ? 2 : 40)) { cut = end; break; }
+    }
+    if (isFirst) {
+      // first chunk: don't wait for the whole sentence — a clause (comma / dash) after ≥ 6 words is enough to start talking
+      CLAUSE.lastIndex = 0;
+      while ((m = CLAUSE.exec(rest)) && (cut < 0 || m.index < cut)) {
+        const end = m.index + m[0].length;
+        if (rest.slice(0, end).trim().split(/\s+/).length >= 6) { cut = end; break; }
+      }
     }
     if (cut < 0 && rest.length > maxLen) {
       const sp = Math.max(rest.lastIndexOf(', ', maxLen), rest.lastIndexOf(' ', maxLen));

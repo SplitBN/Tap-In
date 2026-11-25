@@ -51,7 +51,7 @@ export default {
     const origin = req.headers.get('Origin') ?? '';
     const allowed = env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
     const cors: Record<string, string> = allowed.includes(origin)
-      ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Max-Age': '86400', Vary: 'Origin' }
+      ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Max-Age': '86400', 'Access-Control-Expose-Headers': 'X-Tapin-Speed', Vary: 'Origin' }
       : {};
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     try {
