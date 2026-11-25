@@ -72,7 +72,7 @@ export function MorningCheck() {
   const d = useDayStatus(y);
   const nav = useNavigate();
   const [hidden, setHidden] = useState(() => dismissed(y));
-  if (!d || hidden || d.source === 'you' || (d.status !== 'partial' && d.status !== 'unsure')) return null;
+  if (!d || hidden || d.imported || d.source === 'you' || (d.status !== 'partial' && d.status !== 'unsure')) return null;
   const answer = (complete: boolean) => run(daysComplete, { date: y, complete });
   const close = () => { try { localStorage.setItem(dismissKey(y), '1'); } catch { /* private mode */ } setHidden(true); };
   return (

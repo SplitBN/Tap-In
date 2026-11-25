@@ -15,7 +15,7 @@ export const MAX_RESULT = 12_000;
 
 /** Commands the agent may never run or propose. data.export = the whole database in one blob; data.import replaces
  *  records wholesale; agentPrefs.update could switch a category to auto-apply. */
-const BLOCKED = new Set(['data.export', 'data.import', 'agentPrefs.update']);
+const BLOCKED = new Set(['data.export', 'data.import', 'agentPrefs.update', 'import.preview', 'import.run']); // import.preview/run take raw file bytes the agent never has
 const BLOCKED_RE = /^data\.(import|reset|wipe|clear)|\.(reset|wipe|wipeAll|clearAll)$/;
 export const isBlocked = (name: string) => BLOCKED.has(name) || BLOCKED_RE.test(name);
 /** Hidden from the command index: blocked, or covered by a dedicated tool (memory_*). */
@@ -27,7 +27,7 @@ export function findCommand(name: string): Command | undefined {
 }
 export const agentCommands = () => listCommands().filter((c) => !hiddenFromIndex(c.name));
 
-// ---- permissions: category from the command's prefix; anything unmapped always asks ----
+// ---- permissions: category from the command's prefix; anything unmapped always asks (import.undo: never auto-applied) ----
 const CATEGORY: Record<string, AgentCategory> = {
   foods: 'food', entries: 'food', recipes: 'food', goals: 'food', maintenance: 'food', days: 'body',
   plans: 'gym', workouts: 'gym', sessions: 'gym', sets: 'gym', exercises: 'gym', items: 'gym',

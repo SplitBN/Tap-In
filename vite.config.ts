@@ -28,6 +28,7 @@ export default defineConfig({
       workbox: {
         importScripts: ['push-sw.js'], // push + notification click handlers
         globPatterns: ['**/*.{js,css,html,svg,png,json,woff2}'],
+        globIgnores: ['**/xlsx-*.js'], // import-only spreadsheet parser: fetched when the Import page needs it
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {

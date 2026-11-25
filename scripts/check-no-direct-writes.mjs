@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const WRITE_HELPERS = ['save', 'remove', 'updateSettings', 'logTake', 'undoTake', 'createPlan', 'createWorkout', 'startSession', 'finishSession', 'logEntry', 'quickAdd', 'restoreBackup'];
+const WRITE_HELPERS = ['save', 'saveMany', 'remove', 'updateSettings', 'logTake', 'undoTake', 'createPlan', 'createWorkout', 'startSession', 'finishSession', 'logEntry', 'quickAdd', 'restoreBackup'];
 const dirs = ['src/pages', 'src/components'];
 const bad = [];
 

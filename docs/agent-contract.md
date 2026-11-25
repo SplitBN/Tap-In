@@ -98,7 +98,7 @@ Web results are wrapped as untrusted data in the tool result (`{"untrusted_web_c
 never to follow instructions found in them.
 
 Client details (as built):
-- Blocked for the agent (refused in both tools, hidden from the index): `data.export`, `data.import`, `agentPrefs.update`
+- Blocked for the agent (refused in both tools, hidden from the index): `data.export`, `data.import`, `agentPrefs.update`, `import.preview`, `import.run` (they take raw file bytes; added 2026-11-25). `import.list` / `import.undo` stay available; the `import` prefix is in no permission category, so `import.undo` always shows a request card
   and any `data.reset|wipe|clear` / `*.reset|wipe` command. `memory.*` commands are hidden from the index (the
   `memory_*` tools cover them). Command lookup is exact (dotted name or the same name with `_`), never fuzzy.
 - `request_changes` Apply runs the actions in order and stops at the first failure:

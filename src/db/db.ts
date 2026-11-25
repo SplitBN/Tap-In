@@ -58,6 +58,16 @@ export class TapInDB extends Dexie {
     this.version(5).stores({
       journal: 'id, date, updatedAt',
     });
+    // importId: records from a file import (api/import.ts), so an import can be listed and undone as a whole
+    this.version(6).stores({
+      exercises: 'id, name, updatedAt, importId',
+      plans: 'id, updatedAt, importId',
+      workouts: 'id, planId, updatedAt, importId',
+      sessions: 'id, startedAt, endedAt, workoutId, updatedAt, importId',
+      sets: 'id, sessionId, exerciseId, [exerciseId+doneAt], updatedAt, importId',
+      bodyweight: 'id, at, updatedAt, importId',
+      entries: 'id, date, foodId, at, updatedAt, importId',
+    });
   }
 }
 
@@ -77,6 +87,22 @@ export async function save<T extends Base>(table: SyncedTable, rec: T): Promise<
   });
   changed();
   return next;
+}
+
+/** Bulk local-first write (imports): records + outbox entries in one transaction per chunk, listeners told once at the end.
+ *  updatedAt is stamped now (so sync carries them); createdAt is kept when given. */
+export async function saveMany<T extends Base>(table: SyncedTable, recs: T[], chunk = 500, onChunk?: (done: number) => void): Promise<number> {
+  for (let i = 0; i < recs.length; i += chunk) {
+    const now = Date.now();
+    const part = recs.slice(i, i + chunk).map((r) => ({ ...r, updatedAt: now, createdAt: r.createdAt ?? now }));
+    await db.transaction('rw', db.table(table), db.outbox, async () => {
+      await db.table(table).bulkPut(part);
+      await db.outbox.bulkAdd(part.map((r) => ({ table, recordId: r.id, at: now })));
+    });
+    onChunk?.(Math.min(recs.length, i + chunk));
+  }
+  if (recs.length) changed();
+  return recs.length;
 }
 
 /** Listeners notified after every local write (the sync scheduler subscribes). */

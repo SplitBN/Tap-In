@@ -1,0 +1,40 @@
+﻿"Pull · Day 2 · Week 3 · Test Plan A";"2030-03-14 6:05 pm";"1:06 hr"
+"1. Lat Pulldowns with Close Neutral Grip · Cable · 10 reps"
+#;KG;REPS
+1;70;8
+2;62.5;9
+"2. Pull-Ups with Wide Overhand Grip · Bodyweight · 8 reps · Superset 1 · 1 dropset"
+#;KG;REPS
+1;+10;6
+2;+0;7
+"3. Face Pulls with Rope · Cable · 12 reps · Superset 1";4
+#;KG;REPS
+1;20;12
+"4. Plank Thing · Bodyweight · 10 reps"
+#;REPS
+"5. Zorbo curls · Cable · 10 reps"
+#;KG;REPS
+1;15;11
+
+"Push · Day 1 · Week 3 · Test Plan A";"2030-03-12 7:40 am";"52 min"
+"1. Bench Press · Barbell · 6-8 reps"
+#;KG;REPS
+1;80;8
+2;82.5;6
+3;300;7
+"2. Seated Lateral Raises · Dumbbells · 10 reps · 2 dropsets"
+#;KG;REPS
+1;8;14
+"3. Kneeling Crunches · Cable · 15 reps"
+#;KG;REPS
+1;40;60
+
+"Extra · Standalone workout";"2030-03-10 12:00 pm";"1 hr"
+"1. Triceps Pushdowns with Rope · Cable · 10 reps"
+#;KG;REPS
+1;25;10
+
+"Day 2 · Day 2 · Week 1 · Test Plan A";"2030-03-02 9:00 am";"40 min"
+"1. Squats · Barbell · 5 reps"
+#;KG;REPS
+1;100;5

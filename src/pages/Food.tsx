@@ -121,7 +121,7 @@ export function FoodPage() {
                     <FoodTile name={e.name} quick={e.source === 'quick'} />
                     <span className="grow" style={{ minWidth: 0 }}>
                       <span className="fd-name ellipsis bidi-start" dir="auto">{e.name}</span>
-                      <span className="fd-sub">{e.source === 'quick' ? 'Quick add · ' : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
+                      <span className="fd-sub">{e.source === 'quick' ? (e.amount ? `${e.amount} · ` : 'Quick add · ') : `${fmtQty(e)} · `}<MacroLine m={e.n} /></span>
                     </span>
                     <span className="fd-kcal num">{k(e.n.kcal)}<span className="sr-only"> kcal</span></span>
                   </button>

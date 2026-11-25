@@ -108,6 +108,7 @@ export function SettingsPage() {
 
       <div className="section-title">Data</div>
       <div className="list">
+        <Link to="/import" className="list-item pressable"><Icon name="layers" size={20} /><span className="grow"><span className="title">Import</span><span className="sub" style={{ display: 'block' }}>Alpha Progression · MyNetDiary</span></span><Icon name="chevronRight" className="chev" size={18} /></Link>
         <button className="list-item pressable" onClick={async () => saveBackupFile(await run(dataExport, {}))}><Icon name="download" size={20} /><span className="grow title">Export backup (JSON)</span></button>
         <label className="list-item pressable" style={{ cursor: 'pointer' }}>
           <Icon name="upload" size={20} /><span className="grow title">Import backup</span>

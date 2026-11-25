@@ -12,6 +12,7 @@ import { HomePage } from './pages/Home';
 import { AllPlansPage, PlanPage, PlansPage } from './pages/Plans';
 import { SessionPage } from './pages/Session';
 import { SettingsPage } from './pages/Settings';
+import { ImportPage } from './pages/Import';
 import { WeightPage } from './pages/Weight';
 import { WorkoutEditorPage } from './pages/WorkoutEditor';
 import { FoodPage } from './pages/Food';
@@ -117,6 +118,7 @@ export default function App() {
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/weight" element={<WeightPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/import" element={<ImportPage />} />
           <Route path="/food" element={<FoodPage />} />
           <Route path="/nutrition" element={<NutritionPage />} />
           <Route path="/supps" element={<SupplementsPage />} />

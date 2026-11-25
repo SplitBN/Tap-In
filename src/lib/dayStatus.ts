@@ -8,7 +8,7 @@
 import { dateKey, shiftDate } from './nutrition';
 
 export type DayStatusKind = 'open' | 'empty' | 'complete' | 'partial' | 'unsure';
-export interface InferredDay { date: string; status: DayStatusKind; source: 'auto' | 'you'; kcal: number; baseline: number | null; reason: string }
+export interface InferredDay { date: string; status: DayStatusKind; source: 'auto' | 'you'; kcal: number; baseline: number | null; reason: string; /** every entry came from a file import (no morning check) */ imported?: boolean }
 
 export interface InferInput {
   dates: string[];

@@ -77,7 +77,7 @@ export function WorkoutSummary({ open, sessionId, onClose, onDone, celebrate = f
 
           {data.muscles.length > 0 && <MuscleRows data={data} />}
 
-          {settings.features.survey && <Survey sessionId={data.sessionId} survey={data.survey} />}
+          {settings.features.survey && !data.imported && <Survey sessionId={data.sessionId} survey={data.survey} />}
 
           <div className="sum-done">
             <button className="btn primary lg block" onClick={onDone}>Done</button>

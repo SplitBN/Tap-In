@@ -8,6 +8,8 @@ export interface Base {
   createdAt: number;
   updatedAt: number;
   deletedAt?: number | null;
+  /** Set on records brought in by a file import (import.run): the run's id, so import.undo can remove them together. */
+  importId?: string;
 }
 
 export type Unit = 'kg' | 'lb';
@@ -197,6 +199,8 @@ export interface FoodEntry extends Base {
   grams?: number | null; // absent for quick add
   qty?: number; // amount in the chosen unit
   unit?: string; // 'g' or a portion label
+  /** free-text amount from an imported entry ("300g", "2 apple"), shown instead of "Quick add" */
+  amount?: string;
   n: Macros; // totals for this entry
 }
 

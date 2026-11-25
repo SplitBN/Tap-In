@@ -9,7 +9,7 @@ import { defaultStepKg, e1rm, progressionTarget, RELIABLE_MAX_RTF, rirToRpe, rpe
 import { exerciseUsage, searchExercises } from '../db/exerciseSearch';
 import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
-import { AXES, composeName, FAMILIES, groupOf, normalizeVariant, optionsOf, storedVariant, variantKey, variantLabel, variantMuscles, type Variant } from '../lib/variants';
+import { AXES, FAMILIES, groupOf, normalizeVariant, optionsOf, variantFields, variantKey, variantLabel, type Variant } from '../lib/variants';
 import { planStart, planWeek } from '../lib/planWeek';
 import { bestSet, compareToPrevious, e1rmMargin, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount, type BestSet } from '../lib/workoutStats';
 
@@ -77,14 +77,7 @@ export const exercisesVariant = defineCommand({
     const hit = members.find((m) => variantKey(g, m.variant) === key);
     if (hit) return { ...hit, created: false };
     const base = members.find((m) => !m.variant) ?? e;
-    const variant = storedVariant(g, want);
-    const fam = FAMILIES[e.family!];
-    const m = variantMuscles(e.family, e.equipment, variant, base);
-    const rec = await save('exercises', newRecord({
-      name: composeName(base.variant ? fam.name : base.name, e.family!, g, variant), mechanic: base.mechanic, equipment: base.equipment, loadType: base.loadType,
-      unilateral: base.unilateral, muscles: m.muscles, secondary: m.secondary.filter((x) => !m.muscles.includes(x)), images: [...base.images],
-      instructions: base.instructions && [...base.instructions], stepKg: base.stepKg, custom: true, family: e.family, variant,
-    }) as Exercise);
+    const rec = await save('exercises', newRecord(variantFields(base, e.family!, want)) as Exercise);
     return { ...rec, created: true };
   },
 });
@@ -638,6 +631,7 @@ async function buildSummary(s: Session) {
     vsLastWorkout, highlights, exercises: exercisesOut, muscles, improvements, workoutNumber, weekStreak,
     week: { from: dateKey(ws), sessions: weekSessions.length },
     survey: { sessionRpe: s.sessionRpe ?? null, sleep: s.sleep ?? null, soreness: s.soreness ?? null, note: s.notes ?? null, ratedAt: s.ratedAt ? new Date(s.ratedAt).toISOString() : null },
+    imported: !!s.importId,
     sessionLoadAU: s.sessionRpe != null ? Math.round(s.sessionRpe * durationMin) : null,
   };
 }

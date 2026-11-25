@@ -163,7 +163,8 @@ async function push(keepalive?: boolean) {
       if (o.table === 'chats') chats.push({ tbl: 'chats', id: o.recordId, data: syncCopy(rec as Chat), updatedAt: stampOf('chats', rec) || o.at });
       else changes.push({ tbl: o.table, id: o.recordId, data: rec, updatedAt: rec.updatedAt ?? o.at });
     }
-    if (changes.length) await api('/sync/push', { method: 'POST', body: JSON.stringify({ changes }), keepalive });
+    // browsers cap keepalive bodies at 64 KiB: a big batch (an import) goes as a normal request (the next open finishes it if the page dies)
+    if (changes.length) { const body = JSON.stringify({ changes }); await api('/sync/push', { method: 'POST', body, keepalive: keepalive && new Blob([body]).size < 60_000 }); }
     // Chats go in their own requests (small chunks: each can be up to ~60 KB), so a chat the server refuses (an older
     // Worker without the chats table, or a record over the size limit) never holds up the rest of the data.
     let retry: string[] = [];

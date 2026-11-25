@@ -211,6 +211,20 @@ export function variantMuscles(family: string | undefined, equipment: string, v:
   return { muscles: [...base.muscles], secondary: [...base.secondary] };
 }
 
+/** Fields of a new variant record of a group, copied from its base exercise (shared by exercises.variant and file imports). */
+export interface VariantBase { name: string; mechanic: 'compound' | 'isolation'; equipment: string; loadType: 'weighted' | 'bodyweight' | 'assisted'; unilateral: boolean;
+  muscles: string[]; secondary: string[]; images: string[]; instructions?: string[]; stepKg?: number; variant?: Variant }
+export function variantFields(base: VariantBase, family: string, variant: Variant | undefined) {
+  const g = FAMILIES[family].groups[base.equipment];
+  const stored = storedVariant(g, variant);
+  const m = variantMuscles(family, base.equipment, stored, base);
+  return {
+    name: composeName(base.variant ? FAMILIES[family].name : base.name, family, g, stored), mechanic: base.mechanic, equipment: base.equipment, loadType: base.loadType,
+    unilateral: base.unilateral, muscles: m.muscles, secondary: m.secondary.filter((x) => !m.muscles.includes(x)), images: [...base.images],
+    instructions: base.instructions && [...base.instructions], stepKg: base.stepKg, custom: true as const, family, variant: stored,
+  };
+}
+
 /** Variant words found in a search ("close grip bench" → { width: 'close' }), for offering a not-yet-created variant. */
 export function variantFromQuery(query: string): Variant {
   const q = ` ${query.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ')} `;

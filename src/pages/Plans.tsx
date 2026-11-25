@@ -238,7 +238,8 @@ function PlanList({ plans, activeId }: { plans: Plan[]; activeId?: string }) {
 /** Every plan (the Gym tab shows only the active one). */
 export function AllPlansPage() {
   const settings = useSettings();
-  const plans = useLiveQuery(() => db.plans.filter(alive).toArray(), []) ?? [];
+  // newest first (by the date its weeks count from), so imported old plans sit below current ones
+  const plans = useLiveQuery(async () => (await db.plans.filter(alive).toArray()).sort((a, b) => planStart(b).localeCompare(planStart(a)) || b.createdAt - a.createdAt), []) ?? [];
   const [naming, setNaming] = useState(false);
   const nav = useNavigate();
   return (

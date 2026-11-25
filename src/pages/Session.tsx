@@ -379,6 +379,7 @@ function ExercisePanel({ session, item, ex, sets, settings, onMenu, onSetDone, r
    *  else today's set above (or its own suggestion, so the carry-forward runs down the whole table);
    *  first set: last time's same row. Drop steps: a drop from their parent's weight. */
   const suggestion = (r: Row): Partial<SetLog> | undefined => {
+    if (session.importId) return undefined; // imported history: blanks (e.g. RIR, never in the export) stay blank, not filled from another workout
     if (r.kind === 'drop') {
       const parentRow: Row = r.dropNo === 1 ? { ...r, kind: 'working', dropNo: undefined } : { ...r, dropNo: r.dropNo! - 1 };
       const parentLoad = byId.get(rowId(parentRow))?.loadKg ?? suggestion(parentRow)?.loadKg;

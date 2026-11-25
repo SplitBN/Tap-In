@@ -160,7 +160,7 @@ export const entriesCopy = defineCommand({ name: 'entries.copy', kind: 'action',
     const src = await liveEntries(ids);
     const out: FoodEntry[] = [];
     for (const [i, e] of src.entries()) {
-      const { id: _id, createdAt: _c, updatedAt: _u, deletedAt: _d, ...rest } = e;
+      const { id: _id, createdAt: _c, updatedAt: _u, deletedAt: _d, importId: _imp, ...rest } = e; // a copy is the user's own entry, never part of an import
       out.push(await save('entries', newRecord({ ...rest, date, meal: meal ?? e.meal, at: atOn(date, i) }) as FoodEntry));
     }
     return out.map(entryView);
@@ -219,7 +219,9 @@ export async function dayStatusRange(from: string, to: string, now = new Date())
     goalFor(to),
   ]);
   const kcalByDay = new Map<string, number>(), mealsByDay = new Map<string, Set<string>>(), entriesByDay = new Map<string, number>();
+  const ownEntry = new Set<string>(); // days with at least one entry logged in the app (not imported)
   for (const e of entries) {
+    if (!e.importId) ownEntry.add(e.date);
     kcalByDay.set(e.date, (kcalByDay.get(e.date) ?? 0) + e.n.kcal);
     mealsByDay.set(e.date, (mealsByDay.get(e.date) ?? new Set()).add(e.meal));
     entriesByDay.set(e.date, (entriesByDay.get(e.date) ?? 0) + 1);
@@ -227,7 +229,8 @@ export async function dayStatusRange(from: string, to: string, now = new Date())
   const dates: string[] = [];
   for (let d = from; d <= to; d = shiftDate(d, 1)) dates.push(d);
   return inferDayStatuses({ dates, kcalByDay, mealsByDay, entriesByDay, overrides: new Map(overrides.map((o) => [o.id, !!o.complete])),
-    now, targetKcal: goal?.kcal ?? null, fallbackKcal: goal?.maintenanceKcal ?? (await formulaFallback()) });
+    now, targetKcal: goal?.kcal ?? null, fallbackKcal: goal?.maintenanceKcal ?? (await formulaFallback()) })
+    .map((d) => (entriesByDay.get(d.date) && !ownEntry.has(d.date) ? { ...d, imported: true } : d));
 }
 /** No goals yet: the formula estimate with the same defaults maintenance.estimate uses (latest weigh-in, else 80 kg). */
 async function formulaFallback() {
@@ -237,7 +240,7 @@ async function formulaFallback() {
 
 export const daysStatus = defineCommand({ name: 'days.status', kind: 'query',
   description: 'Whether each day from..to looks fully logged, inferred from the food log (nobody has to remember to mark it): status open (today, or yesterday before 04:00) | empty | complete | partial | unsure, ' +
-    'source auto | you (the user confirmed it with days.setComplete), kcal, baseline (the user\'s usual intake on complete days, else the calorie target), reason. Only complete days feed maintenance and averages. ' +
+    'source auto | you (the user confirmed it with days.setComplete), kcal, baseline (the user\'s usual intake on complete days, else the calorie target), reason, imported (true = every entry came from a file import). Only complete days feed maintenance and averages. ' +
     'When a day is partial or unsure, ask the user once if it was everything; when they say so, propose days.setComplete.',
   input: z.object({ from: zDate, to: zDate }),
   run: async ({ from, to }) => dayStatusRange(from, to) });
