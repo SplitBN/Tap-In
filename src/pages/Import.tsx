@@ -102,7 +102,7 @@ export function ImportPage() {
         <h1 className="small">Import</h1>
         <label className="icon-btn filled" aria-label="Add files" style={{ cursor: 'pointer' }}>
           <Icon name="plus" />
-          <input type="file" multiple accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel" className="sr-only" onChange={(e) => { void add(e.target.files); e.target.value = ''; }} />
+          <input type="file" multiple className="sr-only" onChange={(e) => { void add(e.target.files); e.target.value = ''; }} />
         </label>
       </header>
 
@@ -123,7 +123,7 @@ export function ImportPage() {
           <h3>Alpha Progression · MyNetDiary</h3>
           <p>Workouts, plans, custom exercises and bodyweight (.csv), food and weight (.xls). Pick all the files at once.</p>
           <span className="btn primary"><Icon name="plus" size={18} />Choose files</span>
-          <input type="file" multiple accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel" className="sr-only" onChange={(e) => { void add(e.target.files); e.target.value = ''; }} />
+          <input type="file" multiple className="sr-only" onChange={(e) => { void add(e.target.files); e.target.value = ''; }} />
         </label>
       )}
 
