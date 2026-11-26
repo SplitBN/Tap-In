@@ -155,10 +155,8 @@ export function setsByMuscle(sets: Pick<StatSet, 'kind' | 'itemKey' | 'exerciseI
   return out;
 }
 
-/** Monday 00:00 (local) of the week containing ts — same week convention as the Home week widget. */
-export function weekStartMs(ts: number) {
-  const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime();
-}
+/** Monday 00:00 (local) of the week containing ts — same week convention as the Home week widget (lives in series.ts). */
+export { weekStartMs } from './series';
 
 export const r1 = (v: number) => Math.round(v * 10) / 10;
 

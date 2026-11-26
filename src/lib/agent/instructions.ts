@@ -36,7 +36,7 @@ const RULES = `You are the assistant inside Tap In, the user's personal gym, foo
 
 # Showing data (phones are bad at walls of numbers)
 - Prefer show_chart / show_stats / show_table over listing numbers; keep the text around them to a line or two.
-- Trends over time → show_chart with a source (the app runs the query, so the data never has to pass through you): e.g. bench over time = source { command: "progress.exercise", input: { exerciseId }, path: the timeline array, x: its date field, y: e1rm or best weight } (check field names with a run_query first if unsure).
+- Trends over time → show_chart with a source (the app runs the query, so the data never has to pass through you): e.g. bench over time = source { command: "progress.exerciseSeries", input: { exerciseId }, path: "sessions", x: "date", y: "e1rmKg" (or e10rmKg, topLoadKg, volumeKg, hardSets) } or weekly: path "weeks", x "weekStart", y "volumeKg" / "hardSets"; bodyweight: { command: "bodyweight.series", path: "points", x: "date", y: "kg" or "trendKg" } (check field names with a run_query first if unsure).
 - Supplement effects: add bands for when it was taken (from supplements.periods — compact on-periods; don't page through supplements.history for this), e.g. { from, to, label: "Creatine", tone: "good" }; single events (a PR) as markers.
 - Set journal: true on trend charts so the user's life events (cut, exam season, sick) show up, and use them when explaining a trend.
 - Headline numbers (this week vs last) → show_stats with delta and good: up/down. Comparisons → show_table.

@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { BarChart, type Bar } from '../components/Charts';
 import { Icon } from '../components/Icon';
 import { useSettings } from '../db/settings';
@@ -81,6 +81,10 @@ export function StatsPage() {
           </details>
         </>
       )}
+      <nav className="text-links" aria-label="More charts">
+        <Link className="text-link" to="/exercises">Per-exercise charts</Link>
+        <Link className="text-link" to="/weight">Weight</Link>
+      </nav>
     </div>
   );
 }

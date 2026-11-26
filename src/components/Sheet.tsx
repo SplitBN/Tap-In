@@ -49,8 +49,10 @@ function project(v: number, d = 0.998) {
 const roleFromOpener = (): SheetRole | undefined =>
   ((document.activeElement as HTMLElement | null)?.closest?.('[data-role]')?.getAttribute('data-role') as SheetRole | null) ?? undefined;
 
-export function Sheet({ open, onClose, title, children, full, actions, role, labelledBy }: {
+export function Sheet({ open, onClose, title, children, full, fullscreen, actions, role, labelledBy }: {
   open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; full?: boolean; actions?: ReactNode;
+  /** edge-to-edge over the whole screen (no width cap, all safe areas padded; landscape-friendly), e.g. a maximized chart */
+  fullscreen?: boolean;
   /** area colour for primary/selected controls inside; default: the parent sheet's, else the opener's area */
   role?: SheetRole;
   /** id of a heading inside the body that names the dialog (when there is no title) */
@@ -123,7 +125,7 @@ export function Sheet({ open, onClose, title, children, full, actions, role, lab
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
           <motion.div
             ref={sheetRef} tabIndex={-1} data-sheet={id} data-role={areaRole}
-            className={'sheet' + (full ? ' full' : '')} style={{ zIndex: z + 1, transformOrigin: 'top center' }}
+            className={'sheet' + (full ? ' full' : '') + (fullscreen ? ' fullscreen' : '')} style={{ zIndex: z + 1, transformOrigin: 'top center' }}
             role="dialog" aria-modal="true"
             aria-label={typeof title === 'string' ? title : undefined} aria-labelledby={named}
             initial={reduce ? { opacity: 0 } : { y: '100%' }}

@@ -5,7 +5,7 @@ import { ExName, ExerciseThumb } from '../components/ExercisePicker';
 import { exerciseLabel } from '../lib/equipment';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
-import { LineChart, type LinePoint } from '../components/Charts';
+import { TimeChart, type TPoint } from '../components/TimeChart';
 import { db } from '../db/db';
 import { useSettings } from '../db/settings';
 import type { LoadType, Unit } from '../db/types';
@@ -13,7 +13,7 @@ import { effortText, fmtWeight, plural, relDay, setText } from '../lib/format';
 import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
 import { fromKg, RELIABLE_MAX_RTF, rirToRpe } from '../lib/science';
 import { run } from '../api/registry';
-import { progressExercise, progressSessions, type ExerciseProgress } from '../api/progress';
+import { progressExercise, progressExerciseSeries, progressSessions, type ExerciseSeries } from '../api/progress';
 import { exercisesFamily } from '../api/gym';
 import { groupOf } from '../lib/variants';
 import { ExerciseInfo } from './Session';
@@ -70,7 +70,6 @@ export function HistoryPage() {
 }
 
 type Range = '3M' | '1Y' | 'All';
-type Row = ExerciseProgress['sessions'][number];
 
 /** "100 kg", "BW+10 kg", "BW−20 kg" — the logged load the way the set list shows it. */
 function loadText(loadType: LoadType, loadKg: number, unit: Unit) {
@@ -108,26 +107,8 @@ export function ExerciseHistoryPage() {
   // effort in the user's chosen notation; RIR shown as RPE only where the RIR-based scale maps one-to-one (science.ts)
   const effort = (rir: number | null) => { const e = rir == null ? null : effortText({ rir, rpe: rirToRpe(rir) }, settings.effortMode); return e == null ? '' : settings.effortMode === 'rir' ? ` @${e} RIR` : ` @${e}`; };
   const rows = data.sessions;
-  const t = (r: Row) => Date.parse(r.startedAt);
-  const W = (kg: number) => Math.round(fromKg(kg, u) * 10) / 10;
-  const fmtW = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${u}`;
 
-  const e1rmPts: LinePoint[] = rows.filter((r) => r.bestSet?.e1rmKg).map((r) => ({ t: t(r), v: W(r.bestSet!.e1rmKg!), approx: !r.bestSet!.e1rmReliable || r.bestSet!.e1rmLowerBound,
-    caption: `${loadText(lt, r.bestSet!.loadKg, u)} × ${r.bestSet!.reps}${effort(r.bestSet!.rir)}` }));
-  const volPts: LinePoint[] = rows.filter((r) => r.volumeKg > 0).map((r) => ({ t: t(r), v: Math.round(fromKg(r.volumeKg, u)), caption: plural(r.workingSets, 'set', 'sets') }));
-  const repsPts: LinePoint[] = rows.filter((r) => r.mostReps > 0).map((r) => ({ t: t(r), v: r.mostReps, caption: r.heaviest ? loadText(lt, r.heaviest.loadKg, u) : undefined }));
-  const heavyPts: LinePoint[] = rows.filter((r) => r.heaviest).map((r) => ({ t: t(r), v: W(r.heaviest!.loadKg), caption: `× ${r.heaviest!.reps}` }));
   const everAdded = data.sessions.some((r) => (r.heaviest?.loadKg ?? 0) > 0) || (data.records.heaviest?.loadKg ?? 0) > 0;
-
-  const charts: { key: string; title: string; note?: string; pts: LinePoint[]; fmt: (v: number) => string; integer?: boolean }[] = [
-    { key: 'e1rm', title: 'Estimated 1RM', note: lt === 'weighted' ? 'Best set each session' : 'Best set each session, incl. bodyweight', pts: e1rmPts, fmt: fmtW },
-    ...(lt === 'weighted' ? [{ key: 'heavy', title: 'Heaviest weight', pts: heavyPts, fmt: fmtW }] : [
-      { key: 'reps', title: 'Most reps in a set', pts: repsPts, fmt: (v: number) => `${v} reps`, integer: true },
-      ...(lt === 'bodyweight' && everAdded ? [{ key: 'heavy', title: 'Heaviest added weight', pts: heavyPts, fmt: fmtW }] : []),
-      ...(lt === 'assisted' ? [{ key: 'heavy', title: 'Assistance', note: 'Lower is stronger', pts: heavyPts, fmt: fmtW }] : []),
-    ]),
-    { key: 'vol', title: 'Session volume', note: 'Weight × reps, warm-ups excluded', pts: volPts, fmt: (v: number) => `${v.toLocaleString()} ${u}` },
-  ];
 
   const rec = data.records;
   const newestFirst = [...rows].reverse();
@@ -182,26 +163,18 @@ export function ExerciseHistoryPage() {
             )}
           </div>
 
-          <div className="row" style={{ margin: '22px 0 10px' }}>
-            <h2 className="section-title grow" style={{ margin: '0 6px' }}>Progress</h2>
-            <div className="seg range-seg" role="group" aria-label="Time range">
-              {(['3M', '1Y', 'All'] as Range[]).map((r) => <button key={r} aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
-            </div>
-          </div>
-          <div className="chart-grid">
-            {charts.map((c) => (
-              <section key={c.key} className="card chart-card" aria-label={c.title}>
-                <h3 className="chart-title">{c.title}</h3>
-                {c.note && <div className="chart-note">{c.note}</div>}
-                <LineChart points={c.pts} fmt={c.fmt} label={c.title} integer={c.integer} />
-              </section>
-            ))}
-          </div>
-          <p className="faint chart-foot">e1RM = estimated one-rep max (Wathen equation on reps to failure = reps + RIR; LeSuer et al. 1997). ≈ and hollow dots: more than {RELIABLE_MAX_RTF} reps to failure, where estimates are less accurate (Reynolds et al. 2006), or no effort logged (≥: reps alone, a lower bound).</p>
+          <h2 className="section-title" style={{ marginTop: 22 }}>Progress</h2>
+          <ExerciseMetrics exerciseId={id!} family={combined && !!variants} loadType={lt} unit={u} effort={effort} />
+          <p className="faint chart-foot">e1RM = estimated one-rep max (Wathen equation on reps to failure = reps + RIR; LeSuer et al. 1997). e10RM = the weight for 10 reps to failure from the same equation (≈ 74% of e1RM). Hollow dots and ≥: no effort logged, so reps alone (a lower bound). Dim dots and ≈: more than {RELIABLE_MAX_RTF} reps to failure, where estimates are less accurate (Reynolds et al. 2006). No line is drawn across breaks longer than 6 weeks.</p>
         </>
       )}
 
-      <h2 className="section-title">Sessions{range !== 'All' ? ` · last ${range === '3M' ? '3 months' : 'year'}` : ''}</h2>
+      <div className="row" style={{ margin: '22px 0 10px' }}>
+        <h2 className="section-title grow" style={{ margin: '0 6px' }}>Sessions</h2>
+        <div className="seg range-seg" role="group" aria-label="Sessions: time range">
+          {(['3M', '1Y', 'All'] as Range[]).map((r) => <button key={r} aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
+        </div>
+      </div>
       <div className="stack">
         {newestFirst.map((r) => (
           <Link key={r.sessionId} to={`/session/${r.sessionId}`} className="card pressable" style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -237,5 +210,58 @@ function RecTile({ label, value, sub, to }: { label: string; value: string; sub:
       <b className="rec-value">{value}</b>
       <span className="rec-meta num">{sub}</span>
     </Link>
+  );
+}
+
+type MetricKey = 'e1rm' | 'e10rm' | 'top' | 'max' | 'vol' | 'reps' | 'sets' | 'wkvol' | 'wksets';
+type SRow = ExerciseSeries['sessions'][number];
+type WRow = ExerciseSeries['weeks'][number];
+interface MetricDef { chip: string; title: string; note?: string; points: TPoint[]; fmt: (v: number) => string; kind?: 'line' | 'bar'; integer?: boolean; zero?: boolean }
+
+/** Metric switcher + one big maximizable chart, from progress.exerciseSeries (all time; the chart's own range chips zoom). */
+function ExerciseMetrics({ exerciseId, family, loadType: lt, unit: u, effort }: { exerciseId: string; family: boolean; loadType: LoadType; unit: Unit; effort: (rir: number | null) => string }) {
+  const data = useLiveQuery(() => run(progressExerciseSeries, { exerciseId, family }), [exerciseId, family]);
+  const [metric, setMetric] = useState<MetricKey>('e1rm');
+  const chart = useMemo(() => {
+    if (!data) return null;
+    const W = (kg: number) => Math.round(fromKg(kg, u) * 10) / 10;
+    const fmtW = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${u}`;
+    const fmtVol = (v: number) => `${Math.round(v).toLocaleString()} ${u}`;
+    const S = data.sessions;
+    const sp = (f: (r: SRow) => number | null, cap: (r: SRow) => string | undefined, flags: (r: SRow) => Partial<TPoint> = () => ({})): TPoint[] =>
+      S.flatMap((r) => { const v = f(r); return v == null ? [] : [{ t: r.t, v, key: r.sessionId, caption: cap(r), ...flags(r) }]; });
+    const wp = (f: (w: WRow) => number, cap: (w: WRow) => string): TPoint[] => data.weeks.map((w) => ({ t: w.t, v: f(w), key: w.weekStart, caption: cap(w), partial: w.inProgress }));
+    const best = (r: SRow) => (r.bestSet ? `${loadText(lt, r.bestSet.loadKg, u)} × ${r.bestSet.reps}${effort(r.bestSet.rir)}` : undefined);
+    const eFlags = (r: SRow) => ({ lowerBound: r.e1rmLowerBound, unreliable: r.e1rmUnreliable, pr: r.pr.e1rm });
+    const bwNote = lt === 'weighted' ? 'Best set each session' : 'Best set each session, incl. bodyweight';
+    const top: MetricDef = lt === 'assisted'
+      ? { chip: 'Assist', title: 'Assistance', note: 'Least assistance each session · lower is stronger', points: sp((r) => (r.topLoadKg == null ? null : W(r.topLoadKg)), (r) => `× ${r.topReps}`, (r) => ({ pr: r.pr.top })), fmt: fmtW }
+      : { chip: lt === 'bodyweight' ? 'Added' : 'Top', title: lt === 'bodyweight' ? 'Heaviest added weight' : 'Heaviest weight', note: 'Heaviest working set each session',
+        points: sp((r) => (r.topLoadKg == null || (lt === 'bodyweight' && !r.topLoadKg) ? null : W(r.topLoadKg)), (r) => `× ${r.topReps}`, (r) => ({ pr: r.pr.top })), fmt: fmtW };
+    const all: Record<MetricKey, MetricDef> = {
+      e1rm: { chip: 'e1RM', title: 'Estimated 1RM', note: bwNote, points: sp((r) => (r.e1rmKg == null ? null : W(r.e1rmKg)), best, eFlags), fmt: fmtW },
+      e10rm: { chip: 'e10RM', title: 'Estimated 10RM', note: 'Weight for 10 reps to failure, from the best set', points: sp((r) => (r.e10rmKg == null ? null : W(r.e10rmKg)), best, eFlags), fmt: fmtW },
+      top,
+      max: { chip: 'Max reps', title: 'Most reps in a set', points: sp((r) => r.mostReps || null, (r) => (r.topLoadKg != null ? loadText(lt, r.topLoadKg, u) : undefined), (r) => ({ pr: r.pr.mostReps })), fmt: (v) => plural(v, 'rep', 'reps'), integer: true },
+      vol: { chip: 'Vol', title: 'Session volume', note: 'Weight × reps, warm-ups excluded', points: sp((r) => (r.volumeKg > 0 ? Math.round(fromKg(r.volumeKg, u)) : null), (r) => plural(r.hardSets, 'set', 'sets'), (r) => ({ pr: r.pr.volume })), fmt: fmtVol, zero: true },
+      reps: { chip: 'Reps', title: 'Total reps', note: 'Working and drop sets each session', points: sp((r) => r.totalReps || null, (r) => plural(r.hardSets, 'set', 'sets'), (r) => ({ pr: r.pr.totalReps })), fmt: (v) => plural(v, 'rep', 'reps'), integer: true, zero: true },
+      sets: { chip: 'Sets', title: 'Hard sets per session', note: 'Working sets, a left + right pair counts once', points: sp((r) => r.hardSets || null, (r) => plural(r.totalReps, 'rep', 'reps')), fmt: (v) => plural(v, 'set', 'sets'), integer: true, zero: true },
+      wkvol: { chip: 'Wk vol', title: 'Weekly volume', note: 'Weight × reps per week (Mon–Sun)', points: wp((w) => Math.round(fromKg(w.volumeKg, u)), (w) => (w.sessions ? `${plural(w.sessions, 'session', 'sessions')} · ${plural(w.hardSets, 'set', 'sets')}` : 'no sessions')), fmt: fmtVol, kind: 'bar' },
+      wksets: { chip: 'Wk sets', title: 'Hard sets per week', note: 'Working sets per week (Mon–Sun)', points: wp((w) => w.hardSets, (w) => (w.sessions ? plural(w.sessions, 'session', 'sessions') : 'no sessions')), fmt: (v) => plural(v, 'set', 'sets'), kind: 'bar', integer: true },
+    };
+    const keys: MetricKey[] = ['e1rm', 'e10rm', ...(lt === 'weighted' || lt === 'assisted' || data.everAdded ? ['top' as const] : []), ...(lt !== 'weighted' ? ['max' as const] : []), 'vol', 'wkvol', 'sets', 'wksets', 'reps'];
+    return { all, keys };
+  }, [data, lt, u, effort]);
+  if (!chart) return null;
+  const key = chart.keys.includes(metric) ? metric : chart.keys[0];
+  const c = chart.all[key];
+  return (
+    <TimeChart title={c.title} note={c.note} points={c.points} fmt={c.fmt} kind={c.kind ?? 'line'} integer={c.integer} zeroBased={c.zero} height={200}
+      rowHref={c.kind === 'bar' ? undefined : (p) => (p.key ? `/session/${p.key}` : undefined)}
+      header={(
+        <div className="chips tc-metrics" role="group" aria-label="Metric">
+          {chart.keys.map((k) => <button key={k} className="chip" aria-pressed={k === key} onClick={(e) => { setMetric(k); const row = e.currentTarget.parentElement!, b = e.currentTarget; if (b.offsetLeft < row.scrollLeft || b.offsetLeft + b.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollTo({ left: b.offsetLeft - 16, behavior: 'smooth' }); }}>{chart.all[k].chip}</button>)}
+        </div>
+      )} />
   );
 }

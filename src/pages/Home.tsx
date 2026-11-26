@@ -47,14 +47,14 @@ export function HomePage() {
       </header>
       {settings.features.food && <MorningCheck />}
       <div className="widgets">
+        <CalendarWidget />
+        {settings.features.agent !== false && <AgentWidget />}
         {settings.features.gym && <GymWidget />}
         {settings.features.food && <FoodWidget />}
         {settings.features.supplements && <SuppWidget />}
         <WeightWidget onLog={() => setWeighing(true)} />
         {settings.features.gym && <WeekWidget />}
-        <CalendarWidget />
         {settings.features.journal !== false && <JournalWidget />}
-        {settings.features.agent !== false && <AgentWidget />}
       </div>
       <WeighInSheet open={weighing} onClose={() => setWeighing(false)} />
     </div>

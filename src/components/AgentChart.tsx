@@ -5,6 +5,7 @@
 import { motion } from 'motion/react';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { fmtAxis, niceTicks } from './Charts';
+import { TimeChart, type TPoint } from './TimeChart';
 import { keyToDate } from '../lib/nutrition';
 import type { Display } from '../lib/agent/types';
 
@@ -46,7 +47,36 @@ function smoothPath(p: [number, number][]) {
 const fmtVal = (v: number, unit?: string) => `${v.toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 })}${unit ? ` ${unit}` : ''}`;
 const fmtDay = (key: string, long = false) => (DATE.test(key) ? keyToDate(key).toLocaleDateString(undefined, long ? { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' }) : key);
 
+/** A single dated series (the usual agent chart: one lift / bodyweight over time, with bands and markers) uses the shared
+ *  TimeChart, so it gets range chips, maximize, pan/zoom and a values list. Several series or category x-axes keep the
+ *  multi-series card below (no maximize yet). */
 export function ChartCard({ d }: { d: Extract<Display, { type: 'chart' }> }) {
+  const single = d.series.length === 1 && d.series[0].points.length > 0 && d.series[0].points.every((p) => DATE.test(p.x));
+  return single ? <SingleSeriesCard d={d} /> : <MultiChartCard d={d} />;
+}
+
+function SingleSeriesCard({ d }: { d: Extract<Display, { type: 'chart' }> }) {
+  const model = useMemo(() => {
+    const ms = (k: string) => keyToDate(k).getTime();
+    const points: TPoint[] = [...d.series[0].points].sort((a, b) => (a.x < b.x ? -1 : a.x > b.x ? 1 : 0)).map((p, i) => ({ t: ms(p.x), v: p.y, key: `${p.x}-${i}` }));
+    // bar width = the smallest spacing between points (daily, weekly…), at least a day
+    let period = 7 * DAY;
+    for (let i = 1; i < points.length; i++) { const g = points[i].t - points[i - 1].t; if (g > 0 && g < period) period = Math.max(DAY, g); }
+    const bands = d.bands.filter((b) => DATE.test(b.from)).map((b) => ({ from: ms(b.from), to: b.to && DATE.test(b.to) ? ms(b.to) + DAY - 1 : Date.now(), label: b.label, tone: b.tone }));
+    const markers = d.markers.filter((m) => DATE.test(m.x)).map((m) => ({ t: ms(m.x), label: m.label }));
+    return { points, period, bands, markers };
+  }, [d]);
+  const name = d.series[0].name;
+  return (
+    <motion.div className="dcard chart-dcard" {...appear}>
+      <TimeChart bare anchorToday={false} className="tc-agent" title={d.title} note={name && name !== d.title ? name : d.note} points={model.points} period={model.period}
+        kind={d.kind === 'bar' ? 'bar' : d.kind === 'scatter' ? 'dots' : 'line'} area={d.kind === 'area'} zeroBased={d.kind === 'bar'}
+        fmt={(v) => fmtVal(v, d.unit)} bands={model.bands} markers={model.markers} barDateLabel={model.period >= 7 * DAY ? 'Week of' : ''} />
+    </motion.div>
+  );
+}
+
+function MultiChartCard({ d }: { d: Extract<Display, { type: 'chart' }> }) {
   const [ref, w] = useWidth();
   const H = 200;
   const dates = d.series.every((s) => s.points.every((p) => DATE.test(p.x)));

@@ -6,6 +6,8 @@ import { getSettings, updateSettings } from '../db/settings';
 import type { DoseStep, Note, Schedule, Settings, Stack, SuppForm, SuppLog, SuppRoute, Supplement } from '../db/types';
 import { BACKUP_TABLES, buildBackup, restoreBackup } from '../lib/backup';
 import { dateKey, keyToDate } from '../lib/nutrition';
+import { cleanWeighIns, ewmaSeries } from '../lib/maintenance';
+import { GAP_DAYS } from '../lib/series';
 
 // ---------------- bodyweight ----------------
 export const weightLog = defineCommand({ name: 'bodyweight.log', kind: 'action', description: 'Log a new weigh-in in kg (at = ISO time, defaults to now). Returns the saved entry (id, at in ms, kg).',
@@ -31,6 +33,24 @@ export const weightList = defineCommand({ name: 'bodyweight.list', kind: 'query'
   input: z.object({ from: zDate.optional(), to: zDate.optional() }),
   run: async ({ from, to }) => (await db.bodyweight.where('at').between(from ? keyToDate(from).getTime() : 0, to ? keyToDate(to).getTime() + 86400000 : Date.now() + 86400000).filter(alive).sortBy('at'))
     .map((e) => ({ id: e.id, date: dateKey(e.at), at: new Date(e.at).toISOString(), kg: e.kg, note: e.note })) });
+
+export const weightSeries = defineCommand({ name: 'bodyweight.series', kind: 'query',
+  description: 'Weigh-ins with the display trend, oldest first (points[]: id, date, at ms, kg, trendKg, excluded). Chart-ready, use as a show_chart source. ' +
+    'trendKg = the app’s display trend: exponentially smoothed clean daily weight (10%/day, gaps weighted 1 − 0.9^days; The Hacker’s Diet), computed over all history. ' +
+    'excluded = why a weigh-in is ignored by the trend (typo outside 25–350 kg, or a jump > max(2 kg, 3%) from nearby days), same rules as maintenance.estimate. ' +
+    'Optional from/to dates filter the rows (the trend still uses all history). gapDays = the line-break threshold the app draws. Not the 28-day Theil–Sen line maintenance.estimate uses.',
+  input: z.object({ from: zDate.optional(), to: zDate.optional() }),
+  run: async ({ from, to }) => {
+    const all = await db.bodyweight.orderBy('at').filter(alive).toArray();
+    const clean = cleanWeighIns(all.map((w) => ({ at: w.at, kg: w.kg })));
+    const ex = new Map(clean.map((d) => [d.date, d.excluded]));
+    const trend = all.length ? ewmaSeries(clean, dateKey(all[0].at), dateKey(all[all.length - 1].at)) : new Map<string, number>();
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const points = all.map((w) => { const d = dateKey(w.at); const t = trend.get(d);
+      return { id: w.id, date: d, at: w.at, kg: r2(w.kg), trendKg: t == null ? null : r2(t), excluded: ex.get(d) ?? null }; })
+      .filter((p) => (!from || p.date >= from) && (!to || p.date <= to));
+    return { unit: 'kg' as const, gapDays: GAP_DAYS, points };
+  } });
 
 // ---------------- supplements ----------------
 const zSchedule = z.object({

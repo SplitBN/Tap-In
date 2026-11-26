@@ -12,6 +12,7 @@ import { dateKey, keyToDate } from '../lib/nutrition';
 import { exerciseLabel } from '../lib/equipment';
 import { groupOf, variantLabel } from '../lib/variants';
 import { e1rm, RELIABLE_MAX_RTF } from '../lib/science';
+import { e10rm, GAP_DAYS, runningBest, weeklyBuckets } from '../lib/series';
 import {
   bestSet, compareToPrevious, effLoad, personalRecords, setE1rmView, setsByMuscle, toStatSet, volumeKg, weekStartMs, workingSetCount,
   type BestSet, type PRs, type StatSet, type Trend,
@@ -123,11 +124,9 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
   input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional(), family: z.boolean().default(false).describe('Combine all variants of this exercise (same family + equipment)') }),
   run: async ({ exerciseId, from, to, family }) => {
     const { entries, exMap } = await timeline();
-    const ex = exMap[exerciseId];
+    const { ex, memberIds, mine } = liftEntries(entries, exMap, exerciseId, family);
     const g = groupOf(ex);
-    const memberIds = family && ex && g ? Object.values(exMap).filter((x): x is Exercise => !!x && x.family === ex.family && x.equipment === ex.equipment).map((x) => x.id) : [exerciseId];
     const ids = new Set(memberIds);
-    const mine = ids.size > 1 ? mergeEntries(entries.filter((e) => ids.has(e.exerciseId)), ex!.loadType) : entries.filter((e) => e.exerciseId === exerciseId);
     const row = (e: ExEntry) => ({
       exerciseIds: [...new Set(e.raw.map((x) => x.exerciseId))],
       sessionId: e.session.id, name: e.session.name, date: dateKey(e.session.startedAt), startedAt: new Date(e.session.startedAt).toISOString(),
@@ -180,6 +179,64 @@ export const progressExercise = defineCommand({ name: 'progress.exercise', kind:
     };
   } });
 export type ExerciseProgress = Awaited<ReturnType<typeof progressExercise.run>>;
+
+// ---------------- progress.exerciseSeries ----------------
+/** Exercises of one lift: the exercise itself, or every variant of its family + equipment when family=true. */
+function liftEntries(entries: ExEntry[], exMap: Record<string, Exercise | undefined>, exerciseId: string, family: boolean) {
+  const ex = exMap[exerciseId];
+  const memberIds = family && ex && groupOf(ex) ? Object.values(exMap).filter((x): x is Exercise => !!x && x.family === ex.family && x.equipment === ex.equipment).map((x) => x.id) : [exerciseId];
+  const ids = new Set(memberIds);
+  const mine = ids.size > 1 ? mergeEntries(entries.filter((e) => ids.has(e.exerciseId)), ex!.loadType) : entries.filter((e) => e.exerciseId === exerciseId);
+  return { ex, memberIds, mine };
+}
+
+export const progressExerciseSeries = defineCommand({ name: 'progress.exerciseSeries', kind: 'query',
+  description: 'Chart-ready metric series for one exercise: rows per finished session (sessions[], date YYYY-MM-DD) and per Monday-start week (weeks[], weekStart), oldest first; use it as a show_chart source. ' +
+    'Per session: e1rmKg (best working set, Wathen on reps-to-failure = reps + RIR; null when it cannot be estimated, e.g. bodyweight lift without a weigh-in), e10rmKg (estimated 10-rep max = load for 10 reps to failure from the same model, e1RM × ≈0.742), ' +
+    `e1rmLowerBound (no RIR logged: real value ≥ this), e1rmUnreliable (> ${RELIABLE_MAX_RTF} reps to failure), bestSet {loadKg,totalKg,reps,rir}, topLoadKg/topReps (heaviest working set on the logged-load axis: added weight for bodyweight lifts, assistance for assisted = lower is stronger), ` +
+    'mostReps (one set), totalReps, volumeKg (Σ total load × reps, working + drop sets; bodyweight lifts use bodyweight snapshot + added), hardSets (working sets; a left+right pair = 1), ' +
+    'pr {e1rm, top, reps} = the all-time PRs of sessions.summary (reps = more reps than ever at that load or heavier); pr.mostReps / volume / totalReps = beat every earlier session. Per week: sessions, volumeKg, hardSets, totalReps (every week from the first session to now, empty weeks = 0). ' +
+    'PR flags are all-time; from/to only filter rows. family=true combines all grip/width/attachment variants. Loads in kg. gapDays: the line-break threshold the app draws.',
+  input: z.object({ exerciseId: zId, from: zDate.optional(), to: zDate.optional(), family: z.boolean().default(false).describe('Combine all variants of this exercise (same family + equipment)') }),
+  run: async ({ exerciseId, from, to, family }) => {
+    const { entries, exMap } = await timeline();
+    const { ex, memberIds, mine } = liftEntries(entries, exMap, exerciseId, family);
+    const loadType: LoadType = ex?.loadType ?? mine[0]?.loadType ?? 'weighted';
+    const rows = mine.map((e) => {
+      const bwMissing = e.loadType !== 'weighted' && e.sets.some((x) => x.bwMissing);
+      const b = e.best;
+      const e1 = b && b.e1rmKg > 0 && !bwMissing ? b.e1rmKg : null;
+      const top = heaviest(e.sets);
+      const nonWarm = e.sets.filter((x) => x.kind !== 'warmup' && x.reps > 0);
+      return {
+        sessionId: e.session.id, date: dateKey(e.session.startedAt), t: e.session.startedAt, exerciseIds: [...new Set(e.raw.map((x) => x.exerciseId))],
+        e1rmKg: e1 == null ? null : r1(e1), e10rmKg: e1 == null ? null : r1(e10rm(e1)),
+        e1rmLowerBound: !!b && b.lowerBound, e1rmUnreliable: !!b && !b.reliable,
+        bestSet: b && { loadKg: r1(b.loadKg), totalKg: r1(b.totalKg), reps: b.reps, rir: b.rir },
+        topLoadKg: top ? top.loadKg : null, topTotalKg: top ? top.totalKg : null, topReps: top ? top.reps : null,
+        mostReps: mostReps(e.sets), totalReps: nonWarm.reduce((a, x) => a + x.reps, 0),
+        volumeKg: r1(e.volume), hardSets: e.working, bodyweightMissing: bwMissing,
+        pr: { e1rm: !!e.prs.e1rm, top: !!e.prs.weight, reps: !!e.prs.reps, mostReps: false, volume: false, totalReps: false },
+      };
+    });
+    const vPr = runningBest(rows.map((r) => (r.volumeKg > 0 ? r.volumeKg : null)));
+    const rPr = runningBest(rows.map((r) => (r.totalReps > 0 ? r.totalReps : null)));
+    const mPr = runningBest(rows.map((r) => (r.mostReps > 0 ? r.mostReps : null)));
+    rows.forEach((r, i) => { r.pr.volume = vPr[i]; r.pr.totalReps = rPr[i]; r.pr.mostReps = mPr[i]; });
+    const weeks = weeklyBuckets(rows.map((r) => ({ t: r.t, volumeKg: r.volumeKg, hardSets: r.hardSets, totalReps: r.totalReps })), Date.now())
+      .map((w) => ({ weekStart: w.weekStart, isoWeek: w.isoWeek, t: w.t, sessions: w.sessions, volumeKg: r1(w.volumeKg), hardSets: w.hardSets, totalReps: w.totalReps, inProgress: w.inProgress }));
+    const inRange = (d: string) => (!from || d >= from) && (!to || d <= to);
+    // a week is kept when any of its days is in range
+    const weekIn = (ws: string) => (!to || ws <= to) && (!from || keyToDate(ws).getTime() + 7 * 864e5 > keyToDate(from).getTime());
+    return {
+      exercise: { id: exerciseId, name: ex?.name ?? exerciseId, label: ex ? exerciseLabel(ex) : exerciseId, loadType },
+      unit: 'kg' as const, combined: memberIds.length > 1, memberIds, gapDays: GAP_DAYS,
+      everAdded: rows.some((r) => (r.topLoadKg ?? 0) > 0),
+      sessions: rows.filter((r) => inRange(r.date)),
+      weeks: weeks.filter((w) => weekIn(w.weekStart)),
+    };
+  } });
+export type ExerciseSeries = Awaited<ReturnType<typeof progressExerciseSeries.run>>;
 
 // ---------------- progress.weekly ----------------
 export const progressWeekly = defineCommand({ name: 'progress.weekly', kind: 'query',

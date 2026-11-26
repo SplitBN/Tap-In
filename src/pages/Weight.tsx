@@ -6,7 +6,8 @@ import { Icon } from '../components/Icon';
 import { NumberSheet, type NumberSpec } from '../components/NumberPicker';
 import { alive, db } from '../db/db';
 import { run } from '../api/registry';
-import { recordsRestore, weightDelete, weightLog, weightUpdate } from '../api/body';
+import { recordsRestore, weightDelete, weightLog, weightSeries, weightUpdate } from '../api/body';
+import { TimeChart, type TPoint } from '../components/TimeChart';
 import { useSettings } from '../db/settings';
 import type { BodyweightEntry } from '../db/types';
 import { fmtDate, fmtNum, fmtWeight, plural, relDay } from '../lib/format';
@@ -46,7 +47,7 @@ export function WeightPage() {
           <div className={'plan-meta' + (due ? ' due' : '')} style={{ marginTop: 0 }}>
             {due ? <button className="meta-btn role-text" onClick={log}><Icon name="plus" size={16} /> Weigh-in due</button> : <span>{relDay(last.at)}</span>}
           </div>
-          <Sparkline entries={entries} unit={settings.unit} />
+          <WeightChart unit={settings.unit} />
           <h2 className="section-title">{plural(entries.length, 'weigh-in', 'weigh-ins')}</h2>
           <div className="group">
             {entries.map((e, i) => {
@@ -78,25 +79,22 @@ export function WeightPage() {
   );
 }
 
-function Sparkline({ entries, unit }: { entries: BodyweightEntry[]; unit: 'kg' | 'lb' }) {
-  const pts = entries.slice(0, 60).reverse();
-  if (pts.length < 2) return null;
-  const vals = pts.map((p) => p.kg);
-  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
-  const W = 300, H = 80;
-  const t0 = pts[0].at, t1 = pts[pts.length - 1].at, tspan = t1 - t0 || 1;
-  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.at - t0) / tspan) * W},${H - 6 - ((p.kg - min) / span) * (H - 12)}`).join(' ');
+/** Every weigh-in as a dot, the app's display trend as a line (bodyweight.series), maximizable with a values list. */
+function WeightChart({ unit }: { unit: 'kg' | 'lb' }) {
+  const data = useLiveQuery(() => run(weightSeries, {}), []);
+  const { points, trend } = useMemo(() => {
+    const W = (kg: number) => Math.round(fromKg(kg, unit) * 10) / 10;
+    const pts = data?.points ?? [];
+    const points: TPoint[] = pts.map((p) => ({ t: p.at, v: W(p.kg), key: p.id, excluded: !!p.excluded,
+      caption: p.excluded ? undefined : p.trendKg != null ? `trend ${W(p.trendKg).toFixed(1)} ${unit}` : undefined }));
+    const trend = pts.filter((p) => !p.excluded && p.trendKg != null).map((p) => ({ t: p.at, v: W(p.trendKg!) }));
+    return { points, trend };
+  }, [data, unit]);
+  if (!data || points.length < 2) return null;
   return (
-    <div className="group" style={{ padding: '12px 16px', marginTop: 4 }}>
-      <div className="row" style={{ marginBottom: 6 }}>
-        <span className="grow muted t-13">Last {pts.length}</span>
-        <span className="num muted t-13">{fmtWeight(min, unit)} – {fmtWeight(max, unit)}</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label={`Weight over the last ${pts.length} weigh-ins, from ${fmtWeight(min, unit)} to ${fmtWeight(max, unit)}`}>
-        <defs><linearGradient id="wtfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--role)" stopOpacity="0.3" /><stop offset="1" stopColor="var(--role)" stopOpacity="0" /></linearGradient></defs>
-        <path d={d + ` L${W},${H} L0,${H} Z`} fill="url(#wtfill)" stroke="none" />
-        <path d={d} fill="none" stroke="var(--role, var(--c-weight))" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-      </svg>
+    <div style={{ marginTop: 4 }}>
+      <TimeChart title="Weight" note="Dots: weigh-ins · line: smoothed trend" points={points} trend={trend} kind="dots" pointLabel="Weigh-in" trendLabel="Trend"
+        fmt={(v) => `${v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`} defaultRange="6M" height={180} />
     </div>
   );
 }
