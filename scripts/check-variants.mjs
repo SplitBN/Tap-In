@@ -12,7 +12,9 @@ const name = (fam, eqp, v) => composeName(FAMILIES[fam].name, fam, G(fam, eqp), 
 
 // ---- names ----
 eq('bench close', name('bench-press', 'barbell', { width: 'close' }), 'Bench Press · Close Grip');
-eq('pulldown base', name('lat-pulldown', 'cable', { width: 'wide', grip: 'overhand' }), 'Lat Pulldown');
+eq('pulldown base', name('lat-pulldown', 'cable', { width: 'wide', grip: 'overhand' }), 'Lat Pulldown · Bar'); // handle groups name the default handle
+eq('overhead ext base names rope', name('overhead-triceps-extension', 'cable', {}), 'Overhead Triceps Extension · Rope');
+eq('pushdown rope from a named base', composeName('Triceps Pushdown · Straight Bar', 'triceps-pushdown', G('triceps-pushdown', 'cable'), { attachment: 'rope' }), 'Triceps Pushdown · Rope');
 eq('pulldown close neutral', name('lat-pulldown', 'cable', { width: 'close', grip: 'neutral' }), 'Lat Pulldown · Close Neutral');
 eq('pulldown medium underhand', name('lat-pulldown', 'cable', { width: 'medium', grip: 'underhand' }), 'Lat Pulldown · Medium Underhand');
 eq('pulldown v-handle implies close neutral', name('lat-pulldown', 'cable', { attachment: 'v-handle' }), 'Lat Pulldown · V-Handle');
@@ -60,7 +62,7 @@ const seeded = [
   ['Reverse-Grip Lat Pulldown', 'cable', 'lat-pulldown', { grip: 'underhand' }],
   ['Close-Grip Lat Pulldown', 'cable', 'lat-pulldown', { width: 'close', grip: 'neutral', attachment: 'v-handle' }],
   ['Close-Grip Push-Up', 'body only', 'push-up', { width: 'close' }],
-  ['Bench Press', 'barbell', 'bench-press', undefined], ['Lat Pulldown', 'cable', 'lat-pulldown', undefined], ['Pull-Up', 'body only', 'pull-up', undefined],
+  ['Bench Press', 'barbell', 'bench-press', undefined], ['Lat Pulldown · Bar', 'cable', 'lat-pulldown', undefined], ['Overhead Triceps Extension · Rope', 'cable', 'overhead-triceps-extension', undefined], ['Pull-Up', 'body only', 'pull-up', undefined],
 ];
 for (const [n, e, fam, v] of seeded) {
   const x = byName(n, e);

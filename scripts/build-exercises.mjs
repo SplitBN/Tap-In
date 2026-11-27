@@ -3,7 +3,7 @@
 // Usage (from the app folder): node scripts/build-exercises.mjs <path-to-exercises.json>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { ADD, DROP, EQUIPMENT, KEEP, MUSCLES, REQUIRED } from './exercise-curation.mjs';
-import { FAMILIES, familyFor, groupKey, storedVariant, variantKey, variantMuscles } from '../src/lib/variants.ts';
+import { FAMILIES, baseRecordName, familyFor, groupKey, storedVariant, variantKey, variantMuscles } from '../src/lib/variants.ts';
 
 const src = process.argv[2];
 if (!src) throw new Error('pass the path to free-exercise-db dist/exercises.json');
@@ -95,6 +95,8 @@ for (const e of out) if (EQUIP_WORD.test(e.name) && !ALLOWED.has(e.name)) consol
 
 if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
 
+// a base whose group has a handle axis names its default handle (after the name-keyed curation checks above)
+for (const e of out) if (e.family && !e.variant) e.name = baseRecordName(e.name, FAMILIES[e.family].groups[e.equipment]);
 mkdirSync('src/data', { recursive: true });
 writeFileSync('src/data/exercises.json', JSON.stringify(out));
 console.log(`${pool.length} source → ${out.length} exercises (${out.length - ADD.length} kept, ${ADD.length} added);`,

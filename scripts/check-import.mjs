@@ -103,7 +103,9 @@ exp1('Butterfly with Wide Grip', 'Machine', 'high', 'Pec Deck · Wide Grip');
 exp1('Bench Press with Close Grip', 'Barbell', 'high', 'Close-Grip Bench Press');
 exp1('Push-Ups with Close Grip', 'Bodyweight', 'high', 'Close-Grip Push-Up');
 exp1('Chin-Ups', 'Bodyweight', 'high', 'Chin-Up');
-exp1('Lat Pulldowns with Wide Overhand Grip', 'Cable', 'high', 'Lat Pulldown');
+exp1('Lat Pulldowns with Wide Overhand Grip', 'Cable', 'high', 'Lat Pulldown · Bar');
+exp1('Overhead Triceps Extensions with Rope', 'Cable', 'high', 'Overhead Triceps Extension · Rope');
+exp1('Triceps Pushdowns with Rope', 'Cable', 'high', 'Triceps Pushdown · Rope');
 exp1('Bent-Over Rows with Wide Grip', 'Barbell', 'new', 'Bent-Over Rows with Wide Grip'); // grip Tap In can't model: own exercise, not folded into the base
 exp1('Reverse Butterfly with Wide Grip', 'Machine', 'high', 'Reverse Fly · Wide Grip');
 exp1('Reverse Curls', 'Barbell', 'high', 'Reverse Curl');

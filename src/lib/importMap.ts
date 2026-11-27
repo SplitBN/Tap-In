@@ -8,7 +8,7 @@
 // Pure (no db): the pool of exercises is passed in, so scripts/check-import.mjs runs it against src/data/exercises.json.
 import type { Exercise, LoadType, Mechanic } from '../db/types';
 import { searchExercises } from './exerciseRank.ts';
-import { fitVariant, groupOf, normalizeVariant, variantFields, variantFromQuery, variantKey, type Variant } from './variants.ts';
+import { fitVariant, groupOf, movementName, normalizeVariant, variantFields, variantFromQuery, variantKey, type Variant } from './variants.ts';
 import { stableHash, type AlphaCustom } from './importParse.ts';
 
 export type Confidence = 'high' | 'medium' | 'low' | 'new';
@@ -115,7 +115,7 @@ function guessMuscles(name: string): string[] {
 export function mapExercises(refs: AlphaRef[], pool: Exercise[], custom: AlphaCustom[] = []): MapRow[] {
   const byNameEq = new Map<string, Exercise[]>();
   for (const e of pool) {
-    const k = `${normName(e.name)}|${e.equipment}`;
+    const k = `${normName(movementName(e.name))}|${e.equipment}`;
     byNameEq.set(k, [...(byNameEq.get(k) ?? []), e]);
   }
   const byId = new Map(pool.map((e) => [e.id, e]));
@@ -191,7 +191,7 @@ export function mapExercises(refs: AlphaRef[], pool: Exercise[], custom: AlphaCu
 function withVariant(e: Exercise, mods: string, pool: Exercise[]): { target: { target: MapTarget; targetName: string }; dropped: boolean } {
   const g = groupOf(e);
   const words = mods ? variantFromQuery(mods) : {};
-  const implied = (IMPLIED[e.name] ?? []).some((w) => mods.toLowerCase().includes(w)) && Object.keys(words).length <= 1;
+  const implied = (IMPLIED[movementName(e.name)] ?? []).some((w) => mods.toLowerCase().includes(w)) && Object.keys(words).length <= 1;
   if (!g) return { target: { target: { kind: 'existing', id: e.id }, targetName: e.name }, dropped: !!mods && !implied };
   const fitted = fitVariant(g, { ...(e.variant ?? {}), ...words }) ?? {};
   let dropped = Object.keys(words).some((k) => !(k in fitted) || (fitted as Record<string, string>)[k] !== (words as Record<string, string>)[k]);

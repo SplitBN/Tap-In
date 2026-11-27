@@ -179,6 +179,7 @@ export function variantText(g: Group, v: Variant | undefined, family?: string) {
 export function variantLabel(g: Group, v: Variant | undefined, family?: string) {
   const s = storedVariant(g, v);
   const t = variantText(g, v, family);
+  if (!s && g.axes.includes('attachment') && g.defaults.attachment) return LABEL[g.defaults.attachment]; // base of a handle group: "Rope", not "Standard"
   return s && chinUp(family, s) ? (t ? `Chin-Up · ${t}` : 'Chin-Up') : t;
 }
 const chinUp = (family: string | undefined, v: Variant) => (family === 'pull-up' || family === 'assisted-pull-up') && v.grip === 'underhand';
@@ -187,9 +188,18 @@ const chinUp = (family: string | undefined, v: Variant) => (family === 'pull-up'
  *  pull-up is a chin-up ("Chin-Up · Wide Grip"). */
 export function composeName(baseName: string, family: string, g: Group, v: Variant | undefined) {
   const s = storedVariant(g, v);
-  const base = s && chinUp(family, s) ? baseName.replace('Pull-Up', 'Chin-Up') : baseName;
+  const plain = movementName(baseName);
+  const base = s && chinUp(family, s) ? plain.replace('Pull-Up', 'Chin-Up') : plain;
   const t = variantText(g, v, family);
-  return t ? `${base} · ${t}` : base;
+  return t ? `${base} · ${t}` : baseRecordName(base, g);
+}
+/** The movement part of a name, without its " · variant" suffix ("Triceps Pushdown · Rope" → "Triceps Pushdown"). */
+export const movementName = (name: string) => name.split(' · ')[0];
+/** The base record's name. Groups with a handle axis name the default handle, so picking it is visible
+ *  ("Overhead Triceps Extension · Rope", "Triceps Pushdown · Straight Bar"); other bases keep the plain name. */
+export function baseRecordName(name: string, g: Group | undefined) {
+  const plain = movementName(name);
+  return g?.axes.includes('attachment') && g.defaults.attachment ? `${plain} · ${LABEL[g.defaults.attachment]}` : plain;
 }
 
 // ---------------- muscle emphasis ----------------
