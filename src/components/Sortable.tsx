@@ -1,5 +1,5 @@
 import {
-  DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+  DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, arrayMove, horizontalListSortingStrategy, useSortable,
@@ -8,7 +8,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { CSSProperties, ReactNode } from 'react';
 
-// Press-and-hold (180 ms) to pick up on touch so normal scrolling still works.
+// Touch: press-and-hold (250 ms) picks an item up; a swipe scrolls. Mouse: drag after 8 px. (A PointerSensor would also
+// fire for touch — iOS sends pointer events — and pick items up on any swipe, so the mouse path uses MouseSensor.)
 // Drag is pointer-only: every list that can be dragged also has Move up/down (left/right) buttons, which are the
 // keyboard and single-pointer path (WCAG 2.5.7). So the wrapper gets only the pointer listeners, not dnd-kit's
 // role="button" / tabindex: the real button or link inside stays the one, named tab stop.
@@ -16,8 +17,8 @@ export function SortableList<T extends { key: string }>({ items, onReorder, hori
   items: T[]; onReorder: (next: T[]) => void; horizontal?: boolean; children: ReactNode;
 }) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
   );
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
