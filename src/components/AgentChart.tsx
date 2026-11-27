@@ -7,6 +7,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Po
 import { fmtAxis, niceTicks } from './Charts';
 import { TimeChart, type TPoint } from './TimeChart';
 import { keyToDate } from '../lib/nutrition';
+import { monotonePath } from '../lib/series';
 import type { Display } from '../lib/agent/types';
 
 const HUES = ['#3d8bff', '#cf7200', '#bf5af2', '#20a04a']; // validated: dataviz validate_palette --mode dark --surface #1c1c1e
@@ -27,21 +28,6 @@ function useWidth() {
     return () => ro.disconnect();
   }, []);
   return [ref, w] as const;
-}
-
-/** Monotone cubic (Fritsch–Carlson): smooth, never overshoots the data. */
-function smoothPath(p: [number, number][]) {
-  if (p.length < 3) return p.map(([x, y], i) => `${i ? 'L' : 'M'}${x},${y}`).join('');
-  const n = p.length, dx: number[] = [], m: number[] = [], t: number[] = [];
-  for (let i = 0; i < n - 1; i++) { dx[i] = p[i + 1][0] - p[i][0]; m[i] = dx[i] ? (p[i + 1][1] - p[i][1]) / dx[i] : 0; }
-  t[0] = m[0]; t[n - 1] = m[n - 2];
-  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
-  let d = `M${p[0][0]},${p[0][1]}`;
-  for (let i = 0; i < n - 1; i++) {
-    const h = dx[i] / 3;
-    d += `C${p[i][0] + h},${p[i][1] + h * t[i]} ${p[i + 1][0] - h},${p[i + 1][1] - h * t[i + 1]} ${p[i + 1][0]},${p[i + 1][1]}`;
-  }
-  return d;
 }
 
 const fmtVal = (v: number, unit?: string) => `${v.toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 })}${unit ? ` ${unit}` : ''}`;
@@ -187,7 +173,7 @@ function MultiChartCard({ d }: { d: Extract<Display, { type: 'chart' }> }) {
                 return <path key={i} d={roundTop(x - (n * bw) / 2 + k * bw + 1, top, bw - 2, h)} fill={HUES[k]} opacity={selX && s.points[i].x !== selX ? 0.75 : 1} />; })}</g>;
             }
             if (d.kind === 'scatter') return <g key={k}>{pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={4} fill={HUES[k]} className="ddot" />)}</g>;
-            const line = smoothPath(pts);
+            const line = monotonePath(pts);
             return (
               <g key={k}>
                 {(d.kind === 'area' || d.series.length === 1) && pts.length > 1 && <path d={`${line}L${pts[pts.length - 1][0]},${PAD.t + ih}L${pts[0][0]},${PAD.t + ih}Z`} fill={`url(#ag-fill-${k})`} />}

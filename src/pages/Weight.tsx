@@ -9,6 +9,8 @@ import { run } from '../api/registry';
 import { recordsRestore, weightDelete, weightLog, weightSeries, weightUpdate } from '../api/body';
 import { TimeChart, type TPoint } from '../components/TimeChart';
 import { useSettings } from '../db/settings';
+import { useChartEvents } from '../components/chartEvents';
+import { goalsGet } from '../api/food';
 import type { BodyweightEntry } from '../db/types';
 import { fmtDate, fmtNum, fmtWeight, plural, relDay } from '../lib/format';
 import { fromKg, toKg } from '../lib/science';
@@ -82,6 +84,10 @@ export function WeightPage() {
 /** Every weigh-in as a dot, the app's display trend as a line (bodyweight.series), maximizable with a values list. */
 function WeightChart({ unit }: { unit: 'kg' | 'lb' }) {
   const data = useLiveQuery(() => run(weightSeries, {}), []);
+  const events = useChartEvents();
+  // delta colour follows the goal: losing → down is good, gaining → up is good, maintaining / no goal → neutral
+  const rate = useLiveQuery(async () => (await run(goalsGet, {}))?.rateKgPerWeek ?? null, []);
+  const good = rate == null || Math.abs(rate) < 0.05 ? null : rate < 0 ? 'down' as const : 'up' as const;
   const { points, trend } = useMemo(() => {
     const W = (kg: number) => Math.round(fromKg(kg, unit) * 10) / 10;
     const pts = data?.points ?? [];
@@ -94,7 +100,7 @@ function WeightChart({ unit }: { unit: 'kg' | 'lb' }) {
   return (
     <div style={{ marginTop: 4 }}>
       <TimeChart title="Weight" note="Dots: weigh-ins · line: smoothed trend" points={points} trend={trend} kind="dots" pointLabel="Weigh-in" trendLabel="Trend"
-        fmt={(v) => `${v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`} defaultRange="6M" height={180} />
+        fmt={(v) => `${v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`} defaultRange="6M" height={180} events={events} good={good} />
     </div>
   );
 }

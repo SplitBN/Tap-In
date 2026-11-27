@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { defineCommand, zDate, zId } from './registry';
 import { alive, db, newRecord, remove, save } from '../db/db';
 import type { JournalEntry } from '../db/types';
-import { dateKey } from '../lib/nutrition';
+import { dateKey, keyToDate, shiftDate } from '../lib/nutrition';
+import { suppPeriods } from './body';
 
 const zTag = z.enum(['diet', 'training', 'health', 'life', 'other']);
 export const journalView = (j: JournalEntry) => ({ id: j.id, date: j.date, ...(j.endDate ? { endDate: j.endDate } : {}), ongoing: j.endDate === null, title: j.title, note: j.note, tag: j.tag });
@@ -48,3 +49,31 @@ export const journalEnd = defineCommand({ name: 'journal.end', kind: 'action',
 
 export const journalDelete = defineCommand({ name: 'journal.delete', kind: 'action', description: 'Delete a journal entry.',
   input: z.object({ id: zId }), run: async ({ id }) => { await remove('journal', id); return { ok: true }; } });
+
+// ---------------- timeline (chart event stamps) ----------------
+const TAG_ICON: Record<string, string> = { diet: 'food', training: 'dumbbell', health: 'fire', life: 'flag', other: 'flag' };
+export const timelineEvents = defineCommand({ name: 'timeline.events', kind: 'query',
+  description: 'Dated events to annotate progress charts with, oldest first: journal entries (kind "journal": "Started cut", "Sick"…) and supplement on-periods (kind "supplement": when something was being taken, from supplements.periods; logs up to 8 days apart count as one period, so weekly doses form one; deleted supplements and periods spanning fewer than minDays are left out). ' +
+    'Each: id, kind, label, from (YYYY-MM-DD), to (YYYY-MM-DD, or null = still ongoing; equal to from for a single day), tag (journal) and icon (a UI icon name). Overlapping from..to only.',
+  input: z.object({ from: zDate.optional(), to: zDate.optional(), minDays: z.number().int().min(1).max(60).default(3), supplements: z.boolean().default(true) }),
+  run: async ({ from, to, minDays, supplements }) => {
+    const today = dateKey();
+    const out: { id: string; kind: 'journal' | 'supplement'; label: string; from: string; to: string | null; tag?: string; icon: string }[] = [];
+    for (const j of await journalList.run({ from, to })) out.push({ id: j.id, kind: 'journal', label: j.title, from: j.date, to: j.ongoing ? null : j.endDate ?? j.date, ...(j.tag ? { tag: j.tag } : {}), icon: TAG_ICON[j.tag ?? 'other'] ?? 'flag' });
+    if (supplements) {
+      const live = new Map((await db.supplements.filter(alive).toArray()).map((s) => [s.id, s]));
+      for (const s of await suppPeriods.run({ from, to, gapDays: 8 })) {
+        const sup = live.get(s.supplementId); if (!sup) continue;
+        const icon = sup.route === 'subq' || sup.route === 'im' ? 'syringe' : 'pill';
+        const last = s.periods[s.periods.length - 1];
+        for (const p of s.periods) {
+          const span = Math.round((keyToDate(p.to).getTime() - keyToDate(p.from).getTime()) / 864e5) + 1;
+          if (span < minDays) continue;
+          // the latest period of a supplement still being taken (logged in the last 8 days, not archived) is ongoing
+          const ongoing = p === last && !sup.archived && p.to >= shiftDate(today, -8);
+          out.push({ id: `${s.supplementId}:${p.from}`, kind: 'supplement', label: sup.name, from: p.from, to: ongoing ? null : p.to, icon });
+        }
+      }
+    }
+    return out.sort((a, b) => a.from.localeCompare(b.from));
+  } });

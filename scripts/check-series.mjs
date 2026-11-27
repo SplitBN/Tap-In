@@ -1,8 +1,9 @@
 // Chart series math checks (runs before every build; Node strips the TS types) on synthetic data:
 // e1RM ↔ nRM inversion (incl. the 1–2 reps-to-failure blend), e10RM, weekly bucketing across ISO weeks / year ends,
-// gap detection, running-best PR flags and the chart viewport clamp/zoom.
+// gap detection, running-best PR flags, the chart viewport clamp/zoom, the monotone curve (never overshoots) and the
+// stamp de-cluttering / label placement rules.
 import { e1rm, nRepMax } from '../src/lib/science.ts';
-import { DAY_MS, e10rm, gapStarts, isoWeekLabel, localKey, nextWeekStart, runningBest, segments, weekStartMs, weeklyBuckets, clampWindow, zoomWindow } from '../src/lib/series.ts';
+import { DAY_MS, e10rm, gapStarts, isoWeekLabel, localKey, nextWeekStart, runningBest, segments, weekStartMs, weeklyBuckets, clampWindow, zoomWindow, monotoneSegments, monotonePath, monotoneTangents, pickPrStamps, dropOverlaps, clusterByPx } from '../src/lib/series.ts';
 
 const fails = [];
 const check = (name, ok, detail = '') => { if (!ok) fails.push(`${name}${detail ? `: ${detail}` : ''}`); };
@@ -76,6 +77,59 @@ eq('clamp wider than data', clampWindow(-1, hi + 1, lo, hi), [lo, hi]);
 eq('clamp min span', clampWindow(10 * DAY_MS, 11 * DAY_MS, lo, hi), [10 * DAY_MS, 17 * DAY_MS]);
 { const [a, b] = zoomWindow(0, 100 * DAY_MS, 0.5, 50 * DAY_MS, lo, hi); near('zoom around anchor', a, 25 * DAY_MS); near('zoom width', b - a, 50 * DAY_MS); }
 { const [a, b] = zoomWindow(25 * DAY_MS, 75 * DAY_MS, 4, 50 * DAY_MS, lo, hi); eq('zoom out caps at data', [a, b], [lo, hi]); }
+
+// ---- monotone curve: passes through every point and never leaves the y range of its two neighbours ----
+{ let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const sets = [
+    [[0, 10], [10, 10], [20, 50], [30, 48], [40, 120], [41, 0], [60, 60]],
+    [[0, 0], [1, 100], [2, 0], [3, 100]],
+    [[0, 5], [5, 5], [10, 5]],
+    [[0, 1], [100, 2], [101, 50], [300, 49]],
+  ];
+  for (let k = 0; k < 40; k++) { let x = 0; sets.push(Array.from({ length: 3 + Math.floor(rnd() * 30) }, () => [(x += 0.5 + rnd() * 40), Math.round(rnd() * 200)])); }
+  let worst = 0, through = true;
+  for (const p of sets) {
+    const segs = monotoneSegments(p);
+    segs.forEach((s, i) => {
+      if (s.a !== p[i] || s.b !== p[i + 1]) through = false;
+      const lo = Math.min(s.a[1], s.b[1]), hi = Math.max(s.a[1], s.b[1]);
+      for (let u = 0; u <= 1; u += 0.02) {
+        const w = 1 - u, y = w * w * w * s.a[1] + 3 * w * w * u * s.c1[1] + 3 * w * u * u * s.c2[1] + u * u * u * s.b[1];
+        const x = w * w * w * s.a[0] + 3 * w * w * u * s.c1[0] + 3 * w * u * u * s.c2[0] + u * u * u * s.b[0];
+        worst = Math.max(worst, lo - y, y - hi);
+        if (x < s.a[0] - 1e-9 || x > s.b[0] + 1e-9) worst = Math.max(worst, 1); // x stays between the points too
+      }
+    });
+  }
+  check('monotone curve never overshoots its neighbours', worst <= 1e-9, `overshoot ${worst}`);
+  check('monotone curve passes through the points', through);
+  eq('flat tangent at a local peak', monotoneTangents([0, 1, 2], [0, 10, 0])[1], 0);
+  eq('monotone path 2 points is a straight line', monotonePath([[0, 0], [10, 5]]), 'M0,0L10,5');
+  check('monotone path uses curves for 3+ points', /C/.test(monotonePath([[0, 0], [10, 5], [20, 3]])));
+  eq('monotone path empty', monotonePath([]), '');
+}
+
+// ---- PR stamps: highest kept, then newest, never closer than the gap, capped ----
+{ const c = [{ i: 0, x: 10, v: 100 }, { i: 3, x: 40, v: 105 }, { i: 5, x: 60, v: 130 }, { i: 7, x: 120, v: 110 }, { i: 8, x: 130, v: 120 }, { i: 9, x: 200, v: 125 }];
+  const k = pickPrStamps(c, 3, 30);
+  check('PR stamps keep the highest', k.includes(5), JSON.stringify(k));
+  check('PR stamps keep the newest', k.includes(9), JSON.stringify(k));
+  check('PR stamps capped', k.length <= 3);
+  const xs = k.map((i) => c.find((q) => q.i === i).x).sort((a, b) => a - b);
+  check('PR stamps spaced', xs.every((x, j) => !j || x - xs[j - 1] >= 30), JSON.stringify(xs));
+  eq('PR stamps none', pickPrStamps([], 3, 30), []);
+  eq('PR stamps single', pickPrStamps([{ i: 2, x: 5, v: 1 }], 3, 30), [2]);
+  // a dense run of 200 PRs (a beginner's first months) still gives at most max, all spaced
+  const many = Array.from({ length: 200 }, (_, i) => ({ i, x: i * 1.5, v: i }));
+  const km = pickPrStamps(many, 4, 36);
+  check('PR stamps dense: capped and spaced', km.length <= 4 && km.every((i, j) => !j || many[i].x - many[km[j - 1]].x >= 36), JSON.stringify(km));
+}
+
+// ---- label placement + event clustering ----
+eq('drop overlaps by priority', dropOverlaps([{ x: 0, y: 0, w: 20, h: 10 }, { x: 10, y: 5, w: 20, h: 10 }, { x: 40, y: 0, w: 10, h: 10 }]), [0, 2]);
+eq('drop overlaps keeps separate', dropOverlaps([{ x: 0, y: 0, w: 10, h: 10 }, { x: 0, y: 20, w: 10, h: 10 }]), [0, 1]);
+eq('cluster by px', clusterByPx([100, 10, 25, 300, 110], 20), [[1, 2], [0, 4], [3]]);
+eq('cluster empty', clusterByPx([], 20), []);
 
 if (fails.length) { console.error(`check-series: ${fails.length} failed\n  ` + fails.join('\n  ')); process.exit(1); }
 console.log('check-series: ok');

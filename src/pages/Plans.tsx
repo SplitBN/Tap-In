@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { confirmDialog } from '../components/Dialog';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
+import { ImportHint } from '../components/ImportHint';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { SortableItem, SortableList } from '../components/Sortable';
@@ -124,6 +125,7 @@ export function PlansPage() {
             <h3>No plans yet</h3>
             <p>A plan is a few workouts you rotate through.</p>
             <button className="btn primary" onClick={() => setNaming('plan')}><Icon name="plus" size={18} /> New plan</button>
+            <ImportHint from="Alpha Progression" />
           </div>
         </>
       )}
@@ -254,6 +256,7 @@ export function AllPlansPage() {
           <Icon name="dumbbell" size={40} />
           <h3>No plans yet</h3>
           <button className="btn primary" onClick={() => setNaming(true)}><Icon name="plus" size={18} /> New plan</button>
+          <ImportHint from="Alpha Progression" />
         </div>
       )}
       <NameSheet open={naming} title="New plan" placeholder="e.g. Upper / Lower" onClose={() => setNaming(false)}

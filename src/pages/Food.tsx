@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AddFoodSheet, EntriesTransferSheet, EntrySheet, FoodTile, MacroLine, RecipeEditor } from '../components/FoodSheets';
 import { toast } from '../components/Toast';
+import { ImportHint } from '../components/ImportHint';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { entriesDeleteMany } from '../api/food';
@@ -31,6 +32,8 @@ export function useDay(date: string) {
 type Tab = 'search' | 'scan' | 'quick' | 'mine';
 
 export function FoodPage() {
+  // a brand-new food log (nothing ever logged): offer the MyNetDiary import
+  const neverLogged = useLiveQuery(async () => !(await db.entries.filter(alive).first()), []) ?? false;
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const today = useToday();
@@ -87,6 +90,7 @@ export function FoodPage() {
         </button>
       ) : null}
 
+      {neverLogged && date === today && <ImportHint from="MyNetDiary" />}
       {date === today && <MorningCheck />}
       <div className="day-chip-row"><DayStatusChip date={date} /></div>
 
