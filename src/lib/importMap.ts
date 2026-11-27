@@ -146,9 +146,15 @@ export function mapExercises(refs: AlphaRef[], pool: Exercise[], custom: AlphaCu
       if (!list?.length) continue;
       const e = pick(list);
       const r = withVariant(e, mods, pool);
-      const conf: Confidence = r.dropped || t.conf ? 'medium' : 'high';
+      // a grip/width/handle Tap In can't represent is a different lift: keep it as its own exercise, never fold its
+      // history into the base (progress must be per movement + equipment + grip/handle)
+      if (r.dropped) {
+        const spec = customSpec(ref, eq, cust);
+        return { ...base, target: { kind: 'create', id: createId, spec }, targetName: spec.name, confidence: 'new', why: `“${mods}” isn't a Tap In variant of ${e.name}: kept as its own exercise` };
+      }
+      const conf: Confidence = t.conf ? 'medium' : 'high';
       const loadWarn = ref.added && e.loadType === 'weighted';
-      const why = [t.via === 'alias' ? `Same movement in Tap In` : 'Same name and equipment', r.dropped ? `“${mods}” not tracked separately` : '', loadWarn ? 'Alpha logs it as bodyweight + added load' : ''].filter(Boolean).join(' · ');
+      const why = [t.via === 'alias' ? `Same movement in Tap In` : 'Same name and equipment', loadWarn ? 'Alpha logs it as bodyweight + added load' : ''].filter(Boolean).join(' · ');
       return { ...base, ...r.target, confidence: loadWarn ? 'low' : conf, why };
     }
     // the user's custom exercise: create it with its own metadata (no fuzzy guessing for these)
@@ -162,7 +168,9 @@ export function mapExercises(refs: AlphaRef[], pool: Exercise[], custom: AlphaCu
     const spec = customSpec(ref, eq, cust);
     return { ...base, target: { kind: 'create', id: createId, spec }, targetName: spec.name, confidence: 'new', why: cust ? 'Your custom exercise' : 'No match in Tap In' };
   });
-  // two Alpha exercises on one Tap In exercise merge their histories: flag every one but the most exact
+  // Two distinct Alpha exercises never share one Tap In exercise: progress and PRs must stay per movement (+ equipment,
+  // grip, handle). The most exact match keeps the target; the others become their own exercises. Merging stays possible,
+  // but only as the user's explicit pick in the preview.
   const byTarget = new Map<string, MapRow[]>();
   for (const r of rows) byTarget.set(r.target.id, [...(byTarget.get(r.target.id) ?? []), r]);
   for (const list of byTarget.values()) {
@@ -171,8 +179,9 @@ export function mapExercises(refs: AlphaRef[], pool: Exercise[], custom: AlphaCu
     const best = [...list].sort((a, b) => rank(a) - rank(b) || b.uses - a.uses)[0];
     for (const r of list) {
       if (r === best) continue;
-      if (r.confidence === 'high') r.confidence = 'medium';
-      r.why = `${r.why} · Shares history with “${best.name}”`;
+      const ref = refs.find((x) => `${x.name}|${x.equipment}` === r.key)!;
+      const target = asCustomTarget(ref, custom);
+      Object.assign(r, { target, targetName: target.spec.name, confidence: 'new' as Confidence, why: `Kept apart from “${best.name}” (${best.targetName}) so each keeps its own progress` });
     }
   }
   return rows;

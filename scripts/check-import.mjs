@@ -104,13 +104,24 @@ exp1('Bench Press with Close Grip', 'Barbell', 'high', 'Close-Grip Bench Press')
 exp1('Push-Ups with Close Grip', 'Bodyweight', 'high', 'Close-Grip Push-Up');
 exp1('Chin-Ups', 'Bodyweight', 'high', 'Chin-Up');
 exp1('Lat Pulldowns with Wide Overhand Grip', 'Cable', 'high', 'Lat Pulldown');
-exp1('Bent-Over Rows with Wide Grip', 'Barbell', 'medium', 'Bent-Over Row');
+exp1('Bent-Over Rows with Wide Grip', 'Barbell', 'new', 'Bent-Over Rows with Wide Grip'); // grip Tap In can't model: own exercise, not folded into the base
 exp1('Reverse Butterfly with Wide Grip', 'Machine', 'high', 'Reverse Fly · Wide Grip');
 exp1('Reverse Curls', 'Barbell', 'high', 'Reverse Curl');
 exp1('Skull Crushers', 'Cable', 'new', 'Skull Crushers');
 exp1('Incline Lateral Raises', 'Dumbbells', 'low', 'Lateral Raise');
 exp1('Calf Raises on Leg Press', 'Machine', 'high', 'Leg Press Calf Raise');
 exp1('Deadlifts', 'Machine', 'new', 'Deadlifts');
+// every distinct Alpha exercise keeps its own history: equipment, grip and near-duplicate names never merge
+{
+  const refs = [['Lateral Raises', 'Dumbbells'], ['Lateral Raises', 'Machine'], ['Lateral Raises', 'Cable'], ['Seated Lateral Raises', 'Dumbbells'],
+    ['Overhead Triceps Extensions', 'Cable'], ['Overhead Triceps Extensions with Rope', 'Cable']].map(([name, equipment]) => ({ name, equipment, uses: 1, added: false }));
+  const rows = mapExercises(refs, lib);
+  const ids = rows.map((r) => r.target.id);
+  check('no two Alpha exercises share a Tap In exercise', new Set(ids).size === ids.length, rows.map(show).join(' | '));
+  const eqOf = (r) => r.target.kind === 'create' ? r.target.spec.equipment : lib.find((e) => e.id === r.target.id)?.equipment;
+  eq('machine lateral raise stays machine', eqOf(rows[1]), 'machine');
+  eq('dumbbell lateral raise stays dumbbell', eqOf(rows[0]), 'dumbbell');
+}
 check('variant ids stable', one('Pull-Ups with Wide Overhand Grip', 'Bodyweight').target.id === one('Pull-Ups with Wide Overhand Grip', 'Bodyweight').target.id);
 // a second run sees the records the first one created and maps to them
 const created = rows.filter((r) => r.target.kind === 'create').map((r) => ({ ...r.target.spec, id: r.target.id, createdAt: 1, updatedAt: 1, deletedAt: null }));

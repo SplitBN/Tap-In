@@ -255,7 +255,7 @@ function warningsFor(parsed: Parsed, mapping: MapRow[], sessions: Session[], set
   const out: string[] = [];
   const unknown = parsed.files.filter((f) => f.kind === 'unknown');
   if (unknown.length) out.push(`Not recognised, skipped: ${unknown.map((f) => f.name).join(', ')}`);
-  const nameOf = new Map(mapping.map((r) => [r.target.id, r.targetName]));
+  const nameOf = new Map(mapping.map((r) => [r.target.id, `${r.name} · ${r.equipment}`])); // the source exercise, so the warning says which one
   const startOf = new Map(sessions.map((s) => [s.id, s.startedAt]));
   const loads = new Map<string, number[]>();
   for (const s of sets) if (s.loadKg && s.loadKg > 0) loads.set(s.exerciseId, [...(loads.get(s.exerciseId) ?? []), s.loadKg]);
